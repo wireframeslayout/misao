@@ -1,0 +1,22 @@
+{
+  "name": "misao-spike",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "misao Phase 0 spike: headless terminal pane server",
+  "bin": { "misao-spike": "dist/cli.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
