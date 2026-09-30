@@ -1,0 +1,140 @@
+{
+  "startedAt": "2026-09-30T05:28:18.179Z",
+  "rounds": [
+    {
+      "n": 1,
+      "how": "restart",
+      "hubPidBefore": 32148,
+      "hubPidAfter": 32692,
+      "hubActive": "active",
+      "daemonPidSame": true,
+      "bashPidSame": true,
+      "agentPidSame": true,
+      "bashScreenSame": true,
+      "bashRunning": true,
+      "agentRunning": true,
+      "agentScreenNonEmpty": true
+    },
+    {
+      "n": 2,
+      "how": "restart",
+      "hubPidBefore": 32692,
+      "hubPidAfter": 33783,
+      "hubActive": "active",
+      "daemonPidSame": true,
+      "bashPidSame": true,
+      "agentPidSame": true,
+      "bashScreenSame": true,
+      "bashRunning": true,
+      "agentRunning": true,
+      "agentScreenNonEmpty": true
+    },
+    {
+      "n": 3,
+      "how": "restart",
+      "hubPidBefore": 33783,
+      "hubPidAfter": 35072,
+      "hubActive": "active",
+      "daemonPidSame": true,
+      "bashPidSame": true,
+      "agentPidSame": true,
+      "bashScreenSame": true,
+      "bashRunning": true,
+      "agentRunning": true,
+      "agentScreenNonEmpty": true
+    },
+    {
+      "n": 4,
+      "how": "restart",
+      "hubPidBefore": 35072,
+      "hubPidAfter": 36447,
+      "hubActive": "active",
+      "daemonPidSame": true,
+      "bashPidSame": true,
+      "agentPidSame": true,
+      "bashScreenSame": true,
+      "bashRunning": true,
+      "agentRunning": true,
+      "agentScreenNonEmpty": true
+    },
+    {
+      "n": 5,
+      "how": "restart",
+      "hubPidBefore": 36447,
+      "hubPidAfter": 37658,
+      "hubActive": "active",
+      "daemonPidSame": true,
+      "bashPidSame": true,
+      "agentPidSame": true,
+      "bashScreenSame": true,
+      "bashRunning": true,
+      "agentRunning": true,
+      "agentScreenNonEmpty": true
+    },
+    {
+      "n": 6,
+      "how": "kill9",
+      "hubPidBefore": 37658,
+      "hubPidAfter": 39355,
+      "hubActive": "active",
+      "daemonPidSame": true,
+      "bashPidSame": true,
+      "agentPidSame": true,
+      "bashScreenSame": true,
+      "bashRunning": true,
+      "agentRunning": true,
+      "agentScreenNonEmpty": true
+    },
+    {
+      "n": 7,
+      "how": "kill9",
+      "hubPidBefore": 39355,
+      "hubPidAfter": 41011,
+      "hubActive": "active",
+      "daemonPidSame": true,
+      "bashPidSame": true,
+      "agentPidSame": true,
+      "bashScreenSame": true,
+      "bashRunning": true,
+      "agentRunning": true,
+      "agentScreenNonEmpty": true
+    }
+  ],
+  "daemonPid": 32126,
+  "agentFinished": true,
+  "markers": {
+    "expected": 400,
+    "missed": 0,
+    "duplicated": 0,
+    "falsePositives": 0
+  },
+  "lineSeq": {
+    "count": 2000,
+    "duplicates": 0,
+    "holes": 0,
+    "first": 1,
+    "last": 2000,
+    "monotonicInArrival": true
+  },
+  "eventSeq": {
+    "count": 805,
+    "duplicates": 0,
+    "holes": 0,
+    "first": 1,
+    "last": 805,
+    "monotonicInArrival": true
+  },
+  "hubLogKinds": {
+    "subscribed": 24
+  },
+  "pass": true,
+  "cleanup": {
+    "unitFilesExist": [
+      false,
+      false
+    ],
+    "leftoverProcesses": [],
+    "units": "UNIT LOAD ACTIVE SUB DESCRIPTION\n\n0 loaded units listed.\nTo show all installed unit files use 'systemctl list-unit-files'."
+  },
+  "finishedAt": "2026-09-30T05:30:40.162Z"
+}

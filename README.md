@@ -34,3 +34,16 @@ seq の stream は pane ごとの raw 出力、pane ごとの行、デーモン�
 - `src/client/MisaoClient.ts` 再利用可能なクライアント
 - `src/fixtures/` fake-agent / fake-hub (検証用)
 - `deploy/` systemd ユーザー unit のテンプレート (未インストール)
+
+## Phase 0 検証スクリプト (`verify/`)
+
+先に `npm run build` を実行する (fixtures / cli は `dist/` を使う)。各スクリプトは専用の `.run/<name>` でデーモンを起動し、終了時に自分の PID だけを停止する。結果は `verify/results/vN.json`。
+
+```bash
+node --import tsx verify/v2.ts   # 複数 attach / replay 一致 / サイズ競合 (vim, Claude Code haiku を使用)
+node --import tsx verify/v3.ts   # 行ストリームのマーカー検出 (V3_BURST_ROUNDS で --burst の回数を変更可、既定 1000)
+node --import tsx verify/v4.ts   # systemd user unit で hub 再起動 / kill -9 (unit は実行中に作成し、終了時に削除)
+node --import tsx verify/v5.ts   # hub 停止中の CLI 操作と追いつき / detach キー衝突 (vim, bash, claude, codex)
+```
+
+v2 / v5 は実際の `claude` / `codex` を起動する (プロンプトは v2 の claude 1 回のみ)。初回は cwd (このリポジトリ) の信頼ダイアログを自動で通過する。

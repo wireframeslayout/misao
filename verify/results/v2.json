@@ -1,0 +1,457 @@
+{
+  "startedAt": "2026-09-30T05:22:23.231Z",
+  "cases": {
+    "a_bash_bulk": {
+      "outputBytes": 2308999,
+      "ringTruncated": true,
+      "joins": [
+        {
+          "replay": "raw",
+          "viewBytes": 1041466,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        },
+        {
+          "replay": "snapshot",
+          "viewBytes": 2191,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        }
+      ]
+    },
+    "b_vim_alt": {
+      "outputBeforeVim": 2308999,
+      "altScreen": true,
+      "joins": [
+        {
+          "replay": "raw",
+          "viewBytes": 1038017,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        },
+        {
+          "replay": "snapshot",
+          "viewBytes": 2784,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        }
+      ]
+    },
+    "b2_vim_alt_ring_truncated": {
+      "vimOutputBytes": 1366890,
+      "ringTruncated": true,
+      "joins": [
+        {
+          "replay": "raw",
+          "viewBytes": 1045242,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        },
+        {
+          "replay": "snapshot",
+          "viewBytes": 2770,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        }
+      ]
+    },
+    "c_claude": {
+      "trustDialogSeen": [
+        "──────────────────────────────────────────────────────────────────────────────────────────────────── |  Accessing workspace: |  /home/server01/workspace/misao |  Quick safety check: Is this a project you created or one you trust? (Like your own code, a |  well-known open source project, or work from your team). If not, take a moment to review what's in |  this folder first. |  Claude Code'll be able to read, edit, and execute files here. |  Security guide"
+      ],
+      "responseCompleted": true,
+      "midScreenSample": [
+        "✽ Generating… ",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "❯ ",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "  server01@win-server-001 | ~/workspace/misao (master)  Haiku 4.5 | 5h:8%",
+        "  ⏸ manual mode on · ← 1 agent"
+      ],
+      "midJoinFinal": [
+        {
+          "replay": "raw",
+          "joinedDuring": "response",
+          "viewBytes": 7721,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        },
+        {
+          "replay": "snapshot",
+          "joinedDuring": "response",
+          "viewBytes": 5274,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        }
+      ],
+      "joinAfter": [
+        {
+          "replay": "raw",
+          "viewBytes": 7721,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        },
+        {
+          "replay": "snapshot",
+          "viewBytes": 1524,
+          "rows": 30,
+          "matchedRows": 30,
+          "matchRate": 1,
+          "mismatches": []
+        }
+      ],
+      "cwd": "/home/server01/workspace/misao",
+      "paneAtStart": 100
+    }
+  },
+  "sizeConflict": {
+    "vim": {
+      "allStepsOk": true,
+      "steps": [
+        {
+          "step": "1 A attach (120x40)",
+          "cols": 120,
+          "rows": 40,
+          "sizeOwner": "A",
+          "clients": [
+            "A"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC87QGQ9K9DRSM831ZETFG",
+              "cols": 120,
+              "rows": 40,
+              "clientId": "A"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            }
+          },
+          "ok": true
+        },
+        {
+          "step": "2 B attach (80x24)",
+          "cols": 80,
+          "rows": 24,
+          "sizeOwner": "B",
+          "clients": [
+            "A",
+            "B"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC87QGQ9K9DRSM831ZETFG",
+              "cols": 80,
+              "rows": 24,
+              "clientId": "B"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            },
+            "B": {
+              "viewSize": "80x24",
+              "matchRate": 1,
+              "mismatches": []
+            }
+          },
+          "ok": true
+        },
+        {
+          "step": "3 A input",
+          "cols": 120,
+          "rows": 40,
+          "sizeOwner": "A",
+          "clients": [
+            "A",
+            "B"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC87QGQ9K9DRSM831ZETFG",
+              "cols": 120,
+              "rows": 40,
+              "clientId": "A"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            },
+            "B": {
+              "viewSize": "80x24",
+              "matchRate": 0.025,
+              "mismatches": [
+                {
+                  "row": 0,
+                  "view": "line 15 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                  "daemon": "line 0 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                },
+                {
+                  "row": 1,
+                  "view": "line 16 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                  "daemon": "line 1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                },
+                {
+                  "row": 2,
+                  "view": "line 17 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                  "daemon": "line 2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ]
+            }
+          },
+          "ok": true
+        },
+        {
+          "step": "4 B input",
+          "cols": 80,
+          "rows": 24,
+          "sizeOwner": "B",
+          "clients": [
+            "A",
+            "B"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC87QGQ9K9DRSM831ZETFG",
+              "cols": 80,
+              "rows": 24,
+              "clientId": "B"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            },
+            "B": {
+              "viewSize": "80x24",
+              "matchRate": 1,
+              "mismatches": []
+            }
+          },
+          "ok": true
+        },
+        {
+          "step": "5 B detach (owner leaves -> A remains)",
+          "cols": 120,
+          "rows": 40,
+          "sizeOwner": "A",
+          "clients": [
+            "A"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC87QGQ9K9DRSM831ZETFG",
+              "cols": 120,
+              "rows": 40,
+              "clientId": "A"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            }
+          },
+          "ok": true
+        }
+      ]
+    },
+    "claude": {
+      "allStepsOk": true,
+      "steps": [
+        {
+          "step": "1 A attach (120x40)",
+          "cols": 120,
+          "rows": 40,
+          "sizeOwner": "A",
+          "clients": [
+            "A"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC8HJE4G38BQXP4MD35M3N",
+              "cols": 120,
+              "rows": 40,
+              "clientId": "A"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            }
+          },
+          "ok": true
+        },
+        {
+          "step": "2 B attach (80x24)",
+          "cols": 80,
+          "rows": 24,
+          "sizeOwner": "B",
+          "clients": [
+            "A",
+            "B"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC8HJE4G38BQXP4MD35M3N",
+              "cols": 80,
+              "rows": 24,
+              "clientId": "B"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            },
+            "B": {
+              "viewSize": "80x24",
+              "matchRate": 1,
+              "mismatches": []
+            }
+          },
+          "ok": true
+        },
+        {
+          "step": "3 A input",
+          "cols": 120,
+          "rows": 40,
+          "sizeOwner": "A",
+          "clients": [
+            "A",
+            "B"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC8HJE4G38BQXP4MD35M3N",
+              "cols": 120,
+              "rows": 40,
+              "clientId": "A"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            },
+            "B": {
+              "viewSize": "80x24",
+              "matchRate": 0.7,
+              "mismatches": [
+                {
+                  "row": 0,
+                  "view": "▝▜██████▀  Haiku 4.5 · Claude Max",
+                  "daemon": ""
+                },
+                {
+                  "row": 1,
+                  "view": " ▝▝   ▝▝   ~/workspace/misao",
+                  "daemon": " ▐▛███▛█   Claude Code v2.1.285"
+                },
+                {
+                  "row": 2,
+                  "view": "",
+                  "daemon": "▝▜██████▀  Haiku 4.5 · Claude Max"
+                }
+              ]
+            }
+          },
+          "ok": true
+        },
+        {
+          "step": "4 B input",
+          "cols": 80,
+          "rows": 24,
+          "sizeOwner": "B",
+          "clients": [
+            "A",
+            "B"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC8HJE4G38BQXP4MD35M3N",
+              "cols": 80,
+              "rows": 24,
+              "clientId": "B"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            },
+            "B": {
+              "viewSize": "80x24",
+              "matchRate": 1,
+              "mismatches": []
+            }
+          },
+          "ok": true
+        },
+        {
+          "step": "5 B detach (owner leaves -> A remains)",
+          "cols": 120,
+          "rows": 40,
+          "sizeOwner": "A",
+          "clients": [
+            "A"
+          ],
+          "resizedEvents": [
+            {
+              "paneId": "p_01M3RC8HJE4G38BQXP4MD35M3N",
+              "cols": 120,
+              "rows": 40,
+              "clientId": "A"
+            }
+          ],
+          "views": {
+            "A": {
+              "viewSize": "120x40",
+              "matchRate": 1,
+              "mismatches": []
+            }
+          },
+          "ok": true
+        }
+      ]
+    }
+  },
+  "daemonPid": 45173,
+  "finishedAt": "2026-09-30T05:23:24.465Z"
+}

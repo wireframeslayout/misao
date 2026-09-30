@@ -1,0 +1,219 @@
+{
+  "startedAt": "2026-09-30T05:27:09.584Z",
+  "daemonPid": 15964,
+  "catchUp": {
+    "savedState": {
+      "events": 2,
+      "lines": {
+        "p_01M3RCFVKZR04DHCAY76J5KPG6": 1
+      },
+      "epoch": "01M3RCFVKNN4GWG2FBNS6BVTW2"
+    },
+    "attachAnswered": true,
+    "cliExitCode": 0,
+    "cliExited": true,
+    "ttyResetOutput": true,
+    "subscribeResults": [
+      {
+        "stream": "events",
+        "since": 2,
+        "gap": false,
+        "head": 6
+      },
+      {
+        "stream": "lines",
+        "since": 1,
+        "gap": false,
+        "head": 4
+      }
+    ],
+    "answerLineSeen": true,
+    "doneMarkerSeen": true,
+    "inputEvents": [
+      {
+        "paneId": "p_01M3RCFVKZR04DHCAY76J5KPG6",
+        "source": "terminal",
+        "bytes": 5
+      }
+    ],
+    "inputEventKeys": [
+      "bytes",
+      "paneId",
+      "source"
+    ],
+    "inputSourceAllTerminal": true,
+    "inputContentLeaked": false,
+    "eventSeqContiguousFromSaved": true,
+    "lineSeqContiguousFromSaved": true,
+    "eventSeqs": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "lineSeqs": [
+      2,
+      3,
+      4
+    ],
+    "lineTexts": [
+      "QUESTION: What is your favourite colour? > ",
+      "ANSWER:blue",
+      "AZITO_DONE_Q5_c7ce903d"
+    ],
+    "pass": true
+  },
+  "keyCollisions": [
+    {
+      "app": "vim",
+      "startScreenSample": "alpha beta gamma | delta epsilon zeta | ~                                                                                                    | ~                                                                                                   ",
+      "keys": {
+        "Ctrl-] (0x1d)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 5,
+          "diffSample": [
+            "r0: \"alpha beta gamma\" -> \"~\"",
+            "r1: \"delta epsilon zeta\" -> \"~\"",
+            "r27: \"~\" -> \"E433: タグファイルがありません\""
+          ]
+        },
+        "Ctrl-\\ (0x1c)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 5,
+          "diffSample": [
+            "r0: \"~\" -> \"alpha beta gamma\"",
+            "r1: \"~\" -> \"delta epsilon zeta\"",
+            "r27: \"E433: タグファイルがありません\" -> \"~\""
+          ]
+        },
+        "Ctrl-^ (0x1e)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-_ (0x1f)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        }
+      },
+      "finalAlive": true
+    },
+    {
+      "app": "bash(readline)",
+      "startScreenSample": "echo hellobash-5.2$ echo hello",
+      "keys": {
+        "Ctrl-] (0x1d)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-\\ (0x1c)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-^ (0x1e)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-_ (0x1f)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 1,
+          "diffSample": [
+            "r0: \"echo hellobash-5.2$ echo hello\" -> \"echo hellobash-5.2$\""
+          ]
+        }
+      },
+      "finalAlive": true
+    },
+    {
+      "app": "claude(haiku, idle)",
+      "startScreenSample": " ▐▛███▛█   Claude Code v2.1.285 | ▝▜██████▀  Haiku 4.5 · Claude Max |  ▝▝   ▝▝   ~/workspace/misao | ────────────────────────────────────────────────────────────────────────────────────────────────────",
+      "keys": {
+        "Ctrl-] (0x1d)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-\\ (0x1c)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-^ (0x1e)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-_ (0x1f)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        }
+      },
+      "finalAlive": true
+    },
+    {
+      "app": "codex(idle)",
+      "startScreenSample": "  |   Folder access |   /home/server01/workspace/misao                                                                   |   Trust this folder? Codex can read, edit, and run files here, subject to your permission",
+      "keys": {
+        "Ctrl-] (0x1d)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-\\ (0x1c)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-^ (0x1e)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        },
+        "Ctrl-_ (0x1f)": {
+          "alive": true,
+          "exitCode": null,
+          "signal": null,
+          "changedRows": 0,
+          "diffSample": []
+        }
+      },
+      "finalAlive": true
+    }
+  ],
+  "finishedAt": "2026-09-30T05:27:53.233Z"
+}

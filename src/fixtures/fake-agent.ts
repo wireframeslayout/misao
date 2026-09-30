@@ -51,6 +51,7 @@ async function markers(): Promise<void> {
   const id = flag('id') ?? 'T';
   const outFile = flag('out');
   const burst = argv.includes('--burst');
+  const delayMs = Number(flag('delay') ?? '0'); // 1 ラウンドごとの待ち (低速・長時間動作用)
   const nonces: string[] = [];
   for (let i = 0; i < count; i++) {
     await noisyRound(i);
@@ -68,6 +69,7 @@ async function markers(): Promise<void> {
     const nonce = randomBytes(4).toString('hex');
     nonces.push(nonce);
     await writeMarker(`AZITO_DONE_${id}_${nonce}`, i % 2 === 0);
+    if (delayMs > 0) await sleep(delayMs);
   }
   const summary = `FAKE_SUMMARY ${JSON.stringify({ emitted: count, nonces })}`;
   if (outFile) fs.writeFileSync(outFile, summary + '\n');
@@ -76,6 +78,7 @@ async function markers(): Promise<void> {
 
 async function question(): Promise<void> {
   const id = flag('id') ?? 'T';
+  out(`QUESTION_HEADER ${id}\r\n`);
   out('QUESTION: What is your favourite colour? > ');
   if (process.stdin.isTTY) process.stdin.setRawMode(true);
   const answer = await new Promise<string>((resolve) => {
