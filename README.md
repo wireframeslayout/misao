@@ -39,8 +39,12 @@ Requires Node.js >= 24.
 npm ci          # install (builds node-pty natively)
 npm run build   # tsc -b across all packages
 npm run typecheck
-npm test        # node:test via tsx, per workspace
+npm test        # node:test via tsx, per workspace (runs against src, no build needed)
+npm run smoke   # run the built CLI directly
 ```
+
+During development run the CLI with `node packages/cli/dist/main.js`, or `npx misao`
+(after `npm run build`, run `npm rebuild misao` once to create the bin link).
 
 ## License
 

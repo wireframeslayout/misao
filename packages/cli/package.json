@@ -6,12 +6,22 @@
   "license": "Apache-2.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "bin": { "misao": "dist/main.js" },
-  "scripts": {
-    "build": "tsc -b",
-    "clean": "tsc -b --clean",
-    "test": "node --import tsx --test \"test/**/*.test.ts\""
+  "exports": {
+    ".": {
+      "@misao/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
-  "dependencies": { "@misao/daemon": "0.0.0", "@misao/protocol": "0.0.0", "@misao/sdk": "0.0.0" }
+  "bin": {
+    "misao": "dist/main.js"
+  },
+  "scripts": {
+    "test": "node --conditions=@misao/source --import tsx --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@misao/daemon": "0.0.0",
+    "@misao/protocol": "0.0.0",
+    "@misao/sdk": "0.0.0"
+  }
 }

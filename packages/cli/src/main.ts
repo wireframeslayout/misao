@@ -1,4 +1,6 @@
 #!/usr/bin/env node
 import { PACKAGE } from './index.js';
 
-console.log(`${PACKAGE} 0.0.0`);
+if (process.argv.includes('--version')) {
+  console.log(`${PACKAGE} 0.0.0`);
+}

@@ -10,6 +10,13 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "verbatimModuleSyntax": true,
+    "declarationMap": true,
+    "customConditions": [
+      "@misao/source"
+    ]
   }
 }
