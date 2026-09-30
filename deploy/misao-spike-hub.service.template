@@ -1,0 +1,14 @@
+# fake hub 用 unit のテンプレート。<NODE> と <REPO> を置換する。
+[Unit]
+Description=misao spike fake hub
+After=misao-spike.service
+
+[Service]
+Type=simple
+Environment=MISAO_SPIKE_TAG=systemd-hub
+ExecStart=<NODE> <REPO>/dist/fixtures/fake-hub.js --dir <REPO>/.run --state <REPO>/.run/hub-state.json --log <REPO>/.run/hub-log.ndjson --tag systemd-hub
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target

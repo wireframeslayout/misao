@@ -1,0 +1,15 @@
+# ユーザー unit のテンプレート。<NODE> と <REPO> を置換して ~/.config/systemd/user/ に置く。
+[Unit]
+Description=misao spike daemon (headless pane server)
+
+[Service]
+Type=simple
+Environment=MISAO_SPIKE_TAG=systemd
+ExecStart=<NODE> <REPO>/dist/cli.js serve --dir <REPO>/.run
+# デーモン停止時に pane の子孫まで巻き込まない (再起動耐性の検証用)
+KillMode=process
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=default.target
