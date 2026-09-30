@@ -55,3 +55,14 @@ test('未完了のシーケンスは次の行に漏れない (pending が空)', 
 test('マーカーが SGR や分割 write をまたいでも 1 行になる', () => {
   check('\x1b[1;32mAZITO_DO' + 'NE_x_ab' + 'cd\x1b[0m\r\n', ['AZITO_DONE_x_abcd']);
 });
+
+test('孤立 ESC の直後の改行でシーケンスを打ち切り、次行のマーカーを取り逃さない', () => {
+  check('junk\x1b\nAZITO_DONE_x_1\r\n', ['junk', 'AZITO_DONE_x_1']);
+});
+test('CSI / ESC 中間バイト途中の CR LF も ground に戻る', () => {
+  check('a\x1b[31\r\nAZITO_DONE_x_2\r\n', ['a', 'AZITO_DONE_x_2']);
+  check('b\x1b(\nAZITO_DONE_x_3\n', ['b', 'AZITO_DONE_x_3']);
+});
+test('ESC 直後の範囲外 (非 ASCII) 文字は再解釈され消費されない', () => {
+  check('\x1bあいう\n', ['あいう']);
+});

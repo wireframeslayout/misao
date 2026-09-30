@@ -63,6 +63,7 @@ async function subscribeLines(client: MisaoClient, paneId: string): Promise<void
 }
 
 async function session(): Promise<void> {
+  watched.clear(); // 接続ごとに購読はやり直し
   const client = await MisaoClient.connect(path.join(dir!, 'misao.sock'));
   const closed = new Promise<void>((r) => client.on('close', r));
   client.onNotification((n) => {
@@ -87,9 +88,9 @@ async function session(): Promise<void> {
   log({ kind: 'subscribed', stream: 'events', since: state.events, ...ev });
   // 既存 pane (再接続時を含む) の lines を購読
   const panes = await client.request<Array<{ paneId: string }>>('pane.list');
-  watched.clear();
   for (const p of panes) {
     if (paneQuery && p.paneId !== paneQuery) continue;
+    if (watched.has(p.paneId)) continue; // pane.opened の再生で購読済み
     watched.add(p.paneId);
     await subscribeLines(client, p.paneId);
   }

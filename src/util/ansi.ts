@@ -28,6 +28,10 @@ export class AnsiLineAssembler {
 
   private step(ch: string, out: string[]): void {
     const c = ch.codePointAt(0)!;
+    // 実端末は C0 を即時実行する。エスケープ列の途中でも改行 / CR は ground で処理する。
+    if ((c === 0x0a || c === 0x0d) && (this.state === 'esc' || this.state === 'escInter' || this.state === 'csi')) {
+      this.state = 'ground';
+    }
     switch (this.state) {
       case 'ground':
         return this.ground(ch, c, out);
@@ -38,7 +42,11 @@ export class AnsiLineAssembler {
         else if (c >= 0x20 && c <= 0x2f) this.state = 'escInter';
         else if (c === 0x1b) this.state = 'esc';
         else if (c >= 0x30 && c <= 0x7e) this.state = 'ground';
-        else if (c === 0x18 || c === 0x1a) this.state = 'ground';
+        else {
+          // 範囲外 (C0 / 非 ASCII など): シーケンスを打ち切り、その文字を通常文字として再解釈
+          this.state = 'ground';
+          this.step(ch, out);
+        }
         return;
       case 'escInter':
         if (c >= 0x30 && c <= 0x7e) this.state = 'ground';

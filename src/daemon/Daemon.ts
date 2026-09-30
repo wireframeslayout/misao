@@ -40,6 +40,8 @@ class Connection {
   private readonly closers: Array<() => void> = [];
   /** paneId → clientId */
   readonly attachments = new Map<string, { clientId: string; off: () => void }>();
+  /** `${stream}:${paneId}` → off。同じキーの再購読は既存を置き換える (二重配信の防止)。 */
+  readonly subscriptions = new Map<string, () => void>();
   closed = false;
 
   constructor(
@@ -59,6 +61,8 @@ class Connection {
     socket.on('error', () => socket.destroy());
     socket.on('close', () => {
       this.closed = true;
+      for (const off of this.subscriptions.values()) off();
+      this.subscriptions.clear();
       for (const fn of this.closers.splice(0)) fn();
       onClose(this);
     });
@@ -179,8 +183,12 @@ export class Daemon {
   }
 
   private async onMessage(conn: Connection, msg: RpcMessage | undefined, parseError?: string): Promise<void> {
-    if (!msg) {
+    if (msg === undefined) {
       conn.send({ jsonrpc: '2.0', id: null, error: { code: ErrorCode.Parse, message: parseError ?? 'parse error' } });
+      return;
+    }
+    if (typeof msg !== 'object' || msg === null || Array.isArray(msg)) {
+      conn.send({ jsonrpc: '2.0', id: null, error: { code: ErrorCode.InvalidRequest, message: 'invalid request' } });
       return;
     }
     if (!isRequest(msg)) return; // クライアントからの通知・応答は無視
@@ -271,6 +279,11 @@ export class Daemon {
           : undefined;
     if (!data) throw new RpcFailure(ErrorCode.InvalidParams, 'data or dataB64 required');
     const source = p.source === 'terminal' ? 'terminal' : 'hub';
+    // 最後に操作したクライアントのサイズを優先する
+    const writer = optStr(p, 'clientId');
+    if (writer && pane.claimSize(writer)) {
+      this.emitEvent('pane.resized', { paneId: pane.id, cols: pane.cols, rows: pane.rows, clientId: writer });
+    }
     pane.write(data);
     this.emitEvent('input', { paneId: pane.id, source, bytes: data.length }); // 内容は記録しない
     return { ok: true };
@@ -281,7 +294,7 @@ export class Daemon {
     const cols = reqInt(p, 'cols');
     const rows = reqInt(p, 'rows');
     const clientId = optStr(p, 'clientId') ?? null;
-    pane.resize(cols, rows);
+    pane.resize(cols, rows, clientId);
     this.emitEvent('pane.resized', { paneId: pane.id, cols, rows, clientId });
     return { ok: true };
   }
@@ -295,6 +308,12 @@ export class Daemon {
     }
     const conn = ctx.conn;
     this.detach(conn, pane.id);
+    const cols = optInt(p, 'cols');
+    const rows = optInt(p, 'rows');
+    if (cols !== undefined && rows !== undefined) {
+      pane.resize(cols, rows, clientId);
+      this.emitEvent('pane.resized', { paneId: pane.id, cols, rows, clientId });
+    }
 
     const queue: Array<[number, Buffer, string]> = [];
     let live = false;
@@ -328,7 +347,7 @@ export class Daemon {
       queue.length = 0;
       live = true;
     });
-    return { headSeq };
+    return { headSeq, oldest: pane.rawRing.oldest, truncated: replay === 'raw' && pane.rawRing.hasGap(0) };
   }
 
   private paneDetach(p: Params, ctx: Ctx): unknown {
@@ -344,20 +363,23 @@ export class Daemon {
     const pane = this.panes.get(paneId);
     // 同じ clientId が別接続にも残っていれば clients から外さない
     const stillAttached = [...this.conns].some((c) => c !== conn && c.attachments.get(paneId)?.clientId === att.clientId);
-    if (pane && !stillAttached) pane.clients.delete(att.clientId);
+    if (pane && !stillAttached) {
+      pane.clients.delete(att.clientId);
+      pane.forgetClient(att.clientId);
+    }
     this.emitEvent('client.detached', { paneId, clientId: att.clientId });
   }
 
   private subscribeLines(p: Params, ctx: Ctx): unknown {
     const pane = this.pane(p);
-    return this.subscribe(ctx, pane.linesRing, optSince(p), (cb) => {
+    return this.subscribe(ctx, `lines:${pane.id}`, pane.linesRing, optSince(p), (cb) => {
       pane.on('line', cb);
       return () => pane.off('line', cb);
     }, (seq, text, ts) => ctx.conn.notify('pane.line', seq, ts, { paneId: pane.id, text }));
   }
 
   private subscribeEvents(p: Params, ctx: Ctx): unknown {
-    return this.subscribe(ctx, this.eventRing, optSince(p), (cb) => {
+    return this.subscribe(ctx, 'events', this.eventRing, optSince(p), (cb) => {
       this.bus.on('event', cb);
       return () => this.bus.off('event', cb);
     }, (seq, ev, ts) => ctx.conn.notify('event', seq, ts, { type: ev.type, data: ev.data }));
@@ -366,6 +388,7 @@ export class Daemon {
   /** ring の since 以降を再生してからライブに切り替える共通処理。since 省略時はライブのみ。 */
   private subscribe<T>(
     ctx: Ctx,
+    key: string,
     ring: SeqRing<T>,
     since: number | undefined,
     on: (cb: (seq: number, item: T, ts: string) => void) => () => void,
@@ -376,7 +399,8 @@ export class Daemon {
     const queue: Array<[number, T, string]> = [];
     let live = false;
     const off = on((seq, item, ts) => (live ? notify(seq, item, ts) : queue.push([seq, item, ts])));
-    ctx.conn.onClose(off);
+    ctx.conn.subscriptions.get(key)?.(); // 同じ (stream, pane) の既存購読は置き換える
+    ctx.conn.subscriptions.set(key, off);
     ctx.afterReply(() => {
       if (since !== undefined) for (const e of ring.since(since)) if (e.seq <= head) notify(e.seq, e.item, e.ts);
       for (const [seq, item, ts] of queue) if (seq > head) notify(seq, item, ts);

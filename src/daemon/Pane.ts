@@ -11,6 +11,11 @@ import { SeqRing } from '../util/ring.js';
 import { newPaneId } from '../util/ulid.js';
 import { flushTerminal, serializeSnapshot, viewportText } from './screen.js';
 
+interface ClientSize {
+  cols: number;
+  rows: number;
+}
+
 export const RAW_RING_BYTES = 1024 * 1024;
 export const LINES_RING_BYTES = 64 * 1024;
 const SCROLLBACK = 5000;
@@ -40,6 +45,8 @@ export interface PaneInfo {
   cols: number;
   rows: number;
   clients: string[];
+  /** 現在のサイズを決めたクライアント (最後に操作したクライアント)。 */
+  sizeOwner: string | null;
 }
 
 /** 子プロセス環境: 親の環境から mux 系の変数を除去し、misao 用を足す。 */
@@ -88,6 +95,8 @@ export class Pane extends EventEmitter {
   private readonly term: Terminal;
   private readonly assembler = new AnsiLineAssembler();
   private killTimer: NodeJS.Timeout | undefined;
+  private readonly clientSizes = new Map<string, ClientSize>();
+  sizeOwner: string | null = null;
 
   constructor(opts: PaneOpenOptions) {
     super();
@@ -113,6 +122,13 @@ export class Pane extends EventEmitter {
     this.proc.onData((d: string | Buffer) => this.handleData(typeof d === 'string' ? Buffer.from(d) : d));
     this.proc.onExit(({ exitCode, signal }) => {
       this.state = 'exited';
+      const rest = this.assembler.pending;
+      if (rest !== '') {
+        // 改行なしで終わった最終行も行ストリームに流す
+        const ts = nowIso();
+        const seq = this.linesRing.push(rest, rest.length + 1, ts);
+        this.emit('line', seq, rest, ts);
+      }
       this.exitCode = signal ? null : exitCode;
       this.signal = signal || null;
       if (this.killTimer) clearTimeout(this.killTimer);
@@ -147,6 +163,7 @@ export class Pane extends EventEmitter {
       cols: this.cols,
       rows: this.rows,
       clients: [...this.clients],
+      sizeOwner: this.sizeOwner,
     };
   }
 
@@ -154,11 +171,27 @@ export class Pane extends EventEmitter {
     this.proc.write(data);
   }
 
-  resize(cols: number, rows: number): void {
+  /** clientId のサイズを記録し、そのクライアントをサイズ所有者にして pty / 端末へ適用する。 */
+  resize(cols: number, rows: number, clientId: string | null): void {
+    if (clientId) this.clientSizes.set(clientId, { cols, rows });
+    this.sizeOwner = clientId;
     this.cols = cols;
     this.rows = rows;
     if (this.state === 'running') this.proc.resize(cols, rows);
     this.term.resize(cols, rows);
+  }
+
+  /** clientId が所有者でなく、サイズを記録済みなら、そのサイズへ戻す。変更したら true。 */
+  claimSize(clientId: string): boolean {
+    const size = this.clientSizes.get(clientId);
+    if (!size || this.sizeOwner === clientId) return false;
+    this.resize(size.cols, size.rows, clientId);
+    return true;
+  }
+
+  forgetClient(clientId: string): void {
+    this.clientSizes.delete(clientId);
+    if (this.sizeOwner === clientId) this.sizeOwner = null;
   }
 
   async screen(): Promise<{ text: string; cursor: { x: number; y: number }; altScreen: boolean; title: string }> {
@@ -173,10 +206,13 @@ export class Pane extends EventEmitter {
   }
 
   /** 反映済みの状態をシリアライズし、その時点の raw head seq を返す。 */
-  async snapshot(): Promise<{ data: string; headSeq: number }> {
+  snapshot(): Promise<{ data: string; headSeq: number }> {
     const headSeq = this.rawRing.head;
-    await flushTerminal(this.term);
-    return { data: serializeSnapshot(this.term), headSeq };
+    // xterm は write コールバックの後も、後から積まれたチャンクの解析を同じループで続ける。
+    // resolve の続き (マイクロタスク) では遅いので、シリアライズはコールバック内で同期的に行う。
+    return new Promise((resolve) =>
+      this.term.write('', () => resolve({ data: serializeSnapshot(this.term), headSeq })),
+    );
   }
 
   /** SIGHUP → 3s → SIGKILL。終了で resolve。 */
@@ -184,19 +220,22 @@ export class Pane extends EventEmitter {
     if (this.state === 'exited') return Promise.resolve();
     return new Promise((resolve) => {
       this.once('exit', () => resolve());
-      try {
-        this.proc.kill('SIGHUP');
-      } catch {
-        // 既に死んでいれば onExit が来る
-      }
-      this.killTimer = setTimeout(() => {
-        try {
-          process.kill(this.pid, 'SIGKILL');
-        } catch {
-          // すでに終了
-        }
-      }, KILL_GRACE_MS);
+      this.signalGroup('SIGHUP');
+      this.killTimer = setTimeout(() => this.signalGroup('SIGKILL'), KILL_GRACE_MS);
     });
+  }
+
+  /** pty の子はセッションリーダーなので、プロセスグループ全体へ送る。失敗したら pid 単体。 */
+  private signalGroup(sig: NodeJS.Signals): void {
+    try {
+      process.kill(-this.pid, sig);
+    } catch {
+      try {
+        process.kill(this.pid, sig);
+      } catch {
+        // すでに終了
+      }
+    }
   }
 
   dispose(): void {

@@ -2,6 +2,9 @@ import { MisaoClient } from '../client/MisaoClient.js';
 
 const PREFIX = 0x1d; // Ctrl-]
 
+/** alt screen / マウス / bracketed paste / アプリカーソル / SGR / カーソル表示を既定へ戻す。 */
+export const TTY_RESET = '\x1b[0m\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?1l\x1b[?25h';
+
 export interface AttachOptions {
   paneId: string;
   replay: 'raw' | 'snapshot' | 'none';
@@ -57,7 +60,7 @@ export async function attach(client: MisaoClient, opts: AttachOptions): Promise<
       const { forward, detach } = filter.feed(buf);
       if (forward.length > 0 && !opts.readonly) {
         client
-          .request('pane.write', { paneId, dataB64: forward.toString('base64'), source: 'terminal' })
+          .request('pane.write', { paneId, dataB64: forward.toString('base64'), source: 'terminal', clientId })
           .catch(() => undefined);
       }
       if (detach) resolve();
@@ -74,6 +77,25 @@ export async function attach(client: MisaoClient, opts: AttachOptions): Promise<
       })
       .catch(() => undefined);
 
+  const restoreTty = () => {
+    try {
+      process.stdin.setRawMode(false);
+      process.stdout.write(TTY_RESET);
+    } catch {
+      // 復元は best effort
+    }
+  };
+  const onSignal = () => {
+    restoreTty();
+    process.exit(1);
+  };
+  process.once('SIGTERM', onSignal);
+  process.once('SIGHUP', onSignal);
+  process.once('uncaughtException', (e) => {
+    restoreTty();
+    process.stderr.write(`misao-spike: ${e.message}\n`);
+    process.exit(1);
+  });
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stderr.write(`[misao] attached to ${paneId} (Ctrl-] d to detach)\r\n`);
@@ -86,7 +108,9 @@ export async function attach(client: MisaoClient, opts: AttachOptions): Promise<
     if (!client.isClosed) await client.request('pane.detach', { paneId }).catch(() => undefined);
   } finally {
     process.off('SIGWINCH', sendResize);
-    process.stdin.setRawMode(false);
+    process.off('SIGTERM', onSignal);
+    process.off('SIGHUP', onSignal);
+    restoreTty();
     process.stdin.pause();
     process.stderr.write(`\r\n[misao] ${exitReason}\r\n`);
   }
