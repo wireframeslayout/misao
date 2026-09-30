@@ -84,7 +84,7 @@ test('daemon: write / screen / snapshot attach / env 除去', async () => {
     const { paneId } = await client.request<{ paneId: string }>('pane.open', {
       cmd: ['sh', '-c', 'echo "TMUX=[$TMUX] PANE=[$MISAO_PANE_ID] TERM=$TERM"; printf "\\033[31mred\\033[0m\\n"; exec cat'],
     });
-    await client.request('pane.attach', { paneId, clientId: 'c1', replay: 'none' });
+    await client.request('pane.attach', { paneId, clientId: 'c1', replay: 'raw' });
     await waitFor(() => Buffer.concat(chunks).toString().includes('red'));
     const screen = await client.request<{ text: string; altScreen: boolean }>('pane.screen', { paneId });
     assert.match(screen.text, new RegExp(`PANE=\\[${paneId}\\]`));
@@ -109,6 +109,7 @@ test('daemon: write / screen / snapshot attach / env 除去', async () => {
     c2.close();
     await client.request('pane.close', { paneId });
   } finally {
+    delete process.env.TMUX;
     client.close();
     await daemon.shutdown();
   }
@@ -155,18 +156,20 @@ test('snapshot attach: 出力が流れ続ける pane で snapshot + live == pane
   });
 });
 
-test('同じ (stream, pane) の再購読は置き換えで、seq は連続・重複なし', async () => {
+test('同じ (stream, pane) の再購読は置き換えで、since=lastSeq の再購読でも seq は連続・重複なし', async () => {
   await withDaemon(async (_daemon, client) => {
     const { paneId } = await client.request<{ paneId: string }>('pane.open', {
-      cmd: ['sh', '-c', 'sleep 0.5; echo a; echo b; echo c; sleep 3'],
+      cmd: ['sh', '-c', 'echo a; echo b; echo c; sleep 1; echo d; echo e; sleep 3'],
     });
     const seqs: number[] = [];
     client.onNotification((n) => n.method === 'pane.line' && seqs.push(n.params.seq));
     await client.request('pane.subscribe_lines', { paneId, since: 0 });
-    await client.request('pane.subscribe_lines', { paneId, since: 0 });
     await waitFor(() => seqs.length >= 3);
+    await client.request('pane.subscribe_lines', { paneId, since: seqs[seqs.length - 1] });
+    await client.request('pane.subscribe_lines', { paneId, since: seqs[seqs.length - 1] });
+    await waitFor(() => seqs.length >= 5);
     await new Promise((r) => setTimeout(r, 200));
-    assert.deepEqual(seqs, [1, 2, 3]);
+    assert.deepEqual(seqs, [1, 2, 3, 4, 5]);
     await client.request('pane.close', { paneId });
   });
 });
@@ -187,6 +190,10 @@ test('サイズは最後に操作したクライアントが優先される', as
     assert.equal((await info()).sizeOwner, 'A');
     await c2.request('pane.resize', { paneId, cols: 70, rows: 25, clientId: 'B' });
     assert.deepEqual([(await info()).cols, (await info()).sizeOwner], [70, 'B']);
+    // 所有者 B が detach したら、残る A のサイズが適用される
+    await c2.request('pane.detach', { paneId });
+    const after = await info();
+    assert.deepEqual([after.cols, after.rows, after.sizeOwner], [100, 30, 'A']);
     c2.close();
     await client.request('pane.close', { paneId });
   });

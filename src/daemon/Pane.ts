@@ -173,7 +173,10 @@ export class Pane extends EventEmitter {
 
   /** clientId のサイズを記録し、そのクライアントをサイズ所有者にして pty / 端末へ適用する。 */
   resize(cols: number, rows: number, clientId: string | null): void {
-    if (clientId) this.clientSizes.set(clientId, { cols, rows });
+    if (clientId) {
+      this.clientSizes.delete(clientId); // 挿入順 = 操作の新しさ
+      this.clientSizes.set(clientId, { cols, rows });
+    }
     this.sizeOwner = clientId;
     this.cols = cols;
     this.rows = rows;
@@ -189,9 +192,19 @@ export class Pane extends EventEmitter {
     return true;
   }
 
-  forgetClient(clientId: string): void {
+  /**
+   * クライアントの離脱。所有者だった場合は、残るクライアントのうち最後に操作したものの
+   * サイズを適用し、適用した先の clientId を返す (なければ null)。
+   */
+  forgetClient(clientId: string): string | null {
+    const wasOwner = this.sizeOwner === clientId;
     this.clientSizes.delete(clientId);
-    if (this.sizeOwner === clientId) this.sizeOwner = null;
+    if (!wasOwner) return null;
+    this.sizeOwner = null;
+    const last = [...this.clientSizes.entries()].pop();
+    if (!last) return null;
+    this.resize(last[1].cols, last[1].rows, last[0]);
+    return last[0];
   }
 
   async screen(): Promise<{ text: string; cursor: { x: number; y: number }; altScreen: boolean; title: string }> {

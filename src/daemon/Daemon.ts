@@ -365,7 +365,10 @@ export class Daemon {
     const stillAttached = [...this.conns].some((c) => c !== conn && c.attachments.get(paneId)?.clientId === att.clientId);
     if (pane && !stillAttached) {
       pane.clients.delete(att.clientId);
-      pane.forgetClient(att.clientId);
+      const inherited = pane.forgetClient(att.clientId);
+      if (inherited) {
+        this.emitEvent('pane.resized', { paneId, cols: pane.cols, rows: pane.rows, clientId: inherited });
+      }
     }
     this.emitEvent('client.detached', { paneId, clientId: att.clientId });
   }
@@ -402,6 +405,7 @@ export class Daemon {
     ctx.conn.subscriptions.get(key)?.(); // 同じ (stream, pane) の既存購読は置き換える
     ctx.conn.subscriptions.set(key, off);
     ctx.afterReply(() => {
+      if (ctx.conn.subscriptions.get(key) !== off) return; // 直後の再購読で置き換え済み
       if (since !== undefined) for (const e of ring.since(since)) if (e.seq <= head) notify(e.seq, e.item, e.ts);
       for (const [seq, item, ts] of queue) if (seq > head) notify(seq, item, ts);
       queue.length = 0;
