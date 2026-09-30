@@ -31,6 +31,21 @@ apps, TUIs, and SSH terminals are all clients.
 | `@misao/sdk` | Node client with reconnect and `since` tracking |
 | `@misao/bridge`, `@misao/web`, `@misao/profile-*` | Later phases |
 
+## Development
+
+Requires Node.js >= 24.
+
+```bash
+npm ci          # install (builds node-pty natively)
+npm run build   # tsc -b across all packages
+npm run typecheck
+npm test        # node:test via tsx, per workspace (runs against src, no build needed)
+npm run smoke   # run the built CLI directly
+```
+
+During development run the CLI with `node packages/cli/dist/main.js`, or `npx misao`
+(after `npm run build`, run `npm rebuild misao` once to create the bin link).
+
 ## License
 
 [Apache License 2.0](LICENSE). Contributions require agreeing to the [CLA](CLA.md).

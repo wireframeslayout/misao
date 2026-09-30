@@ -1,0 +1,25 @@
+{
+  "name": "misao-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -b && node scripts/fix-bin.mjs",
+    "typecheck": "tsc -b && tsc -p packages/protocol/tsconfig.test.json && tsc -p packages/daemon/tsconfig.test.json && tsc -p packages/sdk-node/tsconfig.test.json && tsc -p packages/cli/tsconfig.test.json",
+    "test": "npm test --workspaces --if-present",
+    "smoke": "node packages/cli/dist/main.js --version",
+    "clean": "tsc -b --clean"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
