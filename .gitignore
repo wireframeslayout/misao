@@ -3,3 +3,4 @@ dist/
 .run/
 *.log
 .env
+*.tsbuildinfo

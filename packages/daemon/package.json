@@ -1,0 +1,16 @@
+{
+  "name": "@misao/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "test": "node --import tsx --test \"test/**/*.test.ts\""
+  },
+  "dependencies": { "@misao/protocol": "0.0.0", "@xterm/headless": "^6.0.0", "node-pty": "^1.1.0" }
+}
