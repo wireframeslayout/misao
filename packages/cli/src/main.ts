@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { PACKAGE } from './index.js';
+import { nodeIo } from './cli-io.js';
+import { run } from './run.js';
 
-if (process.argv.includes('--version')) {
-  console.log(`${PACKAGE} 0.0.0`);
-}
+process.exit(await run(process.argv.slice(2), nodeIo()));
