@@ -6,6 +6,7 @@ import type { PaneInfo } from '@misao/protocol';
 import { AnsiLineAssembler } from './ansi.js';
 import { buildChildEnv } from './child-env.js';
 import { nowIso } from './clock.js';
+import { readForegroundCommand } from './foreground.js';
 import type { Logger } from './log.js';
 import type { AgentProfile } from './profile.js';
 import { SeqRing } from './ring.js';
@@ -172,6 +173,7 @@ export class Pane extends EventEmitter {
 
   /** workspace / window / labels は Daemon が渡す（Pane は親もラベルも知らない）。 */
   info({ workspace, window, labels }: PaneInfoMeta): PaneInfo {
+    const fgCommand = this.state === 'running' ? readForegroundCommand(this.pid, () => this.proc.process) : undefined;
     return {
       paneId: this.id,
       pid: this.pid,
@@ -184,6 +186,7 @@ export class Pane extends EventEmitter {
       exitCode: this.exitCode,
       signal: this.signal,
       ...this.tracker.snapshot(),
+      ...(fgCommand !== undefined && { fgCommand }),
       title: this.title,
       lastOutputAt: this.lastOutputAt,
       cols: this.cols,

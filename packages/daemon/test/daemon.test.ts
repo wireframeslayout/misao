@@ -1030,3 +1030,47 @@ test('DaemonOptions.profiles のプロファイルが cmd に matches した pan
     }
   });
 });
+
+const onLinux = { skip: process.platform !== 'linux' };
+
+test('fgCommand: 前面プロセスに追従し、Ctrl-C でシェルへ戻る', onLinux, async () => {
+  await withDaemon(async (_daemon, client) => {
+    const { paneId } = await openPane(client, ['bash', '--norc', '--noprofile']);
+    const fg = async (): Promise<string | undefined> => (await client.request<PaneInfo>('pane.info', { paneId })).fgCommand;
+    await waitFor(async () => (await fg()) === 'bash');
+    await client.request('pane.write', { paneId, data: 'sleep 30\r', source: 'terminal' });
+    await waitFor(async () => (await fg()) === 'sleep');
+    await client.request('pane.write', { paneId, data: '\x03', source: 'terminal' });
+    await waitFor(async () => (await fg()) === 'bash');
+    const listed = (await client.request<PaneInfo[]>('pane.list')).find((p) => p.paneId === paneId);
+    assert.equal(listed?.fgCommand, 'bash');
+    await client.request('pane.close', { paneId });
+  });
+});
+
+test('fgCommand: インタプリタで動くスクリプトはスクリプト名になる', onLinux, async () => {
+  await withTempDir(async (dir) => {
+    const script = path.join(dir, 'fg-probe.mjs');
+    // テストを動かす node の実行ファイル名に依存しないよう、shebang で PATH の node から起動する
+    fs.writeFileSync(script, '#!/usr/bin/env node\nsetTimeout(() => {}, 60000);\n', { mode: 0o755 });
+    await withDaemon(async (_daemon, client) => {
+      const { paneId } = await openPane(client, ['bash', '--norc', '--noprofile']);
+      const fg = async (): Promise<string | undefined> => (await client.request<PaneInfo>('pane.info', { paneId })).fgCommand;
+      await waitFor(async () => (await fg()) === 'bash');
+      await client.request('pane.write', { paneId, data: `${script}\r`, source: 'terminal' });
+      await waitFor(async () => (await fg()) === 'fg-probe');
+      await client.request('pane.close', { paneId });
+    });
+  });
+});
+
+test('fgCommand: 終了したペインの pane.info / pane.list には載らない', onLinux, async () => {
+  await withDaemon(async (_daemon, client) => {
+    const { paneId } = await openPane(client, ['sh', '-c', 'exit 0']);
+    await waitFor(async () => (await client.request<PaneInfo>('pane.info', { paneId })).processState === 'exited');
+    assert.equal('fgCommand' in (await client.request<PaneInfo>('pane.info', { paneId })), false);
+    const list = await client.request<PaneInfo[]>('pane.list');
+    assert.equal('fgCommand' in list.find((p) => p.paneId === paneId)!, false);
+    await client.request('pane.close', { paneId });
+  });
+});

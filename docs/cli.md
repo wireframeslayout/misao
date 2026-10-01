@@ -76,7 +76,8 @@ Rules worth knowing:
 misao ls [--state blocked|working|idle|exited] [--task N] [--workspace W] [--json]
 ```
 
-Columns: `STATE PANE NAME TASK AGENT CWD LAST`. Order: blocked, working, idle, exited, stopped,
+Columns: `STATE PANE NAME TASK AGENT CWD LAST`. `AGENT` is the pane's foreground command
+(the basename of the launch command when it is not available). Order: blocked, working, idle, exited, stopped,
 unknown; within a state, newest output first. `--state` filters by agent state; `--task` by
 the `task` label (`#` optional); `--workspace` by workspace name. `--json` prints the array
 of pane info objects (see [Protocol](protocol.md#methods)).
