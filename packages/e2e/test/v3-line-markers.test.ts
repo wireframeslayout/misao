@@ -63,8 +63,12 @@ async function runMarkers(id: string, rounds: number, isBurst: boolean): Promise
   const unique = new Set(found);
   assert.deepEqual([...unique].filter((marker) => !expected.includes(marker)), [], '誤検出');
   assert.equal(found.length, unique.size, '重複');
+  assert.ok(seqs.every((seq, i) => i === 0 || seq > seqs[i - 1]!), 'seq が単調増加 (重複・逆行がない)');
   if (!isBurst) assert.deepEqual([gaps, connectionChanges], [[], []], '通常出力では gap も切断も起きない');
-  if (gaps.length === 0) {
+  if (gaps.length > 0) {
+    // 欠けを許すのは、保持範囲 (リング) から落ちたことを知らされた場合だけ
+    assert.deepEqual(gaps.map((gap) => gap.reason).filter((reason) => reason !== 'truncated'), [], 'gap の理由は truncated だけ');
+  } else {
     assert.deepEqual(expected.filter((marker) => !unique.has(marker)), [], '取り逃したマーカー');
     assert.ok(seqs.every((seq, i) => i === 0 || seq === seqs[i - 1]! + 1), 'seq が連続している');
   }
