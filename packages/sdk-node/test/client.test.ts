@@ -293,6 +293,42 @@ test('close while connected does not reconnect', async () => {
   await assert.rejects(client.connect(), /closed/);
 });
 
+test('an incompatible daemon on reconnect stops reconnecting and closes with the cause', async () => {
+  await client.connect();
+  daemon.protocolVersion = '99.0.0';
+  daemon.dropConnections();
+  await waitFor(() => states.at(-1)?.status === 'closed');
+  const closed = states.at(-1);
+  assert.ok(closed?.status === 'closed' && closed.cause instanceof MisaoProtocolVersionError);
+  const attempts = daemon.received('server.info').length;
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(daemon.received('server.info').length, attempts);
+  await assert.rejects(client.request('server.info', {}), MisaoConnectionError);
+});
+
+test('close while the setup is pending closes the socket and rejects connect', async () => {
+  daemon.handle('server.info', () => 'hold');
+  const connecting = client.connect();
+  await waitFor(() => daemon.isHolding('server.info'));
+  client.close();
+  await assert.rejects(connecting, MisaoConnectionError);
+  await waitFor(() => daemon.connectionCount === 0);
+  assert.deepEqual(states, [{ status: 'closed' }]);
+});
+
+test('a gap listener can issue requests while streams are being restored', async () => {
+  await client.connect();
+  await client.subscribeEvents(() => undefined);
+  const recovered: Promise<unknown>[] = [];
+  client.onGap(() => recovered.push(client.request('server.info', {})));
+  const before = connectedCount();
+  await daemon.restart(ulid(2));
+  await waitFor(() => connectedCount() === before + 1);
+  assert.equal(recovered.length, 1);
+  const info = (await recovered[0]) as { epoch: string };
+  assert.equal(info.epoch, ulid(2));
+});
+
 test('a live-only subscription with an epoch but no since starts at head', async () => {
   daemon.handle('events.subscribe', () => ({ result: { gap: false, head: 7, epoch: daemon.epoch } }));
   await client.connect();

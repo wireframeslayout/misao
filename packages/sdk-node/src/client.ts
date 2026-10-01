@@ -18,7 +18,8 @@ export interface MisaoClientOptions {
 export type ConnectionState =
   | { status: 'connected' }
   | { status: 'reconnecting'; attempt: number; delayMs: number; cause: Error }
-  | { status: 'closed' };
+  /** cause は再接続先がプロトコル非互換で打ち切ったとき。close() による終了では無い。 */
+  | { status: 'closed'; cause?: MisaoProtocolVersionError };
 
 type Phase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
 
@@ -35,7 +36,10 @@ export class MisaoClient {
   private readonly stateListeners = new Listeners<ConnectionState>();
   private readonly notificationListeners = new Listeners<Notification>();
   private phase: Phase = 'idle';
+  /** 要求・購読に使う接続。server.info の互換確認が済んだ時点で入る (ストリーム復元中も使える)。 */
   private conn: RpcConnection | undefined;
+  /** 確立途中の接続。close() で確実に閉じるために持つ。 */
+  private establishing: RpcConnection | undefined;
   private cancelSleep: (() => void) | undefined;
 
   constructor({ socketPath, backoff }: MisaoClientOptions) {
@@ -43,16 +47,20 @@ export class MisaoClient {
     this.backoff = { ...DEFAULT_BACKOFF, ...backoff };
   }
 
-  /** 初回接続。失敗とプロトコル非互換は reject する。つながった後は close() まで再接続し続ける。 */
+  /**
+   * 初回接続。失敗とプロトコル非互換は reject する。つながった後は close() まで再接続し続ける
+   * (再接続先がプロトコル非互換なら打ち切って closed になる)。
+   */
   async connect(): Promise<void> {
     if (this.phase !== 'idle') throw new Error(`connect() is not allowed while ${this.phase}`);
     this.phase = 'connecting';
     try {
-      this.conn = await this.establish();
+      await this.establish();
     } catch (error) {
       if (!this.isClosed()) this.phase = 'idle'; // close() が割り込んでいたら closed のまま
       throw error;
     }
+    if (this.isClosed()) throw new MisaoConnectionError('client closed during connect');
     this.phase = 'connected';
     this.stateListeners.emit({ status: 'connected' });
   }
@@ -89,12 +97,18 @@ export class MisaoClient {
   }
 
   close(): void {
+    this.shutdown({ status: 'closed' });
+  }
+
+  private shutdown(state: ConnectionState & { status: 'closed' }): void {
     if (this.phase === 'closed') return;
     this.phase = 'closed';
     this.cancelSleep?.();
+    this.establishing?.close();
     this.conn?.close();
+    this.establishing = undefined;
     this.conn = undefined;
-    this.stateListeners.emit({ status: 'closed' });
+    this.stateListeners.emit(state);
   }
 
   private isClosed(): boolean {
@@ -106,9 +120,17 @@ export class MisaoClient {
     return this.conn;
   }
 
-  /** 接続して server.info を確認し、ストリームを復元する。失敗したら接続を閉じて throw する。 */
-  private async establish(): Promise<RpcConnection> {
+  /**
+   * 接続して server.info を確認し、ストリームを復元する。互換確認の後は this.conn に置くので、
+   * 復元中に出る gap の通知から request() で再取得できる。失敗したら接続を閉じて throw する。
+   */
+  private async establish(): Promise<void> {
     const conn = await RpcConnection.connect(this.socketPath);
+    if (this.isClosed()) {
+      conn.close();
+      throw new MisaoConnectionError('client closed during connect');
+    }
+    this.establishing = conn;
     conn.onNotification((notification) => {
       if (!this.subscriber.dispatch(notification)) this.notificationListeners.emit(notification);
     });
@@ -118,18 +140,23 @@ export class MisaoClient {
       if (!isCompatibleProtocolVersion(info.protocolVersion, PROTOCOL_VERSION)) {
         throw new MisaoProtocolVersionError(info.protocolVersion, PROTOCOL_VERSION);
       }
+      this.conn = conn;
       await this.subscriber.restore(conn, info.epoch);
-      if (this.isClosed() || conn.isClosed) throw new MisaoConnectionError('connection closed during setup');
+      if (conn.isClosed) throw new MisaoConnectionError('connection closed during setup');
     } catch (error) {
+      if (this.conn === conn) this.conn = undefined;
       conn.close();
       throw error;
+    } finally {
+      if (this.establishing === conn) this.establishing = undefined;
     }
-    return conn;
   }
 
+  /** 確立済みの接続が切れたときだけ再接続を始める。確立途中の切断は establish が throw して扱う。 */
   private handleDisconnect(conn: RpcConnection, reason: MisaoConnectionError): void {
     if (conn !== this.conn) return;
     this.conn = undefined;
+    if (this.phase !== 'connected') return;
     this.phase = 'reconnecting';
     void this.reconnect(reason);
   }
@@ -139,14 +166,21 @@ export class MisaoClient {
     for (let attempt = 1; this.phase === 'reconnecting'; attempt++) {
       const delayMs = computeBackoffDelay(attempt, this.backoff);
       this.stateListeners.emit({ status: 'reconnecting', attempt, delayMs, cause });
+      if (this.phase !== 'reconnecting') return; // リスナーが close() した
       await this.sleep(delayMs);
       if (this.phase !== 'reconnecting') return;
       try {
-        this.conn = await this.establish();
+        await this.establish();
       } catch (error) {
+        // 非互換は待っても直らない。打ち切って利用側へ知らせる (fail fast)。
+        if (error instanceof MisaoProtocolVersionError) {
+          this.shutdown({ status: 'closed', cause: error });
+          return;
+        }
         cause = error as Error;
         continue;
       }
+      if (this.phase !== 'reconnecting') return; // 確立直後に close() された
       this.phase = 'connected';
       this.stateListeners.emit({ status: 'connected' });
       return;
