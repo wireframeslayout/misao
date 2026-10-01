@@ -37,7 +37,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isSeq(value: unknown): boolean {
-  return Number.isInteger(value) && (value as number) >= 0;
+  return Number.isSafeInteger(value) && (value as number) >= 0; // z.int() と同じく安全な整数に限る
 }
 
 function invalid(method: string): HotResult {

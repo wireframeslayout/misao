@@ -25,6 +25,7 @@ const cases: Case[] = [
   { name: 'pane.line: seq 欠落', json: () => line({ ts: TS, paneId: PANE_ID, text: 'hi' }), expect: 'invalid' },
   { name: 'pane.line: seq が小数', json: () => line({ ...validLine, seq: 1.5 }), expect: 'invalid' },
   { name: 'pane.line: seq が負', json: () => line({ ...validLine, seq: -1 }), expect: 'invalid' },
+  { name: 'pane.line: seq が安全な整数の範囲外', json: () => line({ ...validLine, seq: 2 ** 53 }), expect: 'invalid' },
   { name: 'pane.line: seq が文字列', json: () => line({ ...validLine, seq: '1' }), expect: 'invalid' },
   { name: 'pane.line: text が数値', json: () => line({ ...validLine, text: 1 }), expect: 'invalid' },
   { name: 'pane.line: text 欠落', json: () => line({ seq: 1, ts: TS, paneId: PANE_ID }), expect: 'invalid' },
