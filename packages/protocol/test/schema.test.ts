@@ -55,3 +55,9 @@ test('description が出力に含まれる', () => {
 test('server.schema の result スキーマが生成結果を受け入れる', () => {
   assert.equal(methods['server.schema'].result.safeParse(schema).success, true);
 });
+
+test('pane.write の data と dataB64 の排他が schema 上で表現される', () => {
+  const branches = schema.methods['pane.write']?.params['anyOf'] as { properties: Record<string, unknown> }[];
+  assert.deepEqual(branches[0]?.properties['dataB64'], { not: {} });
+  assert.deepEqual(branches[1]?.properties['data'], { not: {} });
+});

@@ -70,8 +70,8 @@ export const paneMethods = {
   },
   'pane.write': {
     params: z.union([
-      z.object({ ...writeBase, data: z.string() }),
-      z.object({ ...writeBase, dataB64: z.string() }),
+      z.object({ ...writeBase, data: z.string(), dataB64: z.never().optional() }),
+      z.object({ ...writeBase, dataB64: z.string(), data: z.never().optional() }),
     ]),
     result: OkResultSchema,
   },

@@ -76,8 +76,7 @@ test('購読の since=-1 は拒否', () => {
 test('pane.write は data / dataB64 のどちらか一方', () => {
   assert.equal(params('pane.write', { paneId: PANE_ID, dataB64: 'AA==' }), true);
   assert.equal(params('pane.write', { paneId: PANE_ID }), false);
-  const both = methods['pane.write'].params.parse({ paneId: PANE_ID, data: 'x', dataB64: 'AA==' });
-  assert.equal(Object.keys(both).length, 2, 'union の最初の枝が採用され、もう一方は捨てられる');
+  assert.equal(params('pane.write', { paneId: PANE_ID, data: 'x', dataB64: 'AA==' }), false);
 });
 
 test('pane.attach の mode / replay', () => {
