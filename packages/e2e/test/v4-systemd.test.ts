@@ -11,13 +11,14 @@ import { nodeCmd } from './helpers/node-cmd.js';
 import { skipUnless } from './helpers/optin.js';
 import { scale } from './helpers/scale.js';
 import { deployUnitWithExecStart, installUnit, mainPid, removeUnit, systemctl, uniqueUnitName } from './helpers/systemd-units.js';
-import { waitFor } from './helpers/wait.js';
+import { sleep, waitFor } from './helpers/wait.js';
 
 const OPTIONS = skipUnless('MISAO_E2E_SYSTEMD', 'systemd のユーザー unit を作る');
 const CLI_MAIN = new URL('../../cli/src/main.ts', import.meta.url).pathname;
 const FAKE_HUB = new URL('../src/fixtures/fake-hub.ts', import.meta.url).pathname;
 const ROUNDS = scale(60, 400);
 const DELAY_MS = 300;
+const RESTART_GRACE_MS = 3000;
 const PLAN = scale<Array<'restart' | 'kill9'>>(['restart', 'kill9'], ['restart', 'restart', 'restart', 'restart', 'restart', 'kill9', 'kill9']);
 
 const daemonUnit = uniqueUnitName('daemon');
@@ -63,6 +64,8 @@ test('v4: systemd ユーザー unit の hub を restart / kill -9 しても、�
   await waitFor(() => fs.existsSync(socket), 'the daemon socket', { timeoutMs: 15_000 });
   const daemonPid = mainPid(daemonUnit);
   assert.ok(daemonPid > 0, 'デーモンの unit が起動している');
+  assert.equal(systemctl('show', '-p', 'KillMode', '--value', daemonUnit), 'process', 'deploy/misao.service の KillMode が効いている');
+  assert.equal(systemctl('show', '-p', 'Restart', '--value', daemonUnit), 'on-failure', 'deploy/misao.service の Restart が効いている');
   client = new MisaoClient({ socketPath: socket });
   await client.connect();
 
@@ -93,4 +96,11 @@ test('v4: systemd ユーザー unit の hub を restart / kill -9 しても、�
 
   await waitForExit(client, agent, scale(120_000, 6 * 60_000));
   await assertHubLogComplete(client, { logFile, agentPaneId: agent, summaryFile, killCount: PLAN.filter((how) => how === 'kill9').length });
+
+  // 正常な stop は失敗ではないので、Restart=on-failure でも再起動されない (RestartSec=1 より長く待つ)
+  systemctl('stop', hubUnit);
+  systemctl('stop', daemonUnit);
+  await sleep(RESTART_GRACE_MS);
+  assert.equal(systemctl('is-active', daemonUnit), 'inactive', 'stop したデーモンは再起動しない');
+  assert.equal(mainPid(daemonUnit), 0, 'stop したデーモンのプロセスが残っていない');
 });
