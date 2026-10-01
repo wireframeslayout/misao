@@ -65,13 +65,13 @@ async function runMarkers(id: string, rounds: number, isBurst: boolean): Promise
   assert.equal(found.length, unique.size, '重複');
   assert.ok(seqs.every((seq, i) => i === 0 || seq > seqs[i - 1]!), 'seq が単調増加 (重複・逆行がない)');
   if (!isBurst) assert.deepEqual([gaps, connectionChanges], [[], []], '通常出力では gap も切断も起きない');
-  if (gaps.length > 0) {
-    // 欠けを許すのは、保持範囲 (リング) から落ちたことを知らされた場合だけ
-    assert.deepEqual(gaps.map((gap) => gap.reason).filter((reason) => reason !== 'truncated'), [], 'gap の理由は truncated だけ');
-  } else {
-    assert.deepEqual(expected.filter((marker) => !unique.has(marker)), [], '取り逃したマーカー');
-    assert.ok(seqs.every((seq, i) => i === 0 || seq === seqs[i - 1]! + 1), 'seq が連続している');
-  }
+  // seq の不連続 (先頭が 1 でない場合を含む) は、gap で知らされた回数を超えてはならない (黙って失わない)。
+  const breaks = seqs.filter((seq, i) => seq !== (seqs[i - 1] ?? 0) + 1).length;
+  assert.ok(breaks <= gaps.length, `seq の不連続 ${breaks} 件が gap ${gaps.length} 件を超えている`);
+  assert.deepEqual(gaps.map((gap) => gap.reason).filter((reason) => reason !== 'truncated'), [], 'gap の理由は truncated だけ');
+  // 取り逃しを許すのは、seq が実際に欠けた (不連続がある) ときだけ。
+  // TODO(#22): 大量出力で購読者が切断される退行を直したら、burst も gap なし・取り逃しなしの厳しい条件に戻す。
+  if (breaks === 0) assert.deepEqual(expected.filter((marker) => !unique.has(marker)), [], '取り逃したマーカー');
   sub.close();
   await client.request('pane.close', { paneId });
 }
