@@ -85,6 +85,42 @@ test('l は「抜けました」を出さずに一覧へ。番号で別のペイ
   }
 });
 
+test('一覧で選んだ先が選ぶまでに閉じられた・終了したら「すでに終了しています」で一覧に戻る', async () => {
+  const daemon = await startTestDaemon();
+  try {
+    const a = await openTestPane(daemon.client, ECHO('a'), { labels: { name: 'stay-a' } });
+    const closed = await openTestPane(daemon.client, ECHO('c'), { labels: { name: 'gone-closed' } });
+    const exiting = await openTestPane(daemon.client, ['sh', '-c', 'read x; exit 3'], { labels: { name: 'gone-exited' } });
+    const { io, end } = await startLoop(daemon, a);
+    await waitFor(() => bannerCount(io) === 1);
+    io.stdin.write(key('l'));
+    await waitFor(() => io.out().includes('番号で入る'));
+    const closedRow = io.out().split('\n').find((l) => l.includes('gone-closed'))!;
+    const closedNumber = /^\s*(\d+)/.exec(closedRow)![1]!;
+
+    await daemon.client.request('pane.close', { paneId: closed });
+    io.stdin.write(`${closedNumber}\n`);
+    await waitFor(() => io.out().includes('(未登録) gone-closed はすでに終了しています'));
+    await waitFor(() => (io.out().match(/番号で入る/g)?.length ?? 0) === 2);
+
+    // 2 回目の一覧での番号を取り直してから、そのペインを終了させる。
+    const secondList = io.out().slice(io.out().lastIndexOf('すでに終了しています'));
+    const exitingRow = secondList.split('\n').find((l) => l.includes('gone-exited'))!;
+    await daemon.client.request('pane.write', { paneId: exiting, data: 'x\r' });
+    await waitFor(async () => (await daemon.client.request('pane.info', { paneId: exiting })).processState === 'exited');
+    io.stdin.write(`${/^\s*(\d+)/.exec(exitingRow)![1]}\n`);
+    await waitFor(() => io.out().includes('(未登録) gone-exited はすでに終了しています'));
+    await waitFor(() => (io.out().match(/番号で入る/g)?.length ?? 0) === 3);
+
+    io.stdin.write('q\n');
+    assert.equal(await end, 0, '選んだ先が終わっていてもループ全体は失敗にしない');
+    assert.equal(bannerCount(io), 1, '終了済みのペインには入らない');
+    await daemon.client.request('pane.close', { paneId: a });
+  } finally {
+    await daemon.stop();
+  }
+});
+
 test('一覧の n は origin=terminal の新しいシェルを作って入る', async () => {
   const daemon = await startTestDaemon();
   try {
