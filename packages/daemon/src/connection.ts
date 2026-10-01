@@ -2,8 +2,11 @@ import type * as net from 'node:net';
 import { ErrorCode, LineSplitter, encodeMessage } from '@misao/protocol';
 import type { RpcMessage } from '@misao/protocol';
 
-/** これ以上送信キューが溜まった接続 (遅い consumer) は切る。 */
+/** attach (pane.output の raw) と応答で、これ以上送信キューが溜まった接続 (遅い consumer) は切る。行・イベントの購読は pull 型でこの上限を使わない。 */
 export const MAX_WRITABLE_BYTES = 16 * 1024 * 1024;
+
+/** 購読ストリームはキューがこれ未満の間だけ送る。超えたら drain を待つ (送信キューを小さく保つ)。 */
+export const STREAM_HIGH_WATER_BYTES = 1024 * 1024;
 
 export interface ConnectionHandlers {
   /** 1 行ぶんの JSON をパースした値（オブジェクトとは限らない）。 */
@@ -18,6 +21,7 @@ export class Connection {
   /** `${stream}:${paneId}` → off。同じキーの再購読は既存を置き換える (二重配信の防止)。 */
   readonly subscriptions = new Map<string, () => void>();
   closed = false;
+  private readonly drainOffs = new Set<() => void>();
   private rejecting = false;
 
   constructor(
@@ -40,6 +44,7 @@ export class Connection {
       this.closed = true;
       for (const off of this.subscriptions.values()) off();
       this.subscriptions.clear();
+      for (const off of [...this.drainOffs]) off();
       handlers.onClose(this);
     });
   }
@@ -73,6 +78,22 @@ export class Connection {
       return;
     }
     this.socket.write(encodeMessage(msg));
+  }
+
+  /** 購読ストリームが続きを送ってよいか。送信キューが STREAM_HIGH_WATER_BYTES 未満で、接続が生きているとき。 */
+  isStreamWritable(): boolean {
+    return !this.closed && !this.socket.destroyed && this.socket.writableLength < STREAM_HIGH_WATER_BYTES;
+  }
+
+  /** 送信キューが空になったときに fn を呼ぶ。戻り値で解除する (close でも解除される)。 */
+  onDrain(fn: () => void): () => void {
+    this.socket.on('drain', fn);
+    const off = (): void => {
+      this.socket.off('drain', fn);
+      this.drainOffs.delete(off);
+    };
+    this.drainOffs.add(off);
+    return off;
   }
 
   notify(method: string, seq: number, ts: string, params: Record<string, unknown>): void {
