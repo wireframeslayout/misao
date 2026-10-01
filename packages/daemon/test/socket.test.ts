@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import fsPromises from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { after, afterEach, before, test } from 'node:test';
+import { after, afterEach, before, mock, test } from 'node:test';
 import { ensureSocketDir, listenUnixSocket } from '../src/socket.js';
 
 let root: string;
@@ -60,7 +62,7 @@ test('ensureSocketDir: シンボリックリンクは理由付きで拒否', asy
   await assert.rejects(ensureSocketDir(path.join(link, 'misao.sock')), /symbolic link/);
 });
 
-test('listenUnixSocket: ソケットは 0o600、umask は復元される', async () => {
+test('listenUnixSocket: umask 0o022 でもソケットは 0o600 になり、umask は変更しない', async () => {
   process.umask(0o022);
   const dir = path.join(root, 'sock');
   const socketPath = path.join(dir, 'misao.sock');
@@ -76,11 +78,10 @@ test('listenUnixSocket: ソケットは 0o600、umask は復元される', async
   }
 });
 
-test('listenUnixSocket: listen 失敗でも umask を復元して reject', async () => {
-  process.umask(0o022);
+test('listenUnixSocket: listen 失敗は reject し error リスナーを残さない', async () => {
   const server = createServer();
   await assert.rejects(listenUnixSocket(server, path.join(root, 'nonexistent-dir', 'x.sock')));
-  assert.equal(process.umask(), 0o022);
+  assert.equal(server.listenerCount('error'), 0);
 });
 
 test('listenUnixSocket: listen が同期で例外を投げても error リスナーを残さない', async () => {
@@ -94,6 +95,26 @@ test('listenUnixSocket: listen が同期で例外を投げても error リスナ
     await assert.rejects(listenUnixSocket(server, path.join(dir, 'other.sock')));
     assert.equal(server.listenerCount('error'), before);
   } finally {
+    server.close();
+  }
+});
+
+test('listenUnixSocket: chmod に失敗したら server を閉じて reject', async () => {
+  const dir = path.join(root, 'chmod-fail');
+  const socketPath = path.join(dir, 'misao.sock');
+  await ensureSocketDir(socketPath);
+  const server = createServer();
+  const failure = new Error('chmod failed');
+  mock.method(fsPromises, 'chmod', async () => {
+    throw failure;
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(listenUnixSocket(server, socketPath), failure);
+    assert.equal(server.listening, false);
+  } finally {
+    mock.restoreAll();
+    syncBuiltinESMExports();
     server.close();
   }
 });

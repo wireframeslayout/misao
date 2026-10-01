@@ -4,7 +4,6 @@ import path from 'node:path';
 
 const DIR_MODE = 0o700;
 const SOCKET_MODE = 0o600;
-const SOCKET_UMASK = 0o177;
 const GROUP_OTHER_BITS = 0o077;
 
 /**
@@ -35,14 +34,13 @@ export async function ensureSocketDir(socketPath: string): Promise<void> {
 /**
  * Unix ソケットで listen し、ソケットファイルを mode 600 にする。
  *
- * bind 時の権限を確定させるため `process.umask(0o177)` の下で listen する。
- * umask はプロセス全体に効くため、listen 呼び出しの間（同期区間）だけ設定し、
- * try/finally で必ず元に戻す。その後、念のため chmod 0o600 を行う。
+ * 接続の可否は親ディレクトリ（ensureSocketDir で 700 を検証済み）で守り、
+ * listen 後に chmod 0o600 する。umask はプロセス全体（libuv のスレッドプールを含む）に
+ * 効くため操作しない。chmod に失敗したら server を閉じてから例外を投げる。
  */
 export async function listenUnixSocket(server: Server, socketPath: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    const previousUmask = process.umask(SOCKET_UMASK);
     try {
       server.listen(socketPath, () => {
         server.off('error', reject);
@@ -51,9 +49,12 @@ export async function listenUnixSocket(server: Server, socketPath: string): Prom
     } catch (error) {
       server.off('error', reject);
       throw error;
-    } finally {
-      process.umask(previousUmask);
     }
   });
-  await chmod(socketPath, SOCKET_MODE);
+  try {
+    await chmod(socketPath, SOCKET_MODE);
+  } catch (error) {
+    server.close();
+    throw error;
+  }
 }
