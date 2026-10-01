@@ -46,7 +46,7 @@ describe('引数まわり (デーモン不要)', () => {
     assert.match(none.err, /コマンドを指定してください/);
     const help = await misao(undefined, ['--help']);
     assert.equal(help.code, 0);
-    for (const name of ['ls', 'new', 'kill', 'send', 'screen', 'tail', 'events', 'label', 'status', 'schema']) {
+    for (const name of ['ls', 'new', 'kill', 'send', 'screen', 'tail', 'events', 'label', 'status', 'schema', 'serve']) {
       assert.match(help.out, new RegExp(`^  ${name} `, 'm'), name);
     }
   });

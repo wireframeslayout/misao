@@ -7,6 +7,7 @@ import { newCommand } from './new.js';
 import { schemaCommand } from './schema.js';
 import { screenCommand } from './screen.js';
 import { sendCommand } from './send.js';
+import { serveCommand } from './serve.js';
 import { statusCommand } from './status.js';
 import { tailCommand } from './tail.js';
 
@@ -21,4 +22,5 @@ export const COMMANDS: readonly Command[] = [
   eventsCommand,
   labelCommand,
   schemaCommand,
+  serveCommand,
 ];
