@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ErrorCode } from '@misao/protocol';
 import type { Pane } from '../src/pane.js';
 import { PaneRegistry } from '../src/pane-registry.js';
-import type { PaneRecord } from '../src/pane-registry.js';
+import type { PaneRecord } from '../src/model.js';
 import { RpcFailure } from '../src/rpc-error.js';
 import { newPaneId, newWindowId } from '../src/ulid.js';
 

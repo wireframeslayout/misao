@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as z from 'zod';
+import type { PaneRecord, WorkspaceDef } from './model.js';
 import { DimensionSchema, LabelsSchema, PaneIdSchema, WindowIdSchema, WindowNameSchema, WorkspaceNameSchema } from '@misao/protocol';
 
 const PersistedWindowSchema = z.strictObject({ id: WindowIdSchema, name: WindowNameSchema });
@@ -9,7 +10,6 @@ const PersistedWorkspaceSchema = z.strictObject({
   windows: z.array(PersistedWindowSchema),
 });
 
-/** env は pane.open の env パラメータ分のみ。ephemeralEnv は含めない。 */
 const PersistedPaneSchema = z.strictObject({
   paneId: PaneIdSchema,
   windowId: WindowIdSchema,
@@ -21,7 +21,26 @@ const PersistedPaneSchema = z.strictObject({
   rows: DimensionSchema,
 });
 
-/** workspace 名・window ID・pane ID の重複と、存在しない window への所属を、読み込み時に弾く。 */
+export interface PersistedState {
+  version: 1;
+  workspaces: WorkspaceDef[];
+  panes: PaneRecord[];
+}
+
+/** workspace 名・window ID・pane ID の重複と、存在しない window への所属。問題が無ければ空。 */
+export function checkConsistency(state: PersistedState): string[] {
+  const issues: string[] = [];
+  const windowIds = new Set(state.workspaces.flatMap((w) => w.windows.map((win) => win.id)));
+  const windowCount = state.workspaces.reduce((n, w) => n + w.windows.length, 0);
+  if (new Set(state.workspaces.map((w) => w.name)).size !== state.workspaces.length) issues.push('duplicate workspace name');
+  if (windowIds.size !== windowCount) issues.push('duplicate window id');
+  if (new Set(state.panes.map((p) => p.paneId)).size !== state.panes.length) issues.push('duplicate pane id');
+  for (const p of state.panes) {
+    if (!windowIds.has(p.windowId)) issues.push(`pane ${p.paneId}: unknown window ${p.windowId}`);
+  }
+  return issues;
+}
+
 const PersistedStateSchema = z
   .strictObject({
     version: z.literal(1),
@@ -29,22 +48,8 @@ const PersistedStateSchema = z
     panes: z.array(PersistedPaneSchema),
   })
   .superRefine((state, ctx) => {
-    const windowIds = new Set(state.workspaces.flatMap((w) => w.windows.map((win) => win.id)));
-    const workspaceNames = new Set(state.workspaces.map((w) => w.name));
-    const windowCount = state.workspaces.reduce((n, w) => n + w.windows.length, 0);
-    if (workspaceNames.size !== state.workspaces.length) ctx.addIssue({ code: 'custom', message: 'duplicate workspace name' });
-    if (windowIds.size !== windowCount) ctx.addIssue({ code: 'custom', message: 'duplicate window id' });
-    if (new Set(state.panes.map((p) => p.paneId)).size !== state.panes.length) {
-      ctx.addIssue({ code: 'custom', message: 'duplicate pane id' });
-    }
-    for (const p of state.panes) {
-      if (!windowIds.has(p.windowId)) ctx.addIssue({ code: 'custom', message: `pane ${p.paneId}: unknown window ${p.windowId}` });
-    }
-  });
-
-export type PersistedWorkspace = z.output<typeof PersistedWorkspaceSchema>;
-export type PersistedPane = z.output<typeof PersistedPaneSchema>;
-export type PersistedState = z.output<typeof PersistedStateSchema>;
+    for (const message of checkConsistency(state)) ctx.addIssue({ code: 'custom', message });
+  }) satisfies z.ZodType<PersistedState>;
 
 /** ファイルが無ければ空の状態。壊れていたり未知の version なら例外 (起動を止める)。 */
 export function loadPersistedState(path: string): PersistedState {

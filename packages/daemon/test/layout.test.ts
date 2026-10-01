@@ -48,11 +48,11 @@ test('close は削除した windowId 群を返し、window の close は他を�
   layout.createWorkspace('a');
   const w1 = layout.createWindow('a', 'x');
   const w2 = layout.createWindow('a', 'y');
-  assert.deepEqual(layout.closeWindows([w1.windowId, `w_${ulid()}`]), [w1.windowId]);
+  layout.closeWindow(w1.windowId);
   expectFailure(() => layout.windowRef(w1.windowId), ErrorCode.WindowNotFound);
   assert.deepEqual(layout.closeWorkspace('a'), [w2.windowId]);
   expectFailure(() => layout.closeWorkspace('a'), ErrorCode.WorkspaceNotFound);
-  assert.deepEqual(layout.closeWindows([w2.windowId]), []);
+  expectFailure(() => layout.closeWindow(w2.windowId), ErrorCode.WindowNotFound);
 });
 
 test('resolveWindow: 省略時は default を作り、2 回目以降は再利用する', () => {
@@ -85,4 +85,34 @@ test('toPersisted / restore で往復し、list は workspace 付きの window �
   const restored = new Layout();
   restored.restore(layout.toPersisted());
   assert.deepEqual(restored.list(), [{ name: 'a', windows: [{ windowId: w.windowId, name: 'x', workspace: 'a' }] }]);
+});
+
+test('closing 中の workspace / window には作成・解決・rename・二重 close を拒否し、cancel で戻る', () => {
+  const layout = new Layout();
+  layout.createWorkspace('a');
+  const w = layout.createWindow('a', 'x');
+  assert.deepEqual(layout.beginCloseWorkspace('a'), [w.windowId]);
+  assert.throws(() => layout.createWindow('a', 'y'), /closing/);
+  assert.throws(() => layout.resolveWindow(w.windowId), /closing/);
+  assert.throws(() => layout.renameWorkspace('a', 'b'), /closing/);
+  assert.throws(() => layout.beginCloseWorkspace('a'), /closing/);
+  assert.throws(() => layout.beginCloseWindow(w.windowId), /closing/);
+  expectFailure(() => layout.createWorkspace('a'), ErrorCode.AlreadyExists);
+  layout.cancelCloseWorkspace('a');
+  assert.doesNotThrow(() => layout.createWindow('a', 'y'));
+  assert.doesNotThrow(() => layout.resolveWindow(w.windowId));
+});
+
+test('closing の window は既定 window として使い回さず、close 完了で印も消える', () => {
+  const layout = new Layout();
+  const def = layout.resolveWindow(undefined);
+  layout.beginCloseWindow(def.window.id);
+  const next = layout.resolveWindow(undefined);
+  assert.notEqual(next.window.id, def.window.id);
+  assert.equal(next.createdWindow, true);
+  layout.closeWindow(def.window.id);
+  layout.beginCloseWorkspace('default');
+  layout.closeWorkspace('default');
+  layout.createWorkspace('default');
+  assert.doesNotThrow(() => layout.createWindow('default', 'again'));
 });

@@ -14,15 +14,17 @@ import { Connection } from './connection.js';
 import { EventLog } from './event-log.js';
 import { parseParams } from './params.js';
 import type { ParsedParams } from './params.js';
-import { Pane } from './pane.js';
+import type { Pane } from './pane.js';
 import { RpcFailure } from './rpc-error.js';
 import { acquirePidFile } from './pid-file.js';
 import { Layout } from './layout.js';
-import type { ResolvedWindow } from './layout.js';
 import { createLayoutHandlers } from './layout-handlers.js';
 import type { LayoutMethod } from './layout-handlers.js';
 import { PaneRegistry } from './pane-registry.js';
+import { PaneLifecycle } from './pane-lifecycle.js';
 import { loadPersistedState, savePersistedState } from './persistence.js';
+import type { PersistedState } from './persistence.js';
+import { StatePersister } from './state-persister.js';
 import { ensureSocketDir, listenUnixSocket, removeStaleSocket } from './socket.js';
 import { subscribeStream } from './stream.js';
 import type { RequestContext } from './stream.js';
@@ -57,6 +59,8 @@ export interface DaemonOptions {
   pidPath: string;
   /** persistence.json の場所。 */
   statePath: string;
+  /** 保存の実体。省略時は savePersistedState (ファイルへ原子的に書く)。 */
+  saveState?: (path: string, state: PersistedState) => void;
   log?: (msg: string) => void;
 }
 
@@ -67,6 +71,8 @@ export class Daemon {
   private readonly log: (msg: string) => void;
   private readonly registry = new PaneRegistry();
   private readonly layout = new Layout();
+  private readonly persister: StatePersister;
+  private readonly lifecycle: PaneLifecycle;
   private readonly events = new EventLog();
   private readonly conns = new Set<Connection>();
   private server: net.Server | undefined;
@@ -80,10 +86,24 @@ export class Daemon {
     this.pidPath = opts.pidPath;
     this.statePath = opts.statePath;
     this.log = opts.log ?? ((m) => process.stderr.write(`[misao ${nowIso()}] ${m}\n`));
+    const save = opts.saveState ?? savePersistedState;
+    this.persister = new StatePersister({
+      snapshot: () => ({ version: 1, workspaces: this.layout.toPersisted(), panes: this.registry.toPersisted() }),
+      save: (state) => save(this.statePath, state),
+      log: this.log,
+    });
+    this.lifecycle = new PaneLifecycle({
+      socketPath: this.socketPath,
+      layout: this.layout,
+      registry: this.registry,
+      events: this.events,
+      persister: this.persister,
+      releasePane: (id) => this.releasePane(id),
+    });
     this.handlers = {
       'server.info': () => this.serverInfo(),
       'server.schema': () => buildProtocolJsonSchema(),
-      'pane.open': (p) => this.paneOpen(p),
+      'pane.open': (p) => this.lifecycle.open(p),
       'pane.info': (p) => this.info(p.paneId),
       'pane.list': (p) => this.paneList(p),
       'pane.write': (p) => this.paneWrite(p),
@@ -93,18 +113,17 @@ export class Daemon {
       'pane.detach': (p, ctx) => this.paneDetach(p, ctx),
       'pane.subscribe_lines': (p, ctx) => this.subscribeLines(p, ctx),
       'events.subscribe': (p, ctx) => this.subscribeEvents(p, ctx),
-      'pane.set_label': (p) => this.paneSetLabel(p),
+      'pane.set_label': (p) => this.lifecycle.setLabel(p),
       'pane.close': async (p) => {
-        await this.closePane(p.paneId);
+        await this.lifecycle.close(p.paneId);
         return { ok: true };
       },
       ...createLayoutHandlers({
         layout: this.layout,
         events: this.events,
-        closePane: (id) => this.closePane(id),
+        closePane: (id) => this.lifecycle.close(id),
         paneIdsIn: (windowIds) => this.registry.filter(undefined, undefined, windowIds).map((e) => e.record.paneId),
-        persist: () => this.persist(),
-        commit: (mutate) => this.commitLayout(mutate),
+        persist: () => this.persister.saveNow(),
       }),
     };
   }
@@ -141,7 +160,8 @@ export class Daemon {
     const closed = new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
     for (const conn of this.conns) conn.socket.destroy();
     await closed;
-    // record は消さず保存もしない: 再起動後に stopped として復元される。
+    // record は消さない (再起動後に stopped として復元される)。遅らせていたサイズの保存だけを済ませる。
+    this.persister.flush();
     const live = this.registry.livePanes();
     await Promise.all(live.map((p) => p.close()));
     for (const p of live) {
@@ -231,28 +251,6 @@ export class Daemon {
     this.registry.restoreStopped(state.panes);
   }
 
-  /** layout を変更して保存する。保存に失敗したら layout を戻して例外を伝播させる。 */
-  private commitLayout<T>(mutate: () => T): T {
-    const before = this.layout.toPersisted();
-    try {
-      const result = mutate();
-      this.persist();
-      return result;
-    } catch (e) {
-      this.layout.restore(before);
-      throw e;
-    }
-  }
-
-  /** 状態を変えたら、イベントを出す前に呼ぶ。失敗は握りつぶさず RPC エラーにする。 */
-  private persist(): void {
-    savePersistedState(this.statePath, {
-      version: 1,
-      workspaces: this.layout.toPersisted(),
-      panes: this.registry.toPersisted(),
-    });
-  }
-
   /** 実行体のある pane。stopped (再起動後の復元分) は PaneExited。 */
   private livePane(id: string): Pane {
     const { live } = this.registry.getOrThrow(id);
@@ -265,84 +263,10 @@ export class Daemon {
     return this.registry.info(paneId, workspace, window);
   }
 
-  private spawnPane(p: ParsedParams<'pane.open'>): Pane {
-    try {
-      return new Pane({
-        cmd: p.cmd,
-        cwd: p.cwd,
-        env: p.env,
-        ephemeralEnv: p.ephemeralEnv,
-        cols: p.cols,
-        rows: p.rows,
-        socketPath: this.socketPath,
-      });
-    } catch (e) {
-      throw new RpcFailure(ErrorCode.InvalidParams, `spawn failed: ${(e as Error).message}`);
-    }
-  }
-
-  /** 既定の workspace / window を新しく作っていたら、保存した後にそのイベントを出す。 */
-  private emitCreatedDefaults({ workspace, window, createdWorkspace, createdWindow }: ResolvedWindow): void {
-    if (createdWorkspace) this.events.emit('workspace.created', { name: workspace });
-    if (createdWindow) this.events.emit('window.created', { windowId: window.id, workspace, name: window.name });
-  }
-
-  /**
-   * layout (既定の遅延作成を含む) → spawn → record 登録 → 保存、を 1 つの単位として扱う。
-   * 保存まで失敗したら全て戻し、起動した子プロセスも止め、イベントは一切出さない。
-   */
-  private async paneOpen(p: ParsedParams<'pane.open'>): Promise<unknown> {
-    if (p.preplace !== undefined) throw new RpcFailure(ErrorCode.NotImplemented, 'preplace is not implemented');
-    const before = this.layout.toPersisted();
-    const target = this.layout.resolveWindow(p.windowId);
-    const labels = p.labels ?? {};
-    let pane: Pane | undefined;
-    try {
-      pane = this.spawnPane(p);
-      // 保存するのは env のみ。ephemeralEnv は Pane の spawn で使い切り、ここには渡らない。
-      const record = { paneId: pane.id, windowId: target.window.id, cmd: p.cmd, cwd: pane.cwd, env: p.env ?? {}, labels, cols: pane.cols, rows: pane.rows };
-      this.registry.add(record, pane);
-      this.persist();
-    } catch (e) {
-      this.layout.restore(before);
-      if (pane) {
-        this.registry.remove(pane.id);
-        await pane.close();
-        pane.dispose();
-      }
-      throw e;
-    }
-    const live = pane;
-    live.on('title', (title: string) => this.events.emit('pane.title', { title }, live.id));
-    live.on('exit', (r: { exitCode: number | null; signal: number | null }) =>
-      this.events.emit('pane.exited', { ...r }, live.id),
-    );
-    this.emitCreatedDefaults(target);
-    this.events.emit(
-      'pane.opened',
-      { pid: live.pid, cmd: live.cmd, labels, workspace: target.workspace, windowId: target.window.id },
-      live.id,
-    );
-    return { paneId: live.id };
-  }
-
   private paneList(p: ParsedParams<'pane.list'>): PaneInfo[] {
     const { state, labels, workspace } = p.filter ?? {};
     const windowIds = workspace === undefined ? undefined : new Set(this.layout.windowIds(workspace));
     return this.registry.filter(state, labels, windowIds).map((e) => this.info(e.record.paneId));
-  }
-
-  private paneSetLabel(p: ParsedParams<'pane.set_label'>): unknown {
-    const before = this.registry.getOrThrow(p.paneId).record;
-    const labels = this.registry.setLabels(p.paneId, p.set, p.unset);
-    try {
-      this.persist();
-    } catch (e) {
-      this.registry.replaceRecord(before);
-      throw e;
-    }
-    this.events.emit('pane.label', { set: p.set ?? {}, unset: p.unset ?? [] }, p.paneId);
-    return { labels };
   }
 
   private paneWrite(p: ParsedParams<'pane.write'>): unknown {
@@ -351,7 +275,7 @@ export class Daemon {
     const data = p.dataB64 !== undefined ? Buffer.from(p.dataB64, 'base64') : Buffer.from(p.data, 'utf8');
     // 最後に操作したクライアントのサイズを優先する
     if (p.clientId && pane.claimSize(p.clientId)) {
-      this.persist();
+      this.persister.saveSoon();
       this.events.emit('pane.resized', { cols: pane.cols, rows: pane.rows, clientId: p.clientId }, pane.id);
     }
     pane.write(data);
@@ -363,7 +287,7 @@ export class Daemon {
     const pane = this.livePane(p.paneId);
     const clientId = p.clientId ?? null;
     pane.resize(p.cols, p.rows, clientId);
-    this.persist();
+    this.persister.saveSoon();
     this.events.emit('pane.resized', { cols: p.cols, rows: p.rows, clientId }, pane.id);
     return { ok: true };
   }
@@ -376,7 +300,7 @@ export class Daemon {
     else this.detach(ctx.conn, pane.id);
     if (p.cols !== undefined && p.rows !== undefined) {
       pane.resize(p.cols, p.rows, p.clientId);
-      this.persist();
+      this.persister.saveSoon();
       this.events.emit('pane.resized', { cols: p.cols, rows: p.rows, clientId: p.clientId }, pane.id);
     }
     // attachPane は最初の await までに購読と clients への登録を同期的に済ませる
@@ -450,29 +374,6 @@ export class Daemon {
       epoch: p.epoch,
       currentEpoch: this.epoch,
     });
-  }
-
-  /**
-   * live は SIGHUP → 終了待ち、stopped は record 削除のみ。どちらも保存してから pane.closed を出す。
-   * live は保存に失敗してもプロセスを戻せないので、メモリは実態 (閉じ済み) に合わせたまま例外を伝播させる。
-   * stopped はプロセスに触れていないので、保存に失敗したら record を戻す。
-   */
-  private async closePane(paneId: string): Promise<void> {
-    const { record, live } = this.registry.getOrThrow(paneId);
-    if (live) {
-      await live.close();
-      if (this.registry.get(paneId)?.live !== live) return; // 並行した close が後始末済み
-      this.releasePane(paneId); // client.detached は pane.closed より前に出す
-    }
-    this.registry.remove(paneId);
-    live?.dispose();
-    try {
-      this.persist();
-    } catch (e) {
-      if (!live) this.registry.restoreStopped([record]);
-      throw e;
-    }
-    this.events.emit('pane.closed', {}, paneId);
   }
 
   /** 全接続から、この pane の attachment と行購読を外す (閉じた Pane への参照を残さない)。 */

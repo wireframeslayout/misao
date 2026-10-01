@@ -1,6 +1,6 @@
 import { ErrorCode } from '@misao/protocol';
 import type { PaneInfo, WindowInfo, WorkspaceInfo } from '@misao/protocol';
-import type { PersistedWorkspace } from './persistence.js';
+import type { WindowDef, WorkspaceDef } from './model.js';
 import { RpcFailure } from './rpc-error.js';
 import { newWindowId } from './ulid.js';
 
@@ -25,7 +25,10 @@ export interface ResolvedWindow extends WindowLocation {
  * workspace 名は一意、window 名は重複を許す。更新は新しいオブジェクトで置き換える。
  */
 export class Layout {
-  private workspaces: readonly PersistedWorkspace[] = [];
+  private workspaces: readonly WorkspaceDef[] = [];
+  /** 閉じている最中の workspace 名と window ID。配下への作成・pane.open を拒否する (close 待機中の競合を防ぐ)。 */
+  private readonly closingWorkspaces = new Set<string>();
+  private readonly closingWindows = new Set<string>();
 
   list(): WorkspaceInfo[] {
     return this.workspaces.map(toInfo);
@@ -33,28 +36,50 @@ export class Layout {
 
   createWorkspace(name: string): WorkspaceInfo {
     if (this.find(name)) throw new RpcFailure(ErrorCode.AlreadyExists, `workspace already exists: ${name}`);
-    const created: PersistedWorkspace = { name, windows: [] };
+    const created: WorkspaceDef = { name, windows: [] };
     this.workspaces = [...this.workspaces, created];
     return toInfo(created);
   }
 
   renameWorkspace(name: string, newName: string): void {
     const target = this.require(name);
+    this.assertWorkspaceOpen(name); // 閉じている最中は名前を変えない (同名の再作成で別物を消さないため)
     if (newName !== name && this.find(newName)) {
       throw new RpcFailure(ErrorCode.AlreadyExists, `workspace already exists: ${newName}`);
     }
     this.workspaces = this.workspaces.map((w) => (w === target ? { ...w, name: newName } : w));
   }
 
-  /** 削除した workspace に属していた windowId 群を返す。 */
+  /** close の開始。以後、この workspace と配下の window は closing として扱う。配下の windowId 群を返す。 */
+  beginCloseWorkspace(name: string): string[] {
+    const target = this.require(name);
+    this.assertWorkspaceOpen(name);
+    const ids = target.windows.map((w) => w.id);
+    for (const id of ids) this.assertWindowOpen(id);
+    this.closingWorkspaces.add(name);
+    for (const id of ids) this.closingWindows.add(id);
+    return ids;
+  }
+
+  /** close を取りやめる (pane の close に失敗したとき)。 */
+  cancelCloseWorkspace(name: string): void {
+    this.closingWorkspaces.delete(name);
+    for (const id of this.windowIds(name)) this.closingWindows.delete(id);
+  }
+
+  /** workspace を削除する (closing の印も外す)。削除した windowId 群を返す。 */
   closeWorkspace(name: string): string[] {
     const target = this.require(name);
     this.workspaces = this.workspaces.filter((w) => w !== target);
-    return target.windows.map((w) => w.id);
+    this.closingWorkspaces.delete(name);
+    const ids = target.windows.map((w) => w.id);
+    for (const id of ids) this.closingWindows.delete(id);
+    return ids;
   }
 
   createWindow(workspace: string, name: string): WindowInfo {
     const target = this.require(workspace);
+    this.assertWorkspaceOpen(workspace);
     const window = { id: newWindowId(), name };
     this.workspaces = this.workspaces.map((w) => (w === target ? { ...w, windows: [...w.windows, window] } : w));
     return { windowId: window.id, name, workspace };
@@ -65,24 +90,20 @@ export class Layout {
     this.updateWindows((w) => w.windows.map((win) => (win.id === windowId ? { ...win, name } : win)));
   }
 
-  /** 存在する window だけを削除し、削除したものの ID を返す (既に無いものは無視)。 */
-  closeWindows(windowIds: readonly string[]): string[] {
-    const removed = windowIds.filter((id) => this.hasWindow(id));
-    this.updateWindows((w) => w.windows.filter((win) => !removed.includes(win.id)));
-    return removed;
+  beginCloseWindow(windowId: string): void {
+    this.requireWindow(windowId);
+    this.assertWindowOpen(windowId);
+    this.closingWindows.add(windowId);
   }
 
-  hasWorkspace(name: string): boolean {
-    return this.find(name) !== undefined;
+  cancelCloseWindow(windowId: string): void {
+    this.closingWindows.delete(windowId);
   }
 
-  hasWindow(windowId: string): boolean {
-    return this.workspaces.some((w) => w.windows.some((win) => win.id === windowId));
-  }
-
-  /** workspace に属する windowId 群。存在しなければ WorkspaceNotFound。 */
-  requireWindowIds(name: string): string[] {
-    return this.require(name).windows.map((w) => w.id);
+  closeWindow(windowId: string): void {
+    this.requireWindow(windowId);
+    this.updateWindows((w) => w.windows.filter((win) => win.id !== windowId));
+    this.closingWindows.delete(windowId);
   }
 
   windowRef(windowId: string): WindowLocation {
@@ -96,11 +117,16 @@ export class Layout {
 
   /** windowId を解決する。省略時は既定 workspace の既定 window (無ければ作る)。 */
   resolveWindow(windowId: string | undefined): ResolvedWindow {
-    if (windowId !== undefined) return { ...this.requireWindow(windowId), createdWorkspace: false, createdWindow: false };
+    if (windowId !== undefined) {
+      this.assertWindowOpen(windowId);
+      return { ...this.requireWindow(windowId), createdWorkspace: false, createdWindow: false };
+    }
     const createdWorkspace = !this.find(DEFAULT_WORKSPACE);
     if (createdWorkspace) this.createWorkspace(DEFAULT_WORKSPACE);
-    const existing = this.require(DEFAULT_WORKSPACE).windows.find((w) => w.name === DEFAULT_WINDOW);
-    if (existing) return { workspace: DEFAULT_WORKSPACE, window: existing, createdWorkspace, createdWindow: false };
+    this.assertWorkspaceOpen(DEFAULT_WORKSPACE);
+    const isOpenDefault = (w: WindowDef): boolean => w.name === DEFAULT_WINDOW && !this.closingWindows.has(w.id);
+    const existing = this.require(DEFAULT_WORKSPACE).windows.find(isOpenDefault);
+    if (existing) return { workspace: DEFAULT_WORKSPACE, window: { id: existing.id, name: existing.name }, createdWorkspace, createdWindow: false };
     const created = this.createWindow(DEFAULT_WORKSPACE, DEFAULT_WINDOW);
     return {
       workspace: DEFAULT_WORKSPACE,
@@ -110,19 +136,27 @@ export class Layout {
     };
   }
 
-  restore(persisted: readonly PersistedWorkspace[]): void {
+  restore(persisted: readonly WorkspaceDef[]): void {
     this.workspaces = copyWorkspaces(persisted);
   }
 
-  toPersisted(): PersistedWorkspace[] {
+  toPersisted(): WorkspaceDef[] {
     return copyWorkspaces(this.workspaces);
   }
 
-  private find(name: string): PersistedWorkspace | undefined {
+  private assertWorkspaceOpen(name: string): void {
+    if (this.closingWorkspaces.has(name)) throw new RpcFailure(ErrorCode.WorkspaceNotFound, `workspace is closing: ${name}`);
+  }
+
+  private assertWindowOpen(windowId: string): void {
+    if (this.closingWindows.has(windowId)) throw new RpcFailure(ErrorCode.WindowNotFound, `window is closing: ${windowId}`);
+  }
+
+  private find(name: string): WorkspaceDef | undefined {
     return this.workspaces.find((w) => w.name === name);
   }
 
-  private require(name: string): PersistedWorkspace {
+  private require(name: string): WorkspaceDef {
     const found = this.find(name);
     if (!found) throw new RpcFailure(ErrorCode.WorkspaceNotFound, `workspace not found: ${name}`);
     return found;
@@ -131,20 +165,20 @@ export class Layout {
   private requireWindow(windowId: string): WindowLocation {
     for (const w of this.workspaces) {
       const window = w.windows.find((win) => win.id === windowId);
-      if (window) return { workspace: w.name, window };
+      if (window) return { workspace: w.name, window: { id: window.id, name: window.name } };
     }
     throw new RpcFailure(ErrorCode.WindowNotFound, `window not found: ${windowId}`);
   }
 
-  private updateWindows(fn: (w: PersistedWorkspace) => PersistedWorkspace['windows']): void {
+  private updateWindows(fn: (w: WorkspaceDef) => WorkspaceDef['windows']): void {
     this.workspaces = this.workspaces.map((w) => ({ ...w, windows: fn(w) }));
   }
 }
 
-function copyWorkspaces(src: readonly PersistedWorkspace[]): PersistedWorkspace[] {
+function copyWorkspaces(src: readonly WorkspaceDef[]): WorkspaceDef[] {
   return src.map((w) => ({ name: w.name, windows: w.windows.map((win) => ({ ...win })) }));
 }
 
-function toInfo(w: PersistedWorkspace): WorkspaceInfo {
+function toInfo(w: WorkspaceDef): WorkspaceInfo {
   return { name: w.name, windows: w.windows.map((win) => ({ windowId: win.id, name: win.name, workspace: w.name })) };
 }

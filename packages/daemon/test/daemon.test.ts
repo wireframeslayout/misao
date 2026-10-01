@@ -8,6 +8,8 @@ import xterm from '@xterm/headless';
 import { PaneInfoSchema, methods, parseKnownEvent } from '@misao/protocol';
 import type { EventParams, MethodName, PaneInfo } from '@misao/protocol';
 import { Daemon } from '../src/daemon.js';
+import { savePersistedState } from '../src/persistence.js';
+import type { PersistedState } from '../src/persistence.js';
 import { viewportText } from '../src/screen.js';
 import { ulid } from '../src/ulid.js';
 import { RpcClient, RpcClientError } from './helpers/rpc-client.js';
@@ -727,5 +729,170 @@ test('resize で変えたサイズが保存され、再起動後の stopped に�
     const client = await restart();
     const info = await client.request<PaneInfo>('pane.info', { paneId });
     assert.deepEqual([info.cols, info.rows], [111, 33]);
+  });
+});
+
+/** 後から保存を失敗させられる saveState。 */
+function failableSave(): { fail: { on: boolean }; saveState: (p: string, s: PersistedState) => void; calls: { n: number } } {
+  const fail = { on: false };
+  const calls = { n: 0 };
+  return {
+    fail,
+    calls,
+    saveState: (p, s) => {
+      calls.n++;
+      if (fail.on) throw new Error('disk full');
+      savePersistedState(p, s);
+    },
+  };
+}
+
+async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-it-'));
+  try {
+    await fn(dir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function expectRpcMessage(p: Promise<unknown>, code: number, message: RegExp): Promise<void> {
+  await assert.rejects(p, (e: unknown) => e instanceof RpcClientError && e.code === code && message.test(e.message));
+}
+
+/** SIGHUP を無視する pane。trap の設定が済んでから返すので、閉じるのに SIGKILL (約 3 秒) までかかる。 */
+async function openStubborn(client: RpcClient, windowId: string): Promise<{ paneId: string }> {
+  const lines: string[] = [];
+  client.onNotification((n) => n.method === 'pane.line' && lines.push(n.params.text as string));
+  const pane = await openPane(client, ['sh', '-c', 'trap "" HUP; echo ready; sleep 30'], { windowId });
+  await client.request('pane.subscribe_lines', { paneId: pane.paneId, since: 0 });
+  await waitFor(() => lines.includes('ready'));
+  return pane;
+}
+
+test('workspace.close の待機中は配下への window.create / pane.open / rename を拒否し、孤児 pane を作らない', async () => {
+  await withRestart(async (restart, client) => {
+    await client.request('workspace.create', { name: 'proj' });
+    const win = await client.request<{ windowId: string }>('window.create', { workspace: 'proj', name: 'main' });
+    await openStubborn(client, win.windowId);
+    const closing = client.request('workspace.close', { name: 'proj' });
+    await expectRpcMessage(client.request('window.create', { workspace: 'proj', name: 'late' }), 1006, /closing/);
+    await expectRpcMessage(client.request('pane.open', { cmd: ['true'], windowId: win.windowId }), 1007, /closing/);
+    await expectRpcMessage(client.request('window.close', { windowId: win.windowId }), 1007, /closing/);
+    await expectRpcMessage(client.request('workspace.close', { name: 'proj' }), 1006, /closing/);
+    // rename で名前を空け、同名を作り直して無関係な workspace を消させる、ことはできない
+    await expectRpcMessage(client.request('workspace.rename', { name: 'proj', newName: 'other' }), 1006, /closing/);
+    await expectRpcError(client.request('workspace.create', { name: 'proj' }), 1008);
+    await closing;
+    assert.deepEqual(await client.request('pane.list'), []);
+    assert.deepEqual(await client.request('workspace.list'), []);
+    const after = await restart(); // 孤児が無いので、保存したファイルで再起動できる
+    assert.deepEqual(await after.request('pane.list'), []);
+  });
+});
+
+test('window.close の待機中は、その window への pane.open を拒否する', async () => {
+  await withRestart(async (restart, client) => {
+    await client.request('workspace.create', { name: 'proj' });
+    const win = await client.request<{ windowId: string }>('window.create', { workspace: 'proj', name: 'main' });
+    await openStubborn(client, win.windowId);
+    const closing = client.request('window.close', { windowId: win.windowId });
+    await expectRpcMessage(client.request('pane.open', { cmd: ['true'], windowId: win.windowId }), 1007, /closing/);
+    await closing;
+    const after = await restart();
+    assert.deepEqual(await after.request('pane.list'), []);
+  });
+});
+
+test('戻せない close は、保存に失敗しても closed 系イベントを出してから例外を返す', async () => {
+  await withTempDir(async (dir) => {
+    const { fail, saveState } = failableSave();
+    const daemon = await startDaemon(dir, { saveState });
+    const client = await RpcClient.connect(daemon.socketPath);
+    try {
+      const events = await collectEvents(client);
+      const live = await openPane(client, ['sh', '-c', 'sleep 5']);
+      await client.request('workspace.create', { name: 'proj' });
+      const win = await client.request<{ windowId: string }>('window.create', { workspace: 'proj', name: 'w' });
+      const inWin = await openPane(client, ['sh', '-c', 'sleep 5'], { windowId: win.windowId });
+      fail.on = true;
+
+      await assert.rejects(client.request('pane.close', { paneId: live.paneId }), RpcClientError);
+      await assert.rejects(client.request('window.close', { windowId: win.windowId }), RpcClientError);
+      await assert.rejects(client.request('workspace.close', { name: 'proj' }), RpcClientError);
+      await waitFor(() => eventTypes(events).includes('workspace.closed'));
+      const closed = events.filter((e) => e.type === 'pane.closed').map((e) => e.paneId);
+      assert.deepEqual(closed.sort(), [live.paneId, inWin.paneId].sort());
+      assert.ok(eventTypes(events).includes('window.closed'));
+      // メモリは実態 (閉じ済み) に合っている
+      assert.deepEqual(await client.request('pane.list'), []);
+      assert.deepEqual((await client.request<Array<{ name: string }>>('workspace.list')).map((w) => w.name), ['default']);
+    } finally {
+      client.close();
+      await daemon.shutdown();
+    }
+  });
+});
+
+test('戻せる stopped pane の close は、保存に失敗したら元に戻り pane.closed も出ない', async () => {
+  await withTempDir(async (dir) => {
+    const first = await startDaemon(dir);
+    const c1 = await RpcClient.connect(first.socketPath);
+    const { paneId } = await openPane(c1, ['sh', '-c', 'sleep 30']);
+    c1.close();
+    await first.shutdown();
+
+    const { fail, saveState } = failableSave();
+    const daemon = await startDaemon(dir, { saveState });
+    const client = await RpcClient.connect(daemon.socketPath);
+    try {
+      const events = await collectEvents(client);
+      fail.on = true;
+      await assert.rejects(client.request('pane.close', { paneId }), RpcClientError);
+      assert.equal((await client.request<PaneInfo>('pane.info', { paneId })).processState, 'stopped');
+      await sleep(50);
+      assert.equal(eventTypes(events).includes('pane.closed'), false);
+    } finally {
+      client.close();
+      await daemon.shutdown();
+    }
+  });
+});
+
+test('サイズ変更は保存を遅らせるだけで、保存が失敗しても resize / write / attach は成功する', async () => {
+  await withTempDir(async (dir) => {
+    const { fail, saveState, calls } = failableSave();
+    const logs: string[] = [];
+    const daemon = await startDaemon(dir, { saveState, log: (m) => logs.push(m) });
+    const client = await RpcClient.connect(daemon.socketPath);
+    try {
+      const { paneId } = await openPane(client, ['sh', '-c', 'exec cat']);
+      fail.on = true;
+      const callsBefore = calls.n;
+      await client.request('pane.resize', { paneId, cols: 100, rows: 30, clientId: 'a' });
+      await client.request('pane.resize', { paneId, cols: 90, rows: 20, clientId: 'b' });
+      for (let i = 0; i < 20; i++) await client.request('pane.resize', { paneId, cols: 100 + i, rows: 30, clientId: 'a' });
+      await client.request('pane.write', { paneId, data: 'x', clientId: 'b' }); // b がサイズを取り戻す
+      await client.request('pane.attach', { paneId, clientId: 'c', cols: 70, rows: 25 });
+      assert.equal(calls.n, callsBefore, 'サイズ変更では同期的に保存しない');
+    } finally {
+      client.close();
+      await daemon.shutdown(); // 遅らせていた保存を行い、失敗はログだけ
+    }
+    assert.ok(logs.some((m) => m.includes('failed to persist state: disk full')), logs.join('|'));
+  });
+});
+
+test('サイズ変更の遅らせた保存は shutdown でまとめて 1 回行われる', async () => {
+  await withTempDir(async (dir) => {
+    const { saveState, calls } = failableSave();
+    const daemon = await startDaemon(dir, { saveState });
+    const client = await RpcClient.connect(daemon.socketPath);
+    const { paneId } = await openPane(client, ['sh', '-c', 'sleep 30']);
+    const callsBefore = calls.n;
+    for (let i = 0; i < 5; i++) await client.request('pane.resize', { paneId, cols: 100 + i, rows: 30 });
+    client.close();
+    await daemon.shutdown();
+    assert.equal(calls.n, callsBefore + 1);
   });
 });

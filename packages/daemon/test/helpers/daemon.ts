@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Daemon } from '../../src/daemon.js';
+import type { DaemonOptions } from '../../src/daemon.js';
 import { RpcClient } from './rpc-client.js';
 
 export async function waitFor(pred: () => boolean | Promise<boolean>, ms = 5000): Promise<void> {
@@ -13,12 +14,13 @@ export async function waitFor(pred: () => boolean | Promise<boolean>, ms = 5000)
 }
 
 /** dir にソケット・pid・persistence.json を置いて起動する。同じ dir で再起動すると状態を引き継ぐ。 */
-export async function startDaemon(dir: string): Promise<Daemon> {
+export async function startDaemon(dir: string, overrides: Partial<DaemonOptions> = {}): Promise<Daemon> {
   const daemon = new Daemon({
     socketPath: path.join(dir, 'misao.sock'),
     pidPath: path.join(dir, 'daemon.pid'),
     statePath: path.join(dir, 'persistence.json'),
     log: () => undefined,
+    ...overrides,
   });
   await daemon.start();
   return daemon;

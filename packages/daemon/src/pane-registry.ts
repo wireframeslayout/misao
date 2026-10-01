@@ -1,11 +1,8 @@
 import { ErrorCode } from '@misao/protocol';
 import type { PaneInfo, ProcessState } from '@misao/protocol';
-import type { PersistedPane } from './persistence.js';
+import type { PaneRecord } from './model.js';
 import type { Pane } from './pane.js';
 import { RpcFailure } from './rpc-error.js';
-
-/** pane のメタ (persistence.json に保存するもの)。ephemeralEnv は持たない。 */
-export type PaneRecord = PersistedPane;
 
 /** record は常にある。live は、このデーモンが起動した pane のみ (再起動後の stopped には無い)。 */
 export interface PaneEntry {
