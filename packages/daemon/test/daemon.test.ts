@@ -8,6 +8,7 @@ import xterm from '@xterm/headless';
 import { PaneInfoSchema, methods, parseKnownEvent } from '@misao/protocol';
 import type { EventParams, MethodName, PaneInfo } from '@misao/protocol';
 import { Daemon } from '../src/daemon.js';
+import type { AgentProfile } from '../src/profile.js';
 import { savePersistedState } from '../src/persistence.js';
 import type { PersistedState } from '../src/persistence.js';
 import { viewportText } from '../src/screen.js';
@@ -930,5 +931,89 @@ test('サイズ変更の遅らせた保存は shutdown でまとめて 1 回行�
     client.close();
     await daemon.shutdown();
     assert.equal(calls.n, callsBefore + 1);
+  });
+});
+
+/** 出力を 3 秒続けて、その後は静かにする。 */
+const BURST_THEN_QUIET = 'i=0; while [ $i -lt 15 ]; do head -c 400 /dev/zero | tr "\\0" x; echo; sleep 0.2; i=$((i+1)); done; sleep 30';
+
+test('稼働判定: 出力が続けば working、静かになれば idle、終了で exited。pane.state の順序と pane.info が一致する', { timeout: 30_000 }, async () => {
+  await withDaemon(async (_daemon, client) => {
+    const events = await collectEvents(client);
+    const { paneId } = await openPane(client, ['sh', '-c', BURST_THEN_QUIET]);
+    const info = (): Promise<PaneInfo> => client.request<PaneInfo>('pane.info', { paneId });
+    assert.deepEqual([(await info()).agentState, (await info()).decidedBy], ['unknown', 'none']);
+    await waitFor(async () => (await info()).agentState === 'working', 8000);
+    assert.equal((await info()).decidedBy, 'bytes');
+    await waitFor(async () => (await info()).agentState === 'idle', 12_000);
+    await client.request('pane.close', { paneId });
+    assert.deepEqual([(await client.request<PaneInfo[]>('pane.list')).length], [0]);
+
+    const states = events.filter((e) => e.type === 'pane.state').map((e) => e.data);
+    assert.deepEqual(
+      states.map((s) => [s.state, s.decidedBy, s.prev]),
+      [
+        ['working', 'bytes', 'unknown'],
+        ['idle', 'bytes', 'working'],
+        ['exited', 'exit', 'idle'],
+      ],
+    );
+    const order = eventTypes(events).filter((t) => ['pane.exited', 'pane.state', 'pane.closed'].includes(t));
+    assert.deepEqual(order.slice(-3), ['pane.exited', 'pane.state', 'pane.closed']);
+  });
+});
+
+test('稼働判定: 終了した pane の pane.info は exited / exit を返す', async () => {
+  await withDaemon(async (_daemon, client) => {
+    const { paneId } = await openPane(client, ['sh', '-c', 'exit 0']);
+    await waitFor(async () => (await client.request<PaneInfo>('pane.info', { paneId })).agentState === 'exited');
+    const info = await client.request<PaneInfo>('pane.info', { paneId });
+    assert.deepEqual([info.decidedBy, info.processState], ['exit', 'exited']);
+  });
+});
+
+test('pane.screen の activity は出力と resize で増え、静かな間は変わらない。lastOutputAt も更新される', async () => {
+  await withDaemon(async (_daemon, client) => {
+    const { paneId } = await openPane(client, ['sh', '-c', 'exec cat']);
+    const screen = (): Promise<{ activity: number }> => client.request('pane.screen', { paneId });
+    const info = (): Promise<PaneInfo> => client.request<PaneInfo>('pane.info', { paneId });
+    assert.equal((await info()).lastOutputAt, null);
+    const a0 = (await screen()).activity;
+    await client.request('pane.write', { paneId, data: 'hello\n' });
+    await waitFor(async () => (await screen()).activity > a0);
+    assert.notEqual((await info()).lastOutputAt, null);
+    const a1 = (await screen()).activity;
+    await sleep(150);
+    assert.equal((await screen()).activity, a1, '静かな間は変わらない');
+    await client.request('pane.resize', { paneId, cols: 100, rows: 30 });
+    assert.ok((await screen()).activity > a1, 'resize で増える');
+  });
+});
+
+test('DaemonOptions.profiles のプロファイルが cmd に matches した pane で使われ、blocked と decidedBy が載る', async () => {
+  const profile: AgentProfile = {
+    name: 'fake-agent',
+    matches: (cmd) => cmd.includes('fake-agent-marker'),
+    classify: (screen) => (screen.rows.some((r) => r.includes('NEEDS-APPROVAL')) ? 'blocked' : null),
+  };
+  await withTempDir(async (dir) => {
+    const daemon = await startDaemon(dir, { profiles: [profile] });
+    const client = await RpcClient.connect(daemon.socketPath);
+    try {
+      const events = await collectEvents(client);
+      const matched = await openPane(client, ['sh', '-c', 'echo NEEDS-APPROVAL; sleep 30', 'fake-agent-marker']);
+      const other = await openPane(client, ['sh', '-c', 'echo NEEDS-APPROVAL; sleep 30']);
+      const info = (paneId: string): Promise<PaneInfo> => client.request<PaneInfo>('pane.info', { paneId });
+      await waitFor(async () => (await info(matched.paneId)).agentState === 'blocked');
+      assert.equal((await info(matched.paneId)).decidedBy, 'fake-agent');
+      assert.deepEqual(
+        events.filter((e) => e.type === 'pane.state' && e.paneId === matched.paneId).map((e) => e.data.state),
+        ['blocked'],
+      );
+      assert.equal((await info(other.paneId)).agentState, 'unknown'); // matches しない pane は汎用判定 (blocked は出ない)
+    } finally {
+      client.close();
+      await daemon.shutdown();
+    }
   });
 });

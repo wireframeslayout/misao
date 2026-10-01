@@ -3,6 +3,9 @@ import type { Layout, ResolvedWindow } from './layout.js';
 import type { EventLog } from './event-log.js';
 import type { ParsedParams } from './params.js';
 import { Pane } from './pane.js';
+import { selectProfile } from './profile.js';
+import type { AgentProfile } from './profile.js';
+import type { AgentState } from './state-tracker.js';
 import type { PaneRecord } from './model.js';
 import type { PaneRegistry } from './pane-registry.js';
 import { RpcFailure } from './rpc-error.js';
@@ -15,6 +18,8 @@ export interface PaneLifecycleHost {
   registry: PaneRegistry;
   events: EventLog;
   persister: StatePersister;
+  /** 稼働判定のプロファイル。pane の cmd に最初に matches したものを使う。 */
+  profiles: readonly AgentProfile[];
   /** 全接続から、この pane の attachment と行購読を外す。 */
   releasePane(paneId: string): void;
 }
@@ -107,6 +112,7 @@ export class PaneLifecycle {
         cols: p.cols,
         rows: p.rows,
         socketPath: this.host.socketPath,
+        profile: selectProfile(this.host.profiles, p.cmd),
       });
     } catch (e) {
       throw new RpcFailure(ErrorCode.InvalidParams, `spawn failed: ${(e as Error).message}`);
@@ -120,6 +126,9 @@ export class PaneLifecycle {
     pane.on('title', (title: string) => events.emit('pane.title', { title }, pane.id));
     pane.on('exit', (r: { exitCode: number | null; signal: number | null }) =>
       events.emit('pane.exited', { ...r }, pane.id),
+    );
+    pane.on('state', (state: AgentState, decidedBy: string, prev: AgentState) =>
+      events.emit('pane.state', { state, decidedBy, prev }, pane.id),
     );
     if (createdWorkspace) events.emit('workspace.created', { name: workspace });
     if (createdWindow) events.emit('window.created', { windowId: window.id, workspace, name: window.name });

@@ -21,6 +21,7 @@ import type { LayoutMethod } from './layout-handlers.js';
 import { PaneRegistry } from './pane-registry.js';
 import { PaneIo } from './pane-io.js';
 import { PaneLifecycle } from './pane-lifecycle.js';
+import type { AgentProfile } from './profile.js';
 import { loadPersistedState, savePersistedState } from './persistence.js';
 import type { PersistedState } from './persistence.js';
 import { StatePersister } from './state-persister.js';
@@ -58,6 +59,8 @@ export interface DaemonOptions {
   /** 保存の実体。省略時は savePersistedState (ファイルへ原子的に書く)。 */
   saveState?: (path: string, state: PersistedState) => void;
   log?: (msg: string) => void;
+  /** 稼働判定のプロファイル (Claude / Codex など)。省略時は汎用の判定だけ。 */
+  profiles?: readonly AgentProfile[];
 }
 
 export class Daemon {
@@ -95,6 +98,7 @@ export class Daemon {
       registry: this.registry,
       events: this.events,
       persister: this.persister,
+      profiles: opts.profiles ?? [],
       releasePane: (id) => this.io.release(id),
     });
     this.io = new PaneIo({

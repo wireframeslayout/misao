@@ -6,10 +6,12 @@ import type { PaneInfo } from '@misao/protocol';
 import { AnsiLineAssembler } from './ansi.js';
 import { buildChildEnv } from './child-env.js';
 import { nowIso } from './clock.js';
+import type { AgentProfile } from './profile.js';
 import { SeqRing } from './ring.js';
 import { flushTerminal, serializeSnapshot, viewportText } from './screen.js';
 import { SizeArbiter } from './size-arbiter.js';
 import type { SizeDecision } from './size-arbiter.js';
+import { StateTracker } from './state-tracker.js';
 import { newPaneId } from './ulid.js';
 
 const { Terminal } = xterm;
@@ -31,6 +33,8 @@ export interface PaneOpenOptions {
   cols?: number;
   rows?: number;
   socketPath: string;
+  /** この pane の稼働判定に使うプロファイル。無ければ汎用の title / bytes 段だけで判定する。 */
+  profile?: AgentProfile;
 }
 
 export interface PaneInfoMeta {
@@ -44,12 +48,14 @@ export interface PaneScreen {
   cursor: { x: number; y: number };
   altScreen: boolean;
   title: string;
+  /** 出力と resize のたびに増える。値が変わっていなければ画面は変わっていない。 */
+  activity: number;
 }
 
 /**
  * Pane が emit する:
  *  'output' (seq, data: Buffer, ts)  'line' (seq, text, ts)
- *  'title' (title)  'exit' ({exitCode, signal})
+ *  'title' (title)  'exit' ({exitCode, signal})  'state' (state, decidedBy, prev)
  */
 export class Pane extends EventEmitter {
   readonly id = newPaneId();
@@ -64,6 +70,8 @@ export class Pane extends EventEmitter {
   signal: number | null = null;
   title = '';
   lastOutputAt: string | null = null;
+  /** 出力と resize のたびに +1 する。 */
+  activity = 0;
   cols: number;
   rows: number;
 
@@ -71,6 +79,7 @@ export class Pane extends EventEmitter {
   private readonly term: Terminal;
   private readonly assembler = new AnsiLineAssembler();
   private readonly sizes = new SizeArbiter();
+  private readonly tracker: StateTracker;
   private killTimer: NodeJS.Timeout | undefined;
   private closing: Promise<void> | undefined;
 
@@ -81,8 +90,19 @@ export class Pane extends EventEmitter {
     this.cols = opts.cols ?? DEFAULT_COLS;
     this.rows = opts.rows ?? DEFAULT_ROWS;
     this.term = new Terminal({ cols: this.cols, rows: this.rows, scrollback: SCROLLBACK, allowProposedApi: true });
+    this.tracker = new StateTracker({
+      profile: opts.profile,
+      readScreen: () => ({
+        rows: viewportText(this.term).split('\n'),
+        title: this.title,
+        altScreen: this.term.buffer.active.type === 'alternate',
+      }),
+      onChange: (state, decidedBy, prev) => this.emit('state', state, decidedBy, prev),
+      now: Date.now,
+    });
     this.term.onTitleChange((t) => {
       this.title = t;
+      this.tracker.setTitle(t);
       this.emit('title', t);
     });
     this.proc = pty.spawn(opts.cmd[0]!, opts.cmd.slice(1), {
@@ -105,6 +125,8 @@ export class Pane extends EventEmitter {
   private handleData(data: Buffer): void {
     const ts = nowIso();
     this.lastOutputAt = ts;
+    this.activity++;
+    this.tracker.recordOutput(data.length);
     const seq = this.rawRing.push(data, data.length, ts);
     this.term.write(data);
     this.emit('output', seq, data, ts);
@@ -127,11 +149,11 @@ export class Pane extends EventEmitter {
     this.signal = signal || null;
     if (this.killTimer) clearTimeout(this.killTimer);
     this.emit('exit', { exitCode: this.exitCode, signal: this.signal });
+    this.tracker.markExited(); // pane.exited の後に pane.state(exited) を出す
   }
 
   /** workspace / window / labels は Daemon が渡す（Pane は親もラベルも知らない）。 */
   info({ workspace, window, labels }: PaneInfoMeta): PaneInfo {
-    const exited = this.state === 'exited';
     return {
       paneId: this.id,
       pid: this.pid,
@@ -143,9 +165,7 @@ export class Pane extends EventEmitter {
       processState: this.state,
       exitCode: this.exitCode,
       signal: this.signal,
-      // 判定ロジックは #6。それまでは終了の有無だけを返す。
-      agentState: exited ? 'exited' : 'unknown',
-      decidedBy: exited ? 'exit' : 'none',
+      ...this.tracker.snapshot(),
       title: this.title,
       lastOutputAt: this.lastOutputAt,
       cols: this.cols,
@@ -156,6 +176,7 @@ export class Pane extends EventEmitter {
   }
 
   write(data: Buffer): void {
+    this.tracker.notifyInput();
     this.proc.write(data);
   }
 
@@ -184,6 +205,8 @@ export class Pane extends EventEmitter {
   }
 
   private apply({ cols, rows }: SizeDecision): void {
+    this.activity++;
+    this.tracker.notifyResize();
     this.cols = cols;
     this.rows = rows;
     if (this.state === 'running') this.proc.resize(cols, rows);
@@ -191,6 +214,7 @@ export class Pane extends EventEmitter {
   }
 
   async screen(): Promise<PaneScreen> {
+    const { activity } = this; // flush の前に読む (snapshot の headSeq と同じ方式)
     await flushTerminal(this.term);
     const buf = this.term.buffer.active;
     return {
@@ -198,6 +222,7 @@ export class Pane extends EventEmitter {
       cursor: { x: buf.cursorX, y: buf.cursorY },
       altScreen: buf.type === 'alternate',
       title: this.title,
+      activity,
     };
   }
 
@@ -237,6 +262,7 @@ export class Pane extends EventEmitter {
 
   dispose(): void {
     if (this.killTimer) clearTimeout(this.killTimer);
+    this.tracker.stop();
     this.removeAllListeners();
     this.term.dispose();
   }
