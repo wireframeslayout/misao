@@ -90,6 +90,16 @@ export class Pane extends EventEmitter {
     this.cols = opts.cols ?? DEFAULT_COLS;
     this.rows = opts.rows ?? DEFAULT_ROWS;
     this.term = new Terminal({ cols: this.cols, rows: this.rows, scrollback: SCROLLBACK, allowProposedApi: true });
+    this.proc = pty.spawn(opts.cmd[0]!, opts.cmd.slice(1), {
+      name: 'xterm-256color',
+      cols: this.cols,
+      rows: this.rows,
+      cwd: this.cwd,
+      env: buildChildEnv(process.env, this.id, opts.socketPath, { ...opts.env, ...opts.ephemeralEnv }),
+      encoding: null, // バイト列のまま受け取る (UTF-8 境界は自前で扱う)
+    });
+    this.pid = this.proc.pid;
+    // tracker は 1 秒タイマーを持つので、spawn が成功してから作る (失敗時にタイマーを残さない)
     this.tracker = new StateTracker({
       profile: opts.profile,
       readScreen: () => ({
@@ -105,15 +115,6 @@ export class Pane extends EventEmitter {
       this.tracker.setTitle(t);
       this.emit('title', t);
     });
-    this.proc = pty.spawn(opts.cmd[0]!, opts.cmd.slice(1), {
-      name: 'xterm-256color',
-      cols: this.cols,
-      rows: this.rows,
-      cwd: this.cwd,
-      env: buildChildEnv(process.env, this.id, opts.socketPath, { ...opts.env, ...opts.ephemeralEnv }),
-      encoding: null, // バイト列のまま受け取る (UTF-8 境界は自前で扱う)
-    });
-    this.pid = this.proc.pid;
     this.proc.onData((d: string | Buffer) => this.handleData(typeof d === 'string' ? Buffer.from(d) : d));
     this.proc.onExit(({ exitCode, signal }) => this.handleExit(exitCode, signal));
   }
