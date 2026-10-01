@@ -5,12 +5,12 @@ import type { Notification, RpcConnection, Settled } from './rpc-connection.js';
 import { EVENTS_KEY, StreamCursor, keyOf, linesKey, toStreamId } from './stream-cursor.js';
 import type { EventHandler, LineHandler, StreamEntry, StreamId, StreamPosition } from './stream-cursor.js';
 
-export interface SubscribeOptions {
-  /** 最後に受け取った seq。省略すると購読時点からのライブのみ。 */
-  since?: number;
-  /** since が属する epoch。現在と違えばデーモンは最古から再生し、gap を返す。 */
-  epoch?: string;
-}
+/**
+ * since と epoch は組で渡す (Subscription.cursor の値をそのまま渡せる)。epoch が無いとデーモンは
+ * 世代を比べられず、再起動をまたいだ seq を気づかないまま使ってしまうため、片方だけは型で禁じる。
+ * 省略すると購読時点からのライブのみ。epoch が現在と違えばデーモンは最古から再生し、gap('epoch') を通知する。
+ */
+export type SubscribeOptions = { since?: undefined; epoch?: undefined } | { since: number; epoch: string };
 
 export interface Subscription {
   /** 現在位置。読むたびに最新の値を返す。 */
@@ -148,8 +148,8 @@ export class StreamSubscriber {
   }
 
   private activate(entry: StreamEntry, options: SubscribeOptions, result: SubscribeResult): void {
-    // デーモンは since があるときだけ epoch を比べる。since なし (ライブのみ) は epoch に関係なく head から。
-    const epochChanged = options.since !== undefined && options.epoch !== undefined && options.epoch !== result.epoch;
+    // since なし (ライブのみ) は head から。since ありなら epoch が現在と違うかを比べる。
+    const epochChanged = options.since !== undefined && options.epoch !== result.epoch;
     // epoch が違うと最古から再生されるので、古い since は引き継がない。
     // since が head より先なら head に寄せる (先の seq を重複扱いで捨てないため)。
     entry.lastSeq = epochChanged ? 0 : Math.min(options.since ?? result.head, result.head);

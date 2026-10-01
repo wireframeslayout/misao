@@ -331,16 +331,6 @@ test('a gap listener can issue requests while streams are being restored', async
   assert.equal(info.epoch, ulid(2));
 });
 
-test('a live-only subscription with an epoch but no since starts at head', async () => {
-  daemon.handle('events.subscribe', () => ({ result: { gap: false, head: 7, epoch: daemon.epoch } }));
-  await client.connect();
-  const sub = await client.subscribeEvents(() => undefined, { epoch: ulid(9) });
-  assert.equal(sub.cursor.seq, 7);
-  assert.deepEqual(gaps, []);
-  await dropAndWaitReconnect();
-  assert.deepEqual(daemon.received('events.subscribe').at(-1)?.params, { since: 7, epoch: daemon.epoch });
-});
-
 test('a stream unsubscribed while its resubscription is pending is not reported as an error', async () => {
   await client.connect();
   const sub = await client.subscribeLines(PANE_ID, () => undefined);
