@@ -83,13 +83,23 @@ export function serializeSnapshot(term: Terminal): string {
     out.push(row + '\x1b[0m\x1b[K');
   }
 
+  // 描画の後に設定する (挿入モードなどが描画自体に効かないように)。
+  // 既知の制約: カーソルの表示/非表示 (DECTCEM) とスクロール領域 (DECSTBM) は
+  // @xterm/headless の公開 API から読めないため復元しない。
   const m = term.modes;
   if (m.applicationCursorKeysMode) out.push('\x1b[?1h');
+  if (m.applicationKeypadMode) out.push('\x1b=');
+  if (m.insertMode) out.push('\x1b[4h');
+  if (!m.wraparoundMode) out.push('\x1b[?7l');
+  if (m.sendFocusMode) out.push('\x1b[?1004h');
   if (m.bracketedPasteMode) out.push('\x1b[?2004h');
   const mouse = { none: '', x10: '\x1b[?9h', vt200: '\x1b[?1000h', drag: '\x1b[?1002h', any: '\x1b[?1003h' }[
     m.mouseTrackingMode
   ];
   if (mouse) out.push(mouse);
+  // DECOM はカーソルをホームに戻すので、最後のカーソル位置指定より前に置く。
+  // スクロール領域は復元しないので、全画面基準の位置指定で同じ位置になる。
+  if (m.originMode) out.push('\x1b[?6h');
   out.push(`\x1b[${buf.cursorY + 1};${buf.cursorX + 1}H`);
   return out.join('');
 }
