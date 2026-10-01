@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseKeySpec, parsePrefixKeySpec } from '../../src/config/keys.js';
+import { formatKeySpec, parseKeySpec, parsePrefixKeySpec } from '../../src/config/keys.js';
 
 test('C-^ は 0x1e', () => {
   assert.equal(parseKeySpec('C-^'), 0x1e);
@@ -39,4 +39,14 @@ test('prefix は制御キーのみ', () => {
     assert.throws(() => parsePrefixKeySpec(bad), /prefix must be a control key/, JSON.stringify(bad));
   }
   assert.throws(() => parsePrefixKeySpec('C-['), /ESC/);
+});
+
+test('formatKeySpec: 制御キーは Ctrl-<char>、印字可能文字はそのまま', () => {
+  assert.equal(formatKeySpec(0x1e), 'Ctrl-^');
+  assert.equal(formatKeySpec(0x1d), 'Ctrl-]');
+  assert.equal(formatKeySpec(0x01), 'Ctrl-A');
+  assert.equal(formatKeySpec(0x00), 'Ctrl-@');
+  assert.equal(formatKeySpec(0x64), 'd');
+  assert.equal(formatKeySpec(parseKeySpec('C-^')), 'Ctrl-^');
+  assert.throws(() => formatKeySpec(0x7f), RangeError);
 });

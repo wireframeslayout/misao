@@ -39,3 +39,12 @@ function parseControlKey(spec: string): number {
   }
   return target.charCodeAt(0) & 0x1f;
 }
+
+const MAX_CONTROL_CODE = 0x1f;
+
+/** キーのバイト値を表示用の文字列にする。0x1e → `Ctrl-^`、印字可能文字はそのまま。 */
+export function formatKeySpec(code: number): string {
+  if (code >= 0 && code <= MAX_CONTROL_CODE) return `Ctrl-${String.fromCharCode(code + 0x40)}`;
+  if (code >= MIN_PRINTABLE && code <= MAX_PRINTABLE) return String.fromCharCode(code);
+  throw new RangeError(`not a key code: ${code}`);
+}
