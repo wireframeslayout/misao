@@ -2,8 +2,6 @@ import { EventEmitter } from 'node:events';
 import { nowIso } from './clock.js';
 import { SeqRing } from './ring.js';
 
-const EVENT_RING_CAP = 1000;
-
 export interface DaemonEvent {
   type: string;
   data: Record<string, unknown>;
@@ -13,8 +11,12 @@ export interface DaemonEvent {
 
 /** デーモン全体のイベント: seq 付きリング + ライブ配信。 */
 export class EventLog {
-  readonly ring = new SeqRing<DaemonEvent>(EVENT_RING_CAP);
+  readonly ring: SeqRing<DaemonEvent>;
   private readonly bus = new EventEmitter();
+
+  constructor(cap: number) {
+    this.ring = new SeqRing<DaemonEvent>(cap);
+  }
 
   get head(): number {
     return this.ring.head;

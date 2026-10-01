@@ -11,6 +11,8 @@ import type { PaneInfo, RpcRequest } from '@misao/protocol';
 import { nowIso } from './clock.js';
 import { Connection } from './connection.js';
 import { EventLog } from './event-log.js';
+import { resolveDaemonLimits } from './limits.js';
+import type { DaemonLimitOptions } from './limits.js';
 import { DEFAULT_LOG_LEVEL, createLogger } from './log.js';
 import type { LogLevel, Logger } from './log.js';
 import { parseParams } from './params.js';
@@ -53,7 +55,7 @@ type Handlers = {
   [M in ImplementedMethod]: (params: ParsedParams<M>, ctx: RequestContext) => unknown;
 };
 
-export interface DaemonOptions {
+export interface DaemonOptions extends DaemonLimitOptions {
   socketPath: string;
   pidPath: string;
   /** persistence.json の場所。 */
@@ -78,7 +80,7 @@ export class Daemon {
   private readonly persister: StatePersister;
   private readonly lifecycle: PaneLifecycle;
   private readonly io: PaneIo;
-  private readonly events = new EventLog();
+  private readonly events: EventLog;
   private readonly conns = new Set<Connection>();
   private server: net.Server | undefined;
   private readonly startedAt = Date.now();
@@ -87,6 +89,8 @@ export class Daemon {
   private readonly handlers: Handlers;
 
   constructor(opts: DaemonOptions) {
+    const limits = resolveDaemonLimits(opts);
+    this.events = new EventLog(limits.events);
     this.socketPath = opts.socketPath;
     this.pidPath = opts.pidPath;
     this.statePath = opts.statePath;
@@ -106,6 +110,7 @@ export class Daemon {
       persister: this.persister,
       profiles: opts.profiles ?? [],
       log: this.log,
+      limits,
       releasePane: (id) => this.io.release(id),
     });
     this.io = new PaneIo({

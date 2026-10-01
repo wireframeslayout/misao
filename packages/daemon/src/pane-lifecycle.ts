@@ -2,6 +2,7 @@ import { ErrorCode } from '@misao/protocol';
 import type { Layout, ResolvedWindow } from './layout.js';
 import type { EventLog } from './event-log.js';
 import type { ParsedParams } from './params.js';
+import type { ResolvedDaemonLimits } from './limits.js';
 import type { Logger } from './log.js';
 import { Pane } from './pane.js';
 import { selectProfile } from './profile.js';
@@ -22,6 +23,8 @@ export interface PaneLifecycleHost {
   /** 稼働判定のプロファイル。pane の cmd に最初に matches したものを使う。 */
   profiles: readonly AgentProfile[];
   log: Logger;
+  /** pane ごとの上限。Daemon が起動時に解決した値。 */
+  limits: Pick<ResolvedDaemonLimits, 'scrollback' | 'rawRingBytes' | 'linesRingBytes'>;
   /** 全接続から、この pane の attachment と行購読を外す。 */
   releasePane(paneId: string): void;
 }
@@ -115,6 +118,9 @@ export class PaneLifecycle {
         rows: p.rows,
         socketPath: this.host.socketPath,
         profile: selectProfile(this.host.profiles, p.cmd),
+        scrollback: this.host.limits.scrollback,
+        rawRingBytes: this.host.limits.rawRingBytes,
+        linesRingBytes: this.host.limits.linesRingBytes,
         log: this.host.log,
       });
     } catch (e) {
