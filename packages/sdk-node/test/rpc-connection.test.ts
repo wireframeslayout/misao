@@ -104,6 +104,28 @@ test('a known notification with invalid params closes the connection', async () 
   assert.match(reasons[0]?.message ?? '', /invalid pane.line/);
 });
 
+test('hot-path notifications with invalid params close the connection', async () => {
+  for (const [method, params] of [
+    ['pane.line', { seq: 1, ts: '2026-01-01T00:00:00.000Z', paneId: PANE_ID, text: 1 }],
+    ['pane.output', { seq: 1, ts: '2026-01-01T00:00:00.000Z', paneId: PANE_ID }],
+  ] as const) {
+    const local = await RpcConnection.connect(daemon.socketPath, () => undefined);
+    const reasons: MisaoConnectionError[] = [];
+    local.onClose((reason) => reasons.push(reason));
+    daemon.notify(notification(method, params));
+    await waitFor(() => reasons.length === 1);
+    assert.match(reasons[0]?.message ?? '', new RegExp(`invalid ${method}`));
+  }
+});
+
+test('hot-path notifications are delivered with unknown replay normalized', async () => {
+  const received: Notification[] = [];
+  conn.onNotification((n) => received.push(n));
+  daemon.notify(notification('pane.output', { seq: 1, ts: '2026-01-01T00:00:00.000Z', paneId: PANE_ID, dataB64: 'QQ==', replay: 'future' }));
+  await waitFor(() => received.length === 1);
+  assert.deepEqual(received[0]?.params.replay, 'unknown');
+});
+
 test('unknown notification names are ignored', async () => {
   const received: Notification[] = [];
   conn.onNotification((n) => received.push(n));

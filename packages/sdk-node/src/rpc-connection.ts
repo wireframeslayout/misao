@@ -18,6 +18,7 @@ import type {
   RpcResponse,
 } from '@misao/protocol';
 import { MisaoConnectionError, MisaoRpcError } from './errors.js';
+import { readHotNotification } from './hot-notification.js';
 import { Listeners } from './listeners.js';
 
 export type Notification = {
@@ -142,6 +143,12 @@ export class RpcConnection {
       json = JSON.parse(line);
     } catch (cause) {
       this.fail(new MisaoConnectionError('protocol violation: invalid JSON line', { cause }));
+      return;
+    }
+    const hot = readHotNotification(json);
+    if (hot) {
+      if (hot.ok) this.notificationListeners.emit(hot.notification);
+      else this.fail(new MisaoConnectionError(`protocol violation: ${hot.message}`));
       return;
     }
     const message = RpcMessageSchema.safeParse(json);
