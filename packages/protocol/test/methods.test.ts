@@ -36,7 +36,7 @@ test('全メソッドの代表的な params / result', () => {
     ['pane.write', { paneId: PANE_ID, data: 'ls\n', source: 'hub', clientId: 'c' }, ok],
     ['pane.send_keys', { paneId: PANE_ID, keys: ['C-c', 'Enter'] }, ok],
     ['pane.resize', { paneId: PANE_ID, cols: 100, rows: 30 }, ok],
-    ['pane.screen', { paneId: PANE_ID }, { text: '', cursor: { x: 0, y: 0 }, altScreen: false, title: '' }],
+    ['pane.screen', { paneId: PANE_ID }, { text: '', cursor: { x: 0, y: 0 }, altScreen: false, title: '', activity: 0 }],
     ['pane.set_label', { paneId: PANE_ID, set: { a: 'b' }, unset: ['c'] }, { labels: { a: 'b' } }],
     ['pane.attach', { paneId: PANE_ID, clientId: 'c', replay: 'snapshot' }, { head: 5, oldest: 1, truncated: false }],
     ['pane.detach', { paneId: PANE_ID }, ok],
