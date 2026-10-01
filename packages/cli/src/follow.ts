@@ -29,8 +29,10 @@ export async function follow(io: CliIo, client: MisaoClient, options: FollowOpti
         warn(`接続が切れました。再接続しています（${state.attempt} 回目）`);
       } else if (state.status === 'connected') {
         warn('再接続しました');
-      } else if (state.cause !== undefined) {
-        finish(new CliError('runtime', `再接続を打ち切りました: ${state.cause.message}`));
+      } else {
+        // closed: 再接続先が非互換 (cause あり) か、SDK が再接続を諦めた。どちらも追い続けられない。
+        const reason = state.cause === undefined ? '' : `: ${state.cause.message}`;
+        finish(new CliError('runtime', `再接続を打ち切りました${reason}`));
       }
     }),
     client.onGap((gap) => {
