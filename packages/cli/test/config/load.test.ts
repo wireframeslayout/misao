@@ -66,17 +66,37 @@ test('$MISAO_DIR に無ければ次の候補へ進む', () => {
   assert.equal(loaded.source, null);
 });
 
-test('明示指定のファイルが無ければエラー', () => {
+test('明示指定のファイルが無ければ、指定元付きのエラー', () => {
   const missing = path.join(root, 'missing.json');
-  assert.throws(() => loadConfig({ flagPath: missing, env: {}, homeDir: emptyHome() }), ConfigError);
+  assert.throws(
+    () => loadConfig({ flagPath: missing, env: {}, homeDir: emptyHome() }),
+    (error: unknown) =>
+      error instanceof ConfigError && error.message === `config file from --config not found: ${missing}`,
+  );
   assert.throws(
     () => loadConfig({ env: { MISAO_CONFIG: missing }, homeDir: emptyHome() }),
-    /missing\.json/,
+    (error: unknown) =>
+      error instanceof ConfigError && error.message === `config file from $MISAO_CONFIG not found: ${missing}`,
   );
 });
 
-test('ENOENT 以外の読み込みエラーは失敗（ディレクトリを指定）', () => {
-  assert.throws(() => loadConfig({ flagPath: root, env: {}, homeDir: emptyHome() }), ConfigError);
+test('--config が空文字なら即エラー', () => {
+  assert.throws(
+    () => loadConfig({ flagPath: '', env: {}, homeDir: emptyHome() }),
+    (error: unknown) => error instanceof ConfigError && /--config requires a non-empty path/.test(error.message),
+  );
+});
+
+test('暗黙候補でも ENOENT 以外の読み込みエラーは失敗（$MISAO_DIR/misao.json がディレクトリ）', () => {
+  const dir = path.join(root, `eisdir-${seq++}`);
+  mkdirSync(path.join(dir, 'misao.json'), { recursive: true });
+  assert.throws(
+    () => loadConfig({ env: { MISAO_DIR: dir }, homeDir: emptyHome() }),
+    (error: unknown) =>
+      error instanceof ConfigError &&
+      error.message.includes('from $MISAO_DIR') &&
+      (error.cause as NodeJS.ErrnoException | undefined)?.code === 'EISDIR',
+  );
 });
 
 test('JSON 構文エラー', () => {
@@ -110,6 +130,14 @@ test('ネストした未知キーは警告して無視', () => {
 test('未知キーと型違いが併存したらエラー', () => {
   const file = writeConfig({ extra: 1, scrollback: 'x' });
   assert.throws(() => loadConfig({ flagPath: file, env: {}, homeDir: emptyHome() }), ConfigError);
+});
+
+test('prefix に印字可能文字は指定できない', () => {
+  const file = writeConfig({ keys: { prefix: 'a' } });
+  assert.throws(
+    () => loadConfig({ flagPath: file, env: {}, homeDir: emptyHome() }),
+    (error: unknown) => error instanceof ConfigError && /prefix must be a control key/.test(error.message),
+  );
 });
 
 test('キー重複・prefix 衝突はエラー', () => {

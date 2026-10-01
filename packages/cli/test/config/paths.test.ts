@@ -6,7 +6,7 @@ const homeDir = '/home/u';
 
 test('env も flag も無ければ ~/.misao/misao.json のみ（暗黙）', () => {
   assert.deepEqual(resolveConfigCandidates({ env: {}, homeDir }), [
-    { path: '/home/u/.misao/misao.json', isExplicit: false },
+    { path: '/home/u/.misao/misao.json', origin: 'default' },
   ]);
 });
 
@@ -18,23 +18,23 @@ test('優先順: flag > $MISAO_CONFIG > $MISAO_DIR > ~/.misao', () => {
       homeDir,
     }),
     [
-      { path: '/f.json', isExplicit: true },
-      { path: '/c.json', isExplicit: true },
-      { path: '/d/misao.json', isExplicit: false },
-      { path: '/home/u/.misao/misao.json', isExplicit: false },
+      { path: '/f.json', origin: '--config' },
+      { path: '/c.json', origin: 'MISAO_CONFIG' },
+      { path: '/d/misao.json', origin: 'MISAO_DIR' },
+      { path: '/home/u/.misao/misao.json', origin: 'default' },
     ],
   );
 });
 
 test('空文字の env は未設定扱い', () => {
   assert.deepEqual(resolveConfigCandidates({ env: { MISAO_CONFIG: '', MISAO_DIR: '' }, homeDir }), [
-    { path: '/home/u/.misao/misao.json', isExplicit: false },
+    { path: '/home/u/.misao/misao.json', origin: 'default' },
   ]);
 });
 
 test('$MISAO_DIR の ~/ は homeDir に展開される', () => {
   assert.deepEqual(resolveConfigCandidates({ env: { MISAO_DIR: '~/d' }, homeDir }), [
-    { path: '/home/u/d/misao.json', isExplicit: false },
-    { path: '/home/u/.misao/misao.json', isExplicit: false },
+    { path: '/home/u/d/misao.json', origin: 'MISAO_DIR' },
+    { path: '/home/u/.misao/misao.json', origin: 'default' },
   ]);
 });

@@ -1,8 +1,8 @@
 import path from 'node:path';
-import { resolveMisaoDir } from '@misao/sdk';
+import { resolveMisaoDirs } from '@misao/sdk';
+import type { MisaoDirOrigin } from '@misao/sdk';
 
 const CONFIG_FILE_NAME = 'misao.json';
-const DEFAULT_DIR_NAME = '.misao';
 
 export interface ConfigEnv {
   readonly MISAO_CONFIG?: string | undefined;
@@ -10,41 +10,34 @@ export interface ConfigEnv {
   readonly MISAO_SOCKET?: string | undefined;
 }
 
-export interface ConfigCandidate {
-  readonly path: string;
-  /** `--config` / `$MISAO_CONFIG` による指定。存在しなければエラーにする。 */
-  readonly isExplicit: boolean;
-}
-
-export interface ResolveConfigCandidatesInput {
+export interface LoadConfigInput {
   readonly flagPath?: string | undefined;
   readonly env: ConfigEnv;
   readonly homeDir: string;
 }
 
-function isSet(value: string | undefined): value is string {
-  return value !== undefined && value !== '';
+/** 候補の指定元。`--config` と `MISAO_CONFIG` は明示指定で、存在しなければエラーにする。 */
+export type ConfigOrigin = '--config' | 'MISAO_CONFIG' | MisaoDirOrigin;
+
+export interface ConfigCandidate {
+  readonly path: string;
+  readonly origin: ConfigOrigin;
+}
+
+export function isExplicitOrigin(origin: ConfigOrigin): boolean {
+  return origin === '--config' || origin === 'MISAO_CONFIG';
 }
 
 /**
- * 設定ファイルの探索候補を優先順に返す。空文字の env は未設定扱い。
- * $MISAO_DIR はソケット解決と同じ規則で解釈する（不正なら MisaoPathError）。
+ * 設定ファイルの探索候補を優先順に返す: --config > $MISAO_CONFIG > $MISAO_DIR > ~/.misao。
+ * 空文字の $MISAO_CONFIG は未設定扱い。ディレクトリの解釈はソケット解決と共通（@misao/sdk）。
  */
-export function resolveConfigCandidates({
-  flagPath,
-  env,
-  homeDir,
-}: ResolveConfigCandidatesInput): ConfigCandidate[] {
+export function resolveConfigCandidates({ flagPath, env, homeDir }: LoadConfigInput): ConfigCandidate[] {
   const candidates: ConfigCandidate[] = [];
-  if (flagPath !== undefined) candidates.push({ path: flagPath, isExplicit: true });
-  if (isSet(env.MISAO_CONFIG)) candidates.push({ path: env.MISAO_CONFIG, isExplicit: true });
-  const misaoDir = resolveMisaoDir({ env, homeDir });
-  if (misaoDir !== undefined) {
-    candidates.push({ path: path.join(misaoDir, CONFIG_FILE_NAME), isExplicit: false });
+  if (flagPath !== undefined) candidates.push({ path: flagPath, origin: '--config' });
+  if (env.MISAO_CONFIG) candidates.push({ path: env.MISAO_CONFIG, origin: 'MISAO_CONFIG' });
+  for (const dir of resolveMisaoDirs({ env, homeDir })) {
+    candidates.push({ path: path.join(dir.path, CONFIG_FILE_NAME), origin: dir.origin });
   }
-  candidates.push({
-    path: path.join(homeDir, DEFAULT_DIR_NAME, CONFIG_FILE_NAME),
-    isExplicit: false,
-  });
   return candidates;
 }

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { MisaoPathError, resolveSocketPath } from '@misao/sdk';
 import type { z } from 'zod';
-import { resolveConfigCandidates } from './paths.js';
-import type { ConfigEnv } from './paths.js';
+import { isExplicitOrigin, resolveConfigCandidates } from './paths.js';
+import type { ConfigOrigin, LoadConfigInput } from './paths.js';
 import { MisaoConfigSchema } from './schema.js';
 import type { MisaoConfig } from './schema.js';
 
@@ -14,12 +14,6 @@ export class ConfigError extends Error {
 }
 
 export type ResolvedConfig = Omit<MisaoConfig, 'socket'> & { readonly socket: string };
-
-export interface LoadConfigInput {
-  readonly flagPath?: string | undefined;
-  readonly env: ConfigEnv;
-  readonly homeDir: string;
-}
 
 export interface LoadedConfig {
   readonly config: ResolvedConfig;
@@ -56,16 +50,24 @@ function withPathErrorAsConfigError<T>(resolve: () => T, source: string | null):
   }
 }
 
+function formatOrigin(origin: ConfigOrigin): string {
+  return origin === 'MISAO_CONFIG' || origin === 'MISAO_DIR' ? `$${origin}` : origin;
+}
+
 function readFirstConfig(input: LoadConfigInput): ReadResult | null {
+  if (input.flagPath === '') throw new ConfigError('--config requires a non-empty path');
   const candidates = withPathErrorAsConfigError(() => resolveConfigCandidates(input), null);
   for (const candidate of candidates) {
     try {
       return { source: candidate.path, text: readFileSync(candidate.path, 'utf8') };
     } catch (error) {
-      if (isErrnoException(error) && error.code === 'ENOENT' && !candidate.isExplicit) continue;
-      throw new ConfigError(`cannot read config file ${candidate.path}: ${String(error)}`, {
-        cause: error,
-      });
+      const isMissing = isErrnoException(error) && error.code === 'ENOENT';
+      if (isMissing && !isExplicitOrigin(candidate.origin)) continue;
+      const from = formatOrigin(candidate.origin);
+      const message = isMissing
+        ? `config file from ${from} not found: ${candidate.path}`
+        : `cannot read config file from ${from} (${candidate.path}): ${String(error)}`;
+      throw new ConfigError(message, { cause: error });
     }
   }
   return null;

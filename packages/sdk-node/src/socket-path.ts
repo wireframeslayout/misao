@@ -38,25 +38,37 @@ function expandHome(source: string, value: string, homeDir: string): string {
   return expanded;
 }
 
-export interface ResolveMisaoDirInput {
+export interface ResolveMisaoDirsInput {
   readonly env: Pick<SocketPathEnv, 'MISAO_DIR'>;
   readonly homeDir: string;
 }
 
+export type MisaoDirOrigin = 'MISAO_DIR' | 'default';
+
+export interface MisaoDir {
+  readonly path: string;
+  readonly origin: MisaoDirOrigin;
+}
+
 /**
- * $MISAO_DIR を `~/` 展開した絶対パスで返す。未設定（空文字を含む）なら undefined。
+ * misao のディレクトリ候補を優先順に返す: $MISAO_DIR（設定時のみ）> ~/.misao。
+ * $MISAO_DIR は `~/` 展開した絶対パスとし、空文字は未設定扱い。
  * 設定ファイル探索とソケット解決で同じ解釈を使うため、ここに一本化する。
  */
-export function resolveMisaoDir({ env, homeDir }: ResolveMisaoDirInput): string | undefined {
-  return isSet(env.MISAO_DIR) ? expandHome('MISAO_DIR', env.MISAO_DIR, homeDir) : undefined;
+export function resolveMisaoDirs({ env, homeDir }: ResolveMisaoDirsInput): [MisaoDir, ...MisaoDir[]] {
+  const fallback: MisaoDir = {
+    path: path.join(expandHome('home directory', homeDir, homeDir), DEFAULT_DIR_NAME),
+    origin: 'default',
+  };
+  if (!isSet(env.MISAO_DIR)) return [fallback];
+  return [{ path: expandHome('MISAO_DIR', env.MISAO_DIR, homeDir), origin: 'MISAO_DIR' }, fallback];
 }
 
 function selectSocketPath({ env, explicitPath, homeDir }: ResolveSocketPathInput): string {
   if (isSet(env.MISAO_SOCKET)) return expandHome('MISAO_SOCKET', env.MISAO_SOCKET, homeDir);
   if (explicitPath !== undefined) return expandHome('socket path', explicitPath, homeDir);
-  const misaoDir = resolveMisaoDir({ env, homeDir });
-  if (misaoDir !== undefined) return path.join(misaoDir, SOCKET_FILE_NAME);
-  return path.join(expandHome('home directory', homeDir, homeDir), DEFAULT_DIR_NAME, SOCKET_FILE_NAME);
+  const [preferred] = resolveMisaoDirs({ env, homeDir });
+  return path.join(preferred.path, SOCKET_FILE_NAME);
 }
 
 /**

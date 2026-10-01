@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import {
   MAX_SOCKET_PATH_BYTES,
   MisaoPathError,
-  resolveMisaoDir,
+  resolveMisaoDirs,
   resolveSocketPath,
 } from '../src/socket-path.js';
 
@@ -106,10 +106,13 @@ test('長さはバイト数で数える（マルチバイト）', () => {
   assert.throws(() => resolveSocketPath({ env: {}, explicitPath: ng, homeDir }), MisaoPathError);
 });
 
-test('resolveMisaoDir: 未設定・空文字は undefined、~/ は展開、相対は MisaoPathError', () => {
-  assert.equal(resolveMisaoDir({ env: {}, homeDir }), undefined);
-  assert.equal(resolveMisaoDir({ env: { MISAO_DIR: '' }, homeDir }), undefined);
-  assert.equal(resolveMisaoDir({ env: { MISAO_DIR: '~/d' }, homeDir }), '/home/u/d');
-  assert.equal(resolveMisaoDir({ env: { MISAO_DIR: '/var/m' }, homeDir }), '/var/m');
-  assert.throws(() => resolveMisaoDir({ env: { MISAO_DIR: 'rel' }, homeDir }), MisaoPathError);
+test('resolveMisaoDirs: $MISAO_DIR（~/ 展開）> ~/.misao の順、空文字は未設定、相対は MisaoPathError', () => {
+  const fallback = { path: '/home/u/.misao', origin: 'default' };
+  assert.deepEqual(resolveMisaoDirs({ env: {}, homeDir }), [fallback]);
+  assert.deepEqual(resolveMisaoDirs({ env: { MISAO_DIR: '' }, homeDir }), [fallback]);
+  assert.deepEqual(resolveMisaoDirs({ env: { MISAO_DIR: '~/d' }, homeDir }), [
+    { path: '/home/u/d', origin: 'MISAO_DIR' },
+    fallback,
+  ]);
+  assert.throws(() => resolveMisaoDirs({ env: { MISAO_DIR: 'rel' }, homeDir }), MisaoPathError);
 });
