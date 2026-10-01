@@ -9,6 +9,7 @@ import {
 } from '@misao/protocol';
 import type { PaneInfo, RpcRequest } from '@misao/protocol';
 import { nowIso } from './clock.js';
+import { attachPane } from './attach.js';
 import { Connection } from './connection.js';
 import { EventLog } from './event-log.js';
 import { parseParams } from './params.js';
@@ -89,6 +90,8 @@ export class Daemon {
     await this.removeStaleSocket();
     this.server = net.createServer((socket) => this.accept(socket));
     await listenUnixSocket(this.server, this.socketPath);
+    // listen 後の accept 失敗 (EMFILE など) でデーモンごと落ちないよう、その接続だけを諦める。
+    this.server.on('error', (e) => this.log(`server error: ${e.message}`));
     fs.writeFileSync(this.pidPath, String(process.pid));
     this.events.emit('daemon.started', { pid: process.pid, protocolVersion: PROTOCOL_VERSION });
     this.log(`listening on ${this.socketPath} (pid ${process.pid})`);
@@ -268,48 +271,15 @@ export class Daemon {
   private async paneAttach(p: ParsedParams<'pane.attach'>, ctx: RequestContext): Promise<unknown> {
     if (p.mode === 'cells') throw new RpcFailure(ErrorCode.Unsupported, 'mode "cells" is not supported');
     const pane = this.pane(p.paneId);
-    const { conn } = ctx;
-    this.detach(conn, pane.id);
+    this.detach(ctx.conn, pane.id);
     if (p.cols !== undefined && p.rows !== undefined) {
       pane.resize(p.cols, p.rows, p.clientId);
       this.events.emit('pane.resized', { cols: p.cols, rows: p.rows, clientId: p.clientId }, pane.id);
     }
-
-    const queue: Array<[number, Buffer, string]> = [];
-    let live = false;
-    const send = (seq: number, data: Buffer, ts: string): void =>
-      conn.notify('pane.output', seq, ts, { paneId: pane.id, dataB64: data.toString('base64') });
-    const listener = (seq: number, data: Buffer, ts: string): void => {
-      if (live) send(seq, data, ts);
-      else queue.push([seq, data, ts]);
-    };
-    pane.on('output', listener);
-    conn.attachments.set(pane.id, { clientId: p.clientId, off: () => pane.off('output', listener) });
-    pane.clients.add(p.clientId);
+    // attachPane は最初の await までに購読と clients への登録を同期的に済ませる
+    const attached = attachPane(ctx, pane, p.clientId, p.replay);
     this.events.emit('client.attached', { clientId: p.clientId }, pane.id);
-
-    let head = pane.rawRing.head;
-    let snapshot: string | undefined;
-    if (p.replay === 'snapshot') {
-      const snap = await pane.snapshot();
-      head = snap.headSeq;
-      snapshot = snap.data;
-    }
-    ctx.afterReply(() => {
-      if (p.replay === 'raw') {
-        for (const e of pane.rawRing.since(0)) if (e.seq <= head) send(e.seq, e.item, e.ts);
-      } else if (snapshot !== undefined) {
-        conn.notify('pane.output', head, nowIso(), {
-          paneId: pane.id,
-          dataB64: Buffer.from(snapshot, 'utf8').toString('base64'),
-          replay: 'snapshot',
-        });
-      }
-      for (const [seq, data, ts] of queue) if (seq > head) send(seq, data, ts);
-      queue.length = 0;
-      live = true;
-    });
-    return { head, oldest: pane.rawRing.oldest, truncated: p.replay === 'raw' && pane.rawRing.hasGap(0) };
+    return attached;
   }
 
   private paneDetach(p: ParsedParams<'pane.detach'>, ctx: RequestContext): unknown {
@@ -373,6 +343,7 @@ export class Daemon {
   private async paneClose(p: ParsedParams<'pane.close'>): Promise<unknown> {
     const pane = this.pane(p.paneId);
     await pane.close();
+    if (this.panes.get(pane.id) !== pane) return { ok: true }; // 並行した close が後始末済み
     this.panes.delete(pane.id);
     this.events.emit('pane.closed', {}, pane.id);
     pane.dispose();

@@ -66,6 +66,7 @@ export class Pane extends EventEmitter {
   private readonly assembler = new AnsiLineAssembler();
   private readonly sizes = new SizeArbiter();
   private killTimer: NodeJS.Timeout | undefined;
+  private closing: Promise<void> | undefined;
 
   constructor(opts: PaneOpenOptions) {
     super();
@@ -205,14 +206,15 @@ export class Pane extends EventEmitter {
     );
   }
 
-  /** SIGHUP → 3s → SIGKILL。終了で resolve。 */
+  /** SIGHUP → 3s → SIGKILL。終了で resolve。並行して呼ばれたら同じ Promise を返す (kill タイマーは 1 つ)。 */
   close(): Promise<void> {
     if (this.state === 'exited') return Promise.resolve();
-    return new Promise((resolve) => {
+    this.closing ??= new Promise((resolve) => {
       this.once('exit', () => resolve());
       this.signalGroup('SIGHUP');
       this.killTimer = setTimeout(() => this.signalGroup('SIGKILL'), KILL_GRACE_MS);
     });
+    return this.closing;
   }
 
   /** pty の子はセッションリーダーなので、プロセスグループ全体へ送る。失敗したら pid 単体。 */

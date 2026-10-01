@@ -308,3 +308,30 @@ test('結果が protocol のスキーマに合い、pane.list の filter が効�
     await client.request('pane.close', { paneId: a.paneId });
   });
 });
+
+test('同じ接続・同じ pane の attach が並行したら、置き換えられた側の snapshot は送られない', async () => {
+  await withDaemon(async (_daemon, client) => {
+    const { paneId } = await openPane(client, ['sh', '-c', 'echo ready; exec cat']);
+    await sleep(200);
+    const replays: unknown[] = [];
+    client.onNotification((n) => n.method === 'pane.output' && n.params.replay !== undefined && replays.push(n.params.replay));
+    const first = client.request('pane.attach', { paneId, clientId: 'A', replay: 'snapshot' });
+    const second = client.request('pane.attach', { paneId, clientId: 'A', replay: 'none' });
+    await Promise.all([first, second]);
+    await sleep(200);
+    assert.deepEqual(replays, []);
+    await client.request('pane.close', { paneId });
+  });
+});
+
+test('同じ pane への pane.close が並行しても pane.closed は 1 回だけ', async () => {
+  await withDaemon(async (_daemon, client) => {
+    const types: string[] = [];
+    client.onNotification((n) => n.method === 'event' && types.push(n.params.type as string));
+    await client.request('events.subscribe', {});
+    const { paneId } = await openPane(client, ['sh', '-c', 'exec cat']);
+    await Promise.all([client.request('pane.close', { paneId }), client.request('pane.close', { paneId })]);
+    await sleep(100);
+    assert.equal(types.filter((t) => t === 'pane.closed').length, 1);
+  });
+});

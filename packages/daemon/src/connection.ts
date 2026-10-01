@@ -13,7 +13,6 @@ export interface ConnectionHandlers {
 
 export class Connection {
   private readonly splitter = new LineSplitter();
-  private readonly closers: Array<() => void> = [];
   /** paneId → clientId */
   readonly attachments = new Map<string, { clientId: string; off: () => void }>();
   /** `${stream}:${paneId}` → off。同じキーの再購読は既存を置き換える (二重配信の防止)。 */
@@ -41,7 +40,6 @@ export class Connection {
       this.closed = true;
       for (const off of this.subscriptions.values()) off();
       this.subscriptions.clear();
-      for (const fn of this.closers.splice(0)) fn();
       handlers.onClose(this);
     });
   }
@@ -65,11 +63,7 @@ export class Connection {
   private reject(message: string): void {
     this.rejecting = true;
     this.sendParseError(message);
-    this.socket.end();
-  }
-
-  onClose(fn: () => void): void {
-    this.closers.push(fn);
+    this.socket.destroySoon(); // 応答を送り切ってから destroy する (相手が閉じなくても残さない)
   }
 
   send(msg: RpcMessage): void {

@@ -68,8 +68,11 @@ test('connection: 1 行が上限を超えたら Parse error を返して切断�
   const got: Buffer[] = [];
   p.client.on('data', (d) => got.push(d));
   p.client.on('error', () => undefined);
+  const clientClosed = new Promise((r) => p.client.once('close', r));
   p.client.write(Buffer.alloc(DEFAULT_MAX_LINE_BYTES + 1, 0x61));
+  // 相手が閉じるのを待たずにサーバー側から閉じる (half-open で残さない)
   await p.closed;
+  await clientClosed;
   assert.equal(JSON.parse(Buffer.concat(got).toString().trim()).error.code, -32700);
   assert.deepEqual(p.values, []);
 });
@@ -85,13 +88,12 @@ test('connection: writableLength が上限を超えたら destroy する', async
   await p.closed;
 });
 
-test('connection: close で購読解除と closers が走る', async () => {
+test('connection: close で購読が解除される', async () => {
   const p = await pair();
   const calls: string[] = [];
   p.conn.subscriptions.set('k', () => calls.push('off'));
-  p.conn.onClose(() => calls.push('closer'));
   await p.close();
-  assert.deepEqual(calls, ['off', 'closer']);
+  assert.deepEqual(calls, ['off']);
   assert.equal(p.conn.subscriptions.size, 0);
 });
 
