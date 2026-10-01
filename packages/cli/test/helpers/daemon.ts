@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Daemon } from '@misao/daemon';
+import type { DaemonOptions } from '@misao/daemon';
 import { MisaoClient } from '@misao/sdk';
 
 export interface TestDaemon {
@@ -23,7 +24,7 @@ export async function waitFor(pred: () => boolean | Promise<boolean>, ms = 5000)
 }
 
 /** tmpdir に実デーモンを起動する。ペインは stop() の shutdown で閉じる。 */
-export async function startTestDaemon(): Promise<TestDaemon> {
+export async function startTestDaemon(overrides: Partial<DaemonOptions> = {}): Promise<TestDaemon> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-cli-'));
   const socketPath = path.join(dir, 'misao.sock');
   const daemon = new Daemon({
@@ -31,6 +32,7 @@ export async function startTestDaemon(): Promise<TestDaemon> {
     pidPath: path.join(dir, 'daemon.pid'),
     statePath: path.join(dir, 'persistence.json'),
     log: () => undefined,
+    ...overrides,
   });
   await daemon.start();
   const client = new MisaoClient({ socketPath });
