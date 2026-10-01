@@ -1,0 +1,287 @@
+import { EventEmitter } from 'node:events';
+import * as pty from 'node-pty';
+import xterm from '@xterm/headless';
+import type { Terminal as TerminalType } from '@xterm/headless';
+import type { PaneInfo } from '@misao/protocol';
+import { AnsiLineAssembler } from './ansi.js';
+import { buildChildEnv } from './child-env.js';
+import { nowIso } from './clock.js';
+import type { Logger } from './log.js';
+import type { AgentProfile } from './profile.js';
+import { SeqRing } from './ring.js';
+import { flushTerminal, serializeSnapshot, viewportText } from './screen.js';
+import { SizeArbiter } from './size-arbiter.js';
+import type { SizeDecision } from './size-arbiter.js';
+import { StateTracker } from './state-tracker.js';
+import { newPaneId } from './ulid.js';
+
+const { Terminal } = xterm;
+type Terminal = TerminalType;
+
+/** 行リングの 1 エントリあたりの固定オーバーヘッド (オブジェクト・配列スロット・文字列ヘッダ)。空行ばかりでもエントリ数が膨らまないよう size に足す。 */
+const LINE_ENTRY_OVERHEAD = 64;
+const KILL_GRACE_MS = 3000;
+const DEFAULT_COLS = 80;
+const DEFAULT_ROWS = 24;
+
+export interface PaneOpenOptions {
+  cmd: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  /** spawn 時に子の環境へ足すだけで、Pane は保持しない。env と同じキーならこちらが勝つ。 */
+  ephemeralEnv?: Record<string, string>;
+  cols?: number;
+  rows?: number;
+  socketPath: string;
+  /** headless 端末のスクロールバック行数。 */
+  scrollback: number;
+  /** raw 出力リングの上限バイト数。 */
+  rawRingBytes: number;
+  /** 行ストリームリングの上限バイト数。 */
+  linesRingBytes: number;
+  /** この pane の稼働判定に使うプロファイル。無ければ汎用の title / bytes 段だけで判定する。 */
+  profile?: AgentProfile;
+  /** プロファイルの例外など、稼働判定の出来事を残す。 */
+  log: Logger;
+}
+
+export interface PaneInfoMeta {
+  workspace: string;
+  window: PaneInfo['window'];
+  labels: Record<string, string>;
+}
+
+export interface PaneScreen {
+  text: string;
+  cursor: { x: number; y: number };
+  altScreen: boolean;
+  title: string;
+  /** 出力と resize のたびに増える。値が変わっていなければ画面は変わっていない。 */
+  activity: number;
+}
+
+/**
+ * Pane が emit する:
+ *  'output' (seq, data: Buffer, ts)  'line' (seq, text, ts)
+ *  'title' (title)  'exit' ({exitCode, signal})  'state' (state, decidedBy, prev)
+ */
+export class Pane extends EventEmitter {
+  readonly id = newPaneId();
+  readonly rawRing: SeqRing<Buffer>;
+  readonly linesRing: SeqRing<string>;
+  readonly clients = new Set<string>();
+  readonly cmd: string[];
+  readonly cwd: string;
+  readonly pid: number;
+  state: 'running' | 'exited' = 'running';
+  exitCode: number | null = null;
+  signal: number | null = null;
+  title = '';
+  lastOutputAt: string | null = null;
+  /** 出力と resize のたびに +1 する。 */
+  activity = 0;
+  cols: number;
+  rows: number;
+
+  private readonly proc: pty.IPty;
+  private readonly term: Terminal;
+  private readonly assembler = new AnsiLineAssembler();
+  private readonly sizes = new SizeArbiter();
+  private readonly tracker: StateTracker;
+  private killTimer: NodeJS.Timeout | undefined;
+  private closing: Promise<void> | undefined;
+
+  constructor(opts: PaneOpenOptions) {
+    super();
+    this.rawRing = new SeqRing<Buffer>(opts.rawRingBytes);
+    this.linesRing = new SeqRing<string>(opts.linesRingBytes);
+    this.cmd = opts.cmd;
+    this.cwd = opts.cwd ?? process.cwd();
+    this.cols = opts.cols ?? DEFAULT_COLS;
+    this.rows = opts.rows ?? DEFAULT_ROWS;
+    this.term = new Terminal({ cols: this.cols, rows: this.rows, scrollback: opts.scrollback, allowProposedApi: true });
+    this.proc = pty.spawn(opts.cmd[0]!, opts.cmd.slice(1), {
+      name: 'xterm-256color',
+      cols: this.cols,
+      rows: this.rows,
+      cwd: this.cwd,
+      env: buildChildEnv(process.env, this.id, opts.socketPath, { ...opts.env, ...opts.ephemeralEnv }),
+      encoding: null, // バイト列のまま受け取る (UTF-8 境界は自前で扱う)
+    });
+    this.pid = this.proc.pid;
+    // tracker は 1 秒タイマーを持つので、spawn が成功してから作る (失敗時にタイマーを残さない)
+    this.tracker = new StateTracker({
+      profile: opts.profile,
+      readScreen: () => ({
+        rows: viewportText(this.term).split('\n'),
+        title: this.title,
+        altScreen: this.term.buffer.active.type === 'alternate',
+      }),
+      onChange: (state, decidedBy, prev) => this.emit('state', state, decidedBy, prev),
+      now: Date.now,
+      log: {
+        warn: (msg) => opts.log.warn(`pane ${this.id}: ${msg}`),
+      },
+    });
+    this.term.onTitleChange((t) => {
+      this.title = t;
+      this.tracker.setTitle(t);
+      this.emit('title', t);
+    });
+    this.proc.onData((d: string | Buffer) => this.handleData(typeof d === 'string' ? Buffer.from(d) : d));
+    this.proc.onExit(({ exitCode, signal }) => this.handleExit(exitCode, signal));
+  }
+
+  get sizeOwner(): string | null {
+    return this.sizes.owner;
+  }
+
+  private handleData(data: Buffer): void {
+    const ts = nowIso();
+    this.lastOutputAt = ts;
+    this.activity++;
+    this.tracker.recordOutput(data.length);
+    const seq = this.rawRing.push(data, data.length, ts);
+    // プロファイルは解析済みの画面を読む必要があるので、write の完了で通知する
+    this.term.write(data, () => this.tracker.notifyScreenUpdated());
+    this.emit('output', seq, data, ts);
+    for (const text of this.assembler.push(data)) {
+      this.emitLine(text, ts);
+    }
+  }
+
+  private emitLine(text: string, ts: string): void {
+    const seq = this.linesRing.push(text, text.length + LINE_ENTRY_OVERHEAD, ts);
+    this.emit('line', seq, text, ts);
+  }
+
+  private handleExit(exitCode: number, signal: number | undefined): void {
+    this.state = 'exited';
+    const rest = this.assembler.pending;
+    if (rest !== '') {
+      // 改行なしで終わった最終行も行ストリームに流す
+      const ts = nowIso();
+      this.emitLine(rest, ts);
+    }
+    this.exitCode = signal ? null : exitCode;
+    this.signal = signal || null;
+    if (this.killTimer) clearTimeout(this.killTimer);
+    this.emit('exit', { exitCode: this.exitCode, signal: this.signal });
+    this.tracker.markExited(); // pane.exited の後に pane.state(exited) を出す
+  }
+
+  /** workspace / window / labels は Daemon が渡す（Pane は親もラベルも知らない）。 */
+  info({ workspace, window, labels }: PaneInfoMeta): PaneInfo {
+    return {
+      paneId: this.id,
+      pid: this.pid,
+      cmd: this.cmd,
+      cwd: this.cwd,
+      workspace,
+      window,
+      labels,
+      processState: this.state,
+      exitCode: this.exitCode,
+      signal: this.signal,
+      ...this.tracker.snapshot(),
+      title: this.title,
+      lastOutputAt: this.lastOutputAt,
+      cols: this.cols,
+      rows: this.rows,
+      clients: [...this.clients],
+      sizeOwner: this.sizeOwner,
+    };
+  }
+
+  write(data: Buffer): void {
+    this.tracker.notifyInput();
+    this.proc.write(data);
+  }
+
+  /** clientId のサイズを記録し、そのクライアントをサイズ所有者にして pty / 端末へ適用する。 */
+  resize(cols: number, rows: number, clientId: string | null): void {
+    this.apply(this.sizes.record(clientId, cols, rows));
+  }
+
+  /** clientId が所有者でなく、サイズを記録済みなら、そのサイズへ戻す。変更したら true。 */
+  claimSize(clientId: string): boolean {
+    const decision = this.sizes.claim(clientId);
+    if (!decision) return false;
+    this.apply(decision);
+    return true;
+  }
+
+  /**
+   * クライアントの離脱。所有者だった場合は、残るクライアントのうち最後に操作したものの
+   * サイズを適用し、適用した先の clientId を返す (なければ null)。
+   */
+  forgetClient(clientId: string): string | null {
+    const decision = this.sizes.forget(clientId);
+    if (!decision) return null;
+    this.apply(decision);
+    return decision.owner;
+  }
+
+  private apply({ cols, rows }: SizeDecision): void {
+    this.activity++;
+    this.tracker.notifyResize();
+    this.cols = cols;
+    this.rows = rows;
+    if (this.state === 'running') this.proc.resize(cols, rows);
+    this.term.resize(cols, rows);
+  }
+
+  async screen(): Promise<PaneScreen> {
+    const { activity } = this; // flush の前に読む (snapshot の headSeq と同じ方式)
+    await flushTerminal(this.term);
+    const buf = this.term.buffer.active;
+    return {
+      text: viewportText(this.term),
+      cursor: { x: buf.cursorX, y: buf.cursorY },
+      altScreen: buf.type === 'alternate',
+      title: this.title,
+      activity,
+    };
+  }
+
+  /** 反映済みの状態をシリアライズし、その時点の raw head seq を返す。 */
+  snapshot(): Promise<{ data: string; headSeq: number }> {
+    const headSeq = this.rawRing.head;
+    // xterm は write コールバックの後も、後から積まれたチャンクの解析を同じループで続ける。
+    // resolve の続き (マイクロタスク) では遅いので、シリアライズはコールバック内で同期的に行う。
+    return new Promise((resolve) =>
+      this.term.write('', () => resolve({ data: serializeSnapshot(this.term), headSeq })),
+    );
+  }
+
+  /** SIGHUP → 3s → SIGKILL。終了で resolve。並行して呼ばれたら同じ Promise を返す (kill タイマーは 1 つ)。 */
+  close(): Promise<void> {
+    if (this.state === 'exited') return Promise.resolve();
+    this.closing ??= new Promise((resolve) => {
+      this.once('exit', () => resolve());
+      this.signalGroup('SIGHUP');
+      this.killTimer = setTimeout(() => this.signalGroup('SIGKILL'), KILL_GRACE_MS);
+    });
+    return this.closing;
+  }
+
+  /** pty の子はセッションリーダーなので、プロセスグループ全体へ送る。失敗したら pid 単体。 */
+  private signalGroup(sig: NodeJS.Signals): void {
+    try {
+      process.kill(-this.pid, sig);
+    } catch {
+      try {
+        process.kill(this.pid, sig);
+      } catch {
+        // すでに終了
+      }
+    }
+  }
+
+  dispose(): void {
+    if (this.killTimer) clearTimeout(this.killTimer);
+    this.tracker.stop();
+    this.removeAllListeners();
+    this.term.dispose();
+  }
+}

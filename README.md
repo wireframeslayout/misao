@@ -41,10 +41,30 @@ npm run build   # tsc -b across all packages
 npm run typecheck
 npm test        # node:test via tsx, per workspace (runs against src, no build needed)
 npm run smoke   # run the built CLI directly
+npm run test:e2e  # end-to-end tests against a real daemon process (see below)
 ```
+
+The e2e tests (`packages/e2e`) start `misao serve` from a temporary directory and drive it
+with fake agents, a fake hub, vim, and bash. They stay out of `npm test`. Cases that need
+external tools are opt-in: `MISAO_E2E_CLAUDE=1` (Claude Code), `MISAO_E2E_CODEX=1` (Codex),
+`MISAO_E2E_SYSTEMD=1` (creates a temporary systemd user unit). `MISAO_E2E_FULL=1` restores
+the full scale of the Phase 0 spike.
+
+To run the daemon under systemd, see [deploy/README.md](deploy/README.md).
 
 During development run the CLI with `node packages/cli/dist/main.js`, or `npx misao`
 (after `npm run build`, run `npm rebuild misao` once to create the bin link).
+
+## Documentation
+
+English is the canonical version; each document has a Japanese edition (`*.ja.md`) next to it.
+
+| Document | Contents |
+|---|---|
+| [docs/protocol.md](docs/protocol.md) | Socket protocol: methods, notifications, `seq` / `epoch` / `gap`, errors |
+| [docs/cli.md](docs/cli.md) | The `misao` command: targets, commands, attach keys, exit codes |
+| [docs/config.md](docs/config.md) | `misao.json`, socket location, memory sizing, running as a service |
+| [docs/embedding.md](docs/embedding.md) | Node SDK, label conventions, secrets, agent profiles |
 
 ## License
 
