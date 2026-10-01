@@ -48,11 +48,11 @@ test('close は削除した windowId 群を返し、window の close は他を�
   layout.createWorkspace('a');
   const w1 = layout.createWindow('a', 'x');
   const w2 = layout.createWindow('a', 'y');
-  layout.closeWindow(w1.windowId);
+  assert.deepEqual(layout.closeWindows([w1.windowId, `w_${ulid()}`]), [w1.windowId]);
   expectFailure(() => layout.windowRef(w1.windowId), ErrorCode.WindowNotFound);
   assert.deepEqual(layout.closeWorkspace('a'), [w2.windowId]);
   expectFailure(() => layout.closeWorkspace('a'), ErrorCode.WorkspaceNotFound);
-  expectFailure(() => layout.closeWindow(w2.windowId), ErrorCode.WindowNotFound);
+  assert.deepEqual(layout.closeWindows([w2.windowId]), []);
 });
 
 test('resolveWindow: 省略時は default を作り、2 回目以降は再利用する', () => {

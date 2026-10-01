@@ -41,12 +41,17 @@ export class PaneRegistry {
     return [...this.entries.values()].flatMap((e) => (e.live ? [e.live] : []));
   }
 
+  /** record だけを置き換える (live は保つ)。 */
+  replaceRecord(record: PaneRecord): void {
+    this.entries.set(record.paneId, { ...this.getOrThrow(record.paneId), record });
+  }
+
   /** set → unset の順に適用した新しい labels を返し、record を置き換える。 */
   setLabels(paneId: string, set: Record<string, string> | undefined, unset: readonly string[] | undefined): Record<string, string> {
-    const entry = this.require(paneId);
+    const entry = this.getOrThrow(paneId);
     const labels = { ...entry.record.labels, ...set };
     for (const key of unset ?? []) delete labels[key];
-    this.entries.set(paneId, { ...entry, record: { ...entry.record, labels } });
+    this.replaceRecord({ ...entry.record, labels });
     return labels;
   }
 
@@ -63,7 +68,7 @@ export class PaneRegistry {
   }
 
   info(paneId: string, workspace: string, window: PaneInfo['window']): PaneInfo {
-    const { record, live } = this.require(paneId);
+    const { record, live } = this.getOrThrow(paneId);
     if (live) return live.info({ workspace, window, labels: record.labels });
     return {
       paneId,
@@ -94,7 +99,7 @@ export class PaneRegistry {
     );
   }
 
-  private require(paneId: string): PaneEntry {
+  getOrThrow(paneId: string): PaneEntry {
     const entry = this.entries.get(paneId);
     if (!entry) throw new RpcFailure(ErrorCode.PaneNotFound, `pane not found: ${paneId}`);
     return entry;

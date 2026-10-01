@@ -67,11 +67,17 @@ export function loadPersistedState(path: string): PersistedState {
   throw new Error(`invalid persistence file ${path}: ${detail}`);
 }
 
-/** 一時ファイルに書いてから rename する (途中で落ちても元のファイルは壊れない)。 */
+/** 一時ファイルに書いて fsync してから rename する (途中で落ちても、電源断でも、元のファイルは壊れない)。 */
 export function savePersistedState(path: string, state: PersistedState): void {
   const tmp = `${path}.tmp-${process.pid}`;
   try {
-    fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+    const fd = fs.openSync(tmp, 'w', 0o600);
+    try {
+      fs.writeSync(fd, `${JSON.stringify(state, null, 2)}\n`);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, path);
   } catch (e) {
     fs.rmSync(tmp, { force: true });

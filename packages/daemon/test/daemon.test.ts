@@ -684,3 +684,48 @@ test('ephemeralEnv は子の環境にだけ渡り、保存・応答・イベン�
     assert.equal(JSON.stringify(await client.request('pane.info', { paneId })).includes('secret-xyz'), false);
   });
 });
+
+test('保存に失敗したら pane.open / workspace.create / pane.set_label は戻り、イベントも出ない', async () => {
+  await withDaemon(async (daemon, client) => {
+    const events = await collectEvents(client);
+    const keep = await openPane(client, ['sh', '-c', 'sleep 5'], { labels: { a: '1' } });
+    const before = await client.request('workspace.list');
+    const eventCount = events.length;
+    // statePath の位置にディレクトリがあると、保存 (rename) は root でも失敗する
+    const statePath = path.join(path.dirname(daemon.socketPath), 'persistence.json');
+    fs.rmSync(statePath);
+    fs.mkdirSync(statePath);
+
+    await assert.rejects(openPane(client, ['sh', '-c', 'sleep 5']), RpcClientError);
+    await assert.rejects(client.request('workspace.create', { name: 'x' }), RpcClientError);
+    await assert.rejects(client.request('window.create', { workspace: 'default', name: 'x' }), RpcClientError);
+    await assert.rejects(client.request('pane.set_label', { paneId: keep.paneId, set: { a: '2', b: '3' } }), RpcClientError);
+
+    assert.deepEqual((await client.request<PaneInfo[]>('pane.list')).map((p) => p.paneId), [keep.paneId]);
+    assert.deepEqual(await client.request('workspace.list'), before);
+    assert.deepEqual((await client.request<PaneInfo>('pane.info', { paneId: keep.paneId })).labels, { a: '1' });
+    await sleep(100);
+    assert.equal(events.length, eventCount);
+    fs.rmdirSync(statePath);
+    await client.request('pane.close', { paneId: keep.paneId });
+  });
+});
+
+test('既定の workspace / window の遅延作成も、保存に失敗したら戻る', async () => {
+  await withDaemon(async (daemon, client) => {
+    fs.mkdirSync(path.join(path.dirname(daemon.socketPath), 'persistence.json'));
+    await assert.rejects(openPane(client, ['sh', '-c', 'sleep 5']), RpcClientError);
+    assert.deepEqual(await client.request('workspace.list'), []);
+    assert.deepEqual(await client.request('pane.list'), []);
+  });
+});
+
+test('resize で変えたサイズが保存され、再起動後の stopped に反映される', async () => {
+  await withRestart(async (restart, first) => {
+    const { paneId } = await openPane(first, ['sh', '-c', 'sleep 30']);
+    await first.request('pane.resize', { paneId, cols: 111, rows: 33 });
+    const client = await restart();
+    const info = await client.request<PaneInfo>('pane.info', { paneId });
+    assert.deepEqual([info.cols, info.rows], [111, 33]);
+  });
+});

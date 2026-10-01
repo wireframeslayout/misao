@@ -65,9 +65,24 @@ export class Layout {
     this.updateWindows((w) => w.windows.map((win) => (win.id === windowId ? { ...win, name } : win)));
   }
 
-  closeWindow(windowId: string): void {
-    this.requireWindow(windowId);
-    this.updateWindows((w) => w.windows.filter((win) => win.id !== windowId));
+  /** 存在する window だけを削除し、削除したものの ID を返す (既に無いものは無視)。 */
+  closeWindows(windowIds: readonly string[]): string[] {
+    const removed = windowIds.filter((id) => this.hasWindow(id));
+    this.updateWindows((w) => w.windows.filter((win) => !removed.includes(win.id)));
+    return removed;
+  }
+
+  hasWorkspace(name: string): boolean {
+    return this.find(name) !== undefined;
+  }
+
+  hasWindow(windowId: string): boolean {
+    return this.workspaces.some((w) => w.windows.some((win) => win.id === windowId));
+  }
+
+  /** workspace に属する windowId 群。存在しなければ WorkspaceNotFound。 */
+  requireWindowIds(name: string): string[] {
+    return this.require(name).windows.map((w) => w.id);
   }
 
   windowRef(windowId: string): WindowLocation {
