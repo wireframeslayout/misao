@@ -57,15 +57,15 @@ export class MisaoClient {
     this.stateListeners.emit({ status: 'connected' });
   }
 
-  request<M extends MethodName>(method: M, params: MethodParams<M>): Promise<MethodResult<M>> {
+  async request<M extends MethodName>(method: M, params: MethodParams<M>): Promise<MethodResult<M>> {
     return this.requireConnection().request(method, params);
   }
 
-  subscribeEvents(handler: EventHandler, options: SubscribeOptions = {}): Promise<Subscription> {
+  async subscribeEvents(handler: EventHandler, options: SubscribeOptions = {}): Promise<Subscription> {
     return this.subscriber.subscribeEvents(this.requireConnection(), handler, options);
   }
 
-  subscribeLines(paneId: string, handler: LineHandler, options: SubscribeOptions = {}): Promise<Subscription> {
+  async subscribeLines(paneId: string, handler: LineHandler, options: SubscribeOptions = {}): Promise<Subscription> {
     return this.subscriber.subscribeLines(this.requireConnection(), paneId, handler, options);
   }
 
