@@ -26,10 +26,17 @@ export interface PaneOpenOptions {
   cmd: string[];
   cwd?: string;
   env?: Record<string, string>;
+  /** spawn 時に子の環境へ足すだけで、Pane は保持しない。env と同じキーならこちらが勝つ。 */
+  ephemeralEnv?: Record<string, string>;
   cols?: number;
   rows?: number;
-  labels?: Record<string, string>;
   socketPath: string;
+}
+
+export interface PaneInfoMeta {
+  workspace: string;
+  window: PaneInfo['window'];
+  labels: Record<string, string>;
 }
 
 export interface PaneScreen {
@@ -51,7 +58,6 @@ export class Pane extends EventEmitter {
   readonly clients = new Set<string>();
   readonly cmd: string[];
   readonly cwd: string;
-  readonly labels: Record<string, string>;
   readonly pid: number;
   state: 'running' | 'exited' = 'running';
   exitCode: number | null = null;
@@ -72,7 +78,6 @@ export class Pane extends EventEmitter {
     super();
     this.cmd = opts.cmd;
     this.cwd = opts.cwd ?? process.cwd();
-    this.labels = opts.labels ?? {};
     this.cols = opts.cols ?? DEFAULT_COLS;
     this.rows = opts.rows ?? DEFAULT_ROWS;
     this.term = new Terminal({ cols: this.cols, rows: this.rows, scrollback: SCROLLBACK, allowProposedApi: true });
@@ -85,7 +90,7 @@ export class Pane extends EventEmitter {
       cols: this.cols,
       rows: this.rows,
       cwd: this.cwd,
-      env: buildChildEnv(process.env, this.id, opts.socketPath, opts.env),
+      env: buildChildEnv(process.env, this.id, opts.socketPath, { ...opts.env, ...opts.ephemeralEnv }),
       encoding: null, // バイト列のまま受け取る (UTF-8 境界は自前で扱う)
     });
     this.pid = this.proc.pid;
@@ -124,8 +129,8 @@ export class Pane extends EventEmitter {
     this.emit('exit', { exitCode: this.exitCode, signal: this.signal });
   }
 
-  /** workspace / window は Daemon が渡す（Pane は親を知らない）。 */
-  info(workspace: string, window: PaneInfo['window']): PaneInfo {
+  /** workspace / window / labels は Daemon が渡す（Pane は親もラベルも知らない）。 */
+  info({ workspace, window, labels }: PaneInfoMeta): PaneInfo {
     const exited = this.state === 'exited';
     return {
       paneId: this.id,
@@ -134,7 +139,7 @@ export class Pane extends EventEmitter {
       cwd: this.cwd,
       workspace,
       window,
-      labels: this.labels,
+      labels,
       processState: this.state,
       exitCode: this.exitCode,
       signal: this.signal,

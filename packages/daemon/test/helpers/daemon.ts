@@ -12,14 +12,21 @@ export async function waitFor(pred: () => boolean | Promise<boolean>, ms = 5000)
   }
 }
 
-export async function withDaemon(fn: (daemon: Daemon, client: RpcClient) => Promise<void>): Promise<void> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-it-'));
+/** dir にソケット・pid・persistence.json を置いて起動する。同じ dir で再起動すると状態を引き継ぐ。 */
+export async function startDaemon(dir: string): Promise<Daemon> {
   const daemon = new Daemon({
     socketPath: path.join(dir, 'misao.sock'),
     pidPath: path.join(dir, 'daemon.pid'),
+    statePath: path.join(dir, 'persistence.json'),
     log: () => undefined,
   });
   await daemon.start();
+  return daemon;
+}
+
+export async function withDaemon(fn: (daemon: Daemon, client: RpcClient) => Promise<void>): Promise<void> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-it-'));
+  const daemon = await startDaemon(dir);
   const client = await RpcClient.connect(daemon.socketPath);
   try {
     await fn(daemon, client);

@@ -27,3 +27,9 @@ test('overrides が最後に上書きし、undefined の値は含めない', () 
   assert.equal(env.C, '3');
   assert.equal('A' in env, false);
 });
+
+test('overrides 内では後に積んだ値が勝つ', () => {
+  const env = buildChildEnv({}, 'p_X', '/s', { ...{ K: 'first', TERM: 'a' }, ...{ K: 'second' } });
+  assert.equal(env.K, 'second');
+  assert.equal(env.TERM, 'a');
+});
