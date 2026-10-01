@@ -17,6 +17,8 @@ export interface TestIo extends CliIo {
   emitUncaught(error: Error): void;
   /** setRawMode(mode) の呼び出し履歴。 */
   readonly rawModes: boolean[];
+  /** 端末サイズを変える (SIGWINCH は別に emitSignal する)。 */
+  setSize(cols: number, rows: number): void;
 }
 
 export interface TestIoOptions {
@@ -82,5 +84,9 @@ export function createTestIo(options: TestIoOptions = {}): TestIo {
     emitSignal: (signal) => handlers.get(signal)?.forEach((h) => h()),
     emitUncaught: (error) => uncaught.forEach((h) => h(error)),
     rawModes,
+    setSize(cols, rows) {
+      stdout.columns = cols;
+      stdout.rows = rows;
+    },
   };
 }

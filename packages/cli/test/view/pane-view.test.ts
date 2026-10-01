@@ -6,6 +6,7 @@ import {
   formatWindowId,
   isRegistered,
   relativeTime,
+  shortDisplayName,
   shortPaneIds,
   shortSuffix,
   sortPanes,
@@ -107,4 +108,9 @@ test('shortPaneIds: 先頭 4 文字…末尾 2 文字。衝突したら末尾を
   assert.equal(three.get(c), 'p_01M3…Y7Q');
   assert.equal(three.get(b), 'p_01M3…R8');
   assert.equal(shortSuffix('p_01M3…R8'), 'R8');
+});
+
+test('shortDisplayName: 登録済みは窓番号だけ、未登録は NAME 列と同じ', () => {
+  assert.equal(shortDisplayName(makePane({ labels: { windowId: '806', name: '表示名' } }), HOME), 'W-806');
+  assert.equal(shortDisplayName(makePane({ labels: { name: 'メモ' } }), HOME), '(未登録) メモ');
 });

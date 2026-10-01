@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { TTY_RESET, TtyGuard } from '../../src/attach/tty.js';
+import { TTY_RESET, TtyGuard, terminalSize } from '../../src/attach/tty.js';
 import { CliError } from '../../src/errors.js';
 import { createTestIo } from '../helpers/io.js';
 
@@ -49,4 +49,17 @@ test('restore 後はシグナルを扱わない / TTY でなければ usage エ�
     () => new TtyGuard(createTestIo()).enter(() => undefined),
     (e: unknown) => e instanceof CliError && e.kind === 'usage',
   );
+});
+
+test('TTY_RESET: alt screen / マウス / bracketed paste / カーソル表示を戻す', () => {
+  for (const seq of ['?1049l', '?1000l', '?1002l', '?1003l', '?1006l', '?2004l', '?1l', '?25h']) {
+    assert.ok(TTY_RESET.includes(seq), seq);
+  }
+});
+
+test('terminalSize: 端末なら列と行、そうでなければ usage エラー', () => {
+  assert.deepEqual(terminalSize(createTestIo({ isTTY: true, columns: 100, rows: 30 })), { cols: 100, rows: 30 });
+  for (const io of [createTestIo({ columns: 100, rows: 30 }), createTestIo({ isTTY: true })]) {
+    assert.throws(() => terminalSize(io), (e: unknown) => e instanceof CliError && e.kind === 'usage');
+  }
 });

@@ -1,5 +1,5 @@
 import { withDaemon } from '../connect.js';
-import { confirm } from '../confirm.js';
+import { confirm } from '../prompt.js';
 import { CliError } from '../errors.js';
 import { writeJson, writeLine } from '../output.js';
 import { resolveTarget } from '../target.js';

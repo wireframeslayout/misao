@@ -1,4 +1,5 @@
 import type { Command } from './command.js';
+import { attachCommand } from './attach.js';
 import { eventsCommand } from './events.js';
 import { killCommand } from './kill.js';
 import { labelCommand } from './label.js';
@@ -13,6 +14,7 @@ import { tailCommand } from './tail.js';
 
 export const COMMANDS: readonly Command[] = [
   lsCommand,
+  attachCommand,
   newCommand,
   killCommand,
   statusCommand,

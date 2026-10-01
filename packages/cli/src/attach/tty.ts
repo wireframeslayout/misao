@@ -50,3 +50,17 @@ export class TtyGuard {
     this.io.stdin.pause();
   }
 }
+
+export interface TerminalSize {
+  cols: number;
+  rows: number;
+}
+
+/** 端末のサイズ。stdin / stdout が端末でない、またはサイズが取れなければ usage エラー。 */
+export function terminalSize(io: CliIo): TerminalSize {
+  const { columns, rows } = io.stdout;
+  if (!io.stdin.isTTY || !io.stdout.isTTY || columns === undefined || rows === undefined) {
+    throw new CliError('usage', 'attach には端末（TTY）が必要です');
+  }
+  return { cols: columns, rows };
+}

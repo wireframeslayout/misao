@@ -118,3 +118,8 @@ export function shortPaneIds(paneIds: readonly string[]): Map<string, string> {
 export function shortSuffix(shortId: string): string {
   return shortId.slice(shortId.indexOf('…') + 1);
 }
+
+/** 「W-806 から抜けました」のような文中の呼び名。登録済みなら窓番号だけ、未登録なら NAME 列と同じ。 */
+export function shortDisplayName(pane: PaneInfo, homeDir: string): string {
+  return isRegistered(pane) ? formatWindowId(pane.labels.windowId!) : displayName(pane, homeDir);
+}
