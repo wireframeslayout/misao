@@ -50,6 +50,12 @@ client.onGap(({ stream, reason }) => {
 });
 client.onSubscriptionError(({ stream, error }) => record({ kind: 'subscription-error', stream, message: error.message }));
 
+// SIGTERM では接続を閉じてから終わる (処理の途中で落ちるのは kill -9 だけにする)
+process.on('SIGTERM', () => {
+  client.close();
+  process.exit(0);
+});
+
 const watched = new Set<string>();
 
 async function watchLines(paneId: string): Promise<void> {

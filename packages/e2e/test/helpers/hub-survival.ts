@@ -23,17 +23,18 @@ export function assertPaneSurvived(label: string, name: string, before: PaneSnap
   else assert.notEqual(after.screen.trim(), '', `${label}: ${name} の画面が空でない`);
 }
 
-/** seq 列の重複数と欠け (連続でない箇所の合計)。 */
-function analyzeSeqs(seqs: number[]): { duplicates: number; holes: number } {
+/** seq 列の重複数、先頭の seq、欠け (連続でない箇所の合計)。 */
+function analyzeSeqs(seqs: number[]): { duplicates: number; first: number | undefined; holes: number } {
   const unique = [...new Set(seqs)].sort((a, b) => a - b);
   let holes = 0;
   for (let i = 1; i < unique.length; i++) holes += unique[i]! - unique[i - 1]! - 1;
-  return { duplicates: seqs.length - unique.length, holes };
+  return { duplicates: seqs.length - unique.length, first: unique[0], holes };
 }
 
 /**
  * agent の完了後、hub のログが agent の全マーカーと連続した seq を含むことを確かめる。
- * ログ追記 → state 保存の順なので、hub を kill した回に限り最後の 1 件が重複しうる (欠けはしない)。
+ * ログ追記 → state 保存の順なので、hub を kill -9 した回ごとに高々 1 件 (行かイベントのどちらか) が重複しうる (欠けはしない)。
+ * 再起動 (SIGTERM) は処理の区切りで終わるので重複しない。hub は since 0 から購読するので、seq は 1 から始まる。
  */
 export async function assertHubLogComplete(
   client: MisaoClient,
@@ -49,7 +50,9 @@ export async function assertHubLogComplete(
   assert.deepEqual([...found].filter((marker) => !expected.includes(marker)), [], '誤検出');
   const lines = analyzeSeqs(agentLines().map((e) => e.seq!));
   const events = analyzeSeqs(readHubLog(logFile).filter((e) => e.kind === 'event').map((e) => e.seq!));
+  assert.equal(lines.first, 1, '行 seq が 1 から始まる');
+  assert.equal(events.first, 1, 'イベント seq が 1 から始まる');
   assert.equal(lines.holes, 0, '行 seq に欠けがない');
   assert.equal(events.holes, 0, 'イベント seq に欠けがない');
-  assert.ok(lines.duplicates <= killCount && events.duplicates <= killCount, `重複は kill の回数以内: ${JSON.stringify({ lines, events, killCount })}`);
+  assert.ok(lines.duplicates + events.duplicates <= killCount, `重複は kill -9 の回数以内: ${JSON.stringify({ lines, events, killCount })}`);
 }
