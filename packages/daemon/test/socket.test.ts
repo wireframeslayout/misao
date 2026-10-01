@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, afterEach, before, mock, test } from 'node:test';
-import { ensureSocketDir, listenUnixSocket } from '../src/socket.js';
+import { ensureSocketDir, listenUnixSocket, removeStaleSocket } from '../src/socket.js';
 
 let root: string;
 const originalUmask = process.umask();
@@ -117,4 +117,36 @@ test('listenUnixSocket: chmod に失敗したら server を閉じて reject', as
     syncBuiltinESMExports();
     server.close();
   }
+});
+
+test('removeStaleSocket: ファイルが無ければ何もしない', async () => {
+  assert.equal(await removeStaleSocket(path.join(root, 'none.sock')), false);
+});
+
+test('removeStaleSocket: 誰も待ち受けていない (ECONNREFUSED) なら消す', async () => {
+  const sock = path.join(root, 'stale.sock');
+  writeFileSync(sock, ''); // ソケットでないファイルへの connect は ECONNREFUSED
+  assert.equal(await removeStaleSocket(sock), true);
+  assert.equal(existsSync(sock), false);
+});
+
+test('removeStaleSocket: 待ち受けているプロセスがいれば例外で、消さない', async () => {
+  const sock = path.join(root, 'alive.sock');
+  const server = createServer();
+  await new Promise<void>((r) => server.listen(sock, r));
+  try {
+    await assert.rejects(removeStaleSocket(sock), /another daemon is already listening/);
+    assert.equal(existsSync(sock), true);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test('removeStaleSocket: 古いと断定できないエラー (EACCES) では例外で、消さない', async (t) => {
+  if (process.getuid?.() === 0) return t.skip('root は権限で拒否されない');
+  const sock = path.join(root, 'noperm.sock');
+  writeFileSync(sock, '');
+  chmodSync(sock, 0o000);
+  await assert.rejects(removeStaleSocket(sock), /EACCES/);
+  assert.equal(existsSync(sock), true);
 });

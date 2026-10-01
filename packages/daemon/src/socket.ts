@@ -1,4 +1,5 @@
-import { chmod, lstat, mkdir } from 'node:fs/promises';
+import { chmod, lstat, mkdir, unlink } from 'node:fs/promises';
+import { connect } from 'node:net';
 import type { Server } from 'node:net';
 import path from 'node:path';
 
@@ -57,4 +58,29 @@ export async function listenUnixSocket(server: Server, socketPath: string): Prom
     server.close();
     throw error;
   }
+}
+
+/** 待ち受けているプロセスがいないことが確実なエラー。これ以外 (EAGAIN, EACCES など) では消さない。 */
+const STALE_SOCKET_CODES = new Set(['ECONNREFUSED', 'ENOENT']);
+
+/**
+ * 応答するプロセスがいない古いソケットファイルを消す。消したら true。
+ * 接続できたら (稼働中のデーモンがいる)、または古いと断定できないエラーなら例外を投げる。
+ */
+export async function removeStaleSocket(socketPath: string): Promise<boolean> {
+  const code = await new Promise<string | null>((resolve) => {
+    const s = connect(socketPath);
+    s.once('connect', () => {
+      s.destroy();
+      resolve(null);
+    });
+    s.once('error', (e: NodeJS.ErrnoException) => resolve(e.code ?? 'UNKNOWN'));
+  });
+  if (code === null) throw new Error(`another daemon is already listening on ${socketPath}`);
+  if (code === 'ENOENT') return false;
+  if (!STALE_SOCKET_CODES.has(code)) {
+    throw new Error(`cannot determine whether ${socketPath} is in use (${code}); refusing to remove it`);
+  }
+  await unlink(socketPath);
+  return true;
 }
