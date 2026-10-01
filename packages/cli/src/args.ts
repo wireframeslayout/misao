@@ -9,7 +9,7 @@ export interface OptionSpec {
 export type OptionSpecs = Readonly<Record<string, OptionSpec>>;
 
 /** どのコマンドでも受け付ける。 */
-export const GLOBAL_OPTIONS = {
+const GLOBAL_OPTIONS = {
   config: { type: 'string' },
   json: { type: 'boolean' },
   help: { type: 'boolean' },
@@ -105,7 +105,7 @@ export function splitCommand(argv: readonly string[]): SplitArgs {
 }
 
 /** `k=v` を [k, v] に分ける。= が無い・k が空なら usage エラー。値は空でもよい。 */
-export function parseKeyValue(item: string, optionName: string): [string, string] {
+function parseKeyValue(item: string, optionName: string): [string, string] {
   const at = item.indexOf('=');
   if (at < 1) throw new CliError('usage', `${optionName} は k=v の形で指定してください: ${item}`);
   return [item.slice(0, at), item.slice(at + 1)];
