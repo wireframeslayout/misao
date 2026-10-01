@@ -41,7 +41,8 @@ client.close();
   attempt) fails with `MisaoConnectionError`. This protects against a hung daemon.
 - `request(method, params)` is typed by `@misao/protocol`. A daemon error rejects with
   `MisaoRpcError` (`code`, `message`; see [Errors](protocol.md#errors)). Calling it while not
-  connected rejects with `MisaoConnectionError`.
+  connected rejects with `MisaoConnectionError`. `params` are validated by the schema before
+  sending; invalid params reject with a Zod `ZodError` and nothing is sent.
 - `close()` ends the client and stops reconnecting.
 
 ## Reconnect and backoff
@@ -56,8 +57,9 @@ After a successful `connect()`, a lost connection is retried until you call `clo
 
 The delay before attempt `n` (starting at 1) is `min(maxDelayMs, initialDelayMs * factor^(n-1))`
 (`computeBackoffDelay`). There is no attempt limit. The only reasons for the client to give up
-are `close()` and a daemon that turns out to be protocol-incompatible after a restart; then the
-state becomes `closed` with a `cause`. Requests in flight at the time of the disconnect reject
+are `close()` and a daemon that turns out to be protocol-incompatible after a restart; either
+way the state becomes `closed`, and `cause` is set only for the incompatible daemon (an unexpected
+internal error in the reconnect loop is reported to `onError` and also ends in `closed`). Requests in flight at the time of the disconnect reject
 with `MisaoConnectionError`.
 
 ```ts
@@ -68,8 +70,9 @@ client.onStateChange((state) => {
 });
 ```
 
-`connected` is also emitted once after the first `connect()` resolves, and again after each
-successful reconnect.
+`connected` is also emitted once at the end of the first `connect()`, before its promise
+resolves, and again after each successful reconnect. To receive the first one, register the
+listener before calling `connect()`.
 
 ## Following streams
 

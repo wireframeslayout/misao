@@ -56,6 +56,8 @@ Reserved but not available:
 
 - `pane.attach` with `mode: "cells"` returns `1004` (Unsupported). Only `mode: "raw"` works.
 - `pane.respawn` exists in the schema only and returns `1005` (NotImplemented).
+- `window.focus` exists in the schema only and returns `1005` (NotImplemented). The `focus`
+  event is defined in the schema but never emitted yet.
 
 ## Methods
 
@@ -67,14 +69,16 @@ misao schema          # prints the result of server.schema as JSON
 ```
 
 or as the `server.schema` method. Unless noted, a method that takes a `paneId` answers `1001`
-when the pane does not exist.
+when the pane does not exist. `pane.detach` is the exception: it answers `ok` even when the pane
+or the attachment does not exist.
 
 | Method | Purpose | Key params | Result |
 |---|---|---|---|
 | `server.info` | Daemon identity and stream heads | none | `protocolVersion`, `pid`, `epoch`, `uptimeSec`, `paneCount`, `eventHead` |
 | `server.schema` | JSON schema of the whole protocol | none | `{ protocolVersion, jsonrpc, methods, notifications, events, errors }` |
 | `workspace.list` / `workspace.create` / `workspace.close` / `workspace.rename` | Manage workspaces | `name` (`newName` for rename) | workspace info (`name`, `windows`) or `ok` |
-| `window.create` / `window.close` / `window.rename` / `window.focus` | Manage windows inside a workspace | `workspace`, `name`, `windowId`, `clientId` (focus) | window info or `ok` |
+| `window.create` / `window.close` / `window.rename` | Manage windows inside a workspace | `workspace`, `name`, `windowId` | window info or `ok` |
+| `window.focus` | Schema only | `windowId`, `clientId` | always `1005` |
 | `pane.open` | Start a command on a new PTY | `cmd` (required), `cwd`, `env`, `ephemeralEnv`, `cols`, `rows`, `labels`, `windowId` | `{ paneId }` |
 | `pane.info` / `pane.list` | Read pane state | `paneId`; `filter` (`state`, `labels`, `workspace`, ANDed) | pane info (one or array) |
 | `pane.write` | Write bytes to the PTY | `paneId`, `data` (UTF-8) **or** `dataB64`, `clientId`, `source` (`hub` / `terminal`) | `ok` |
@@ -82,7 +86,7 @@ when the pane does not exist.
 | `pane.resize` | Resize the PTY | `paneId`, `cols`, `rows`, `clientId` | `ok` |
 | `pane.screen` | Current screen text | `paneId` | `text`, `cursor`, `altScreen`, `title`, `activity` |
 | `pane.set_label` | Set / unset labels | `paneId`, `set`, `unset` (at least one) | `{ labels }` after the change |
-| `pane.attach` / `pane.detach` | Stream raw output to this connection | `paneId`, `clientId`, `mode`, `replay` (`raw` / `snapshot` / `none`), `cols`, `rows` | attach: `head`, `oldest`, `truncated` |
+| `pane.attach` / `pane.detach` | Stream raw output to this connection | `paneId`, `clientId`, `mode` (default `raw`), `replay` (`raw` / `snapshot` / `none`, default `none`), `cols`, `rows` | attach: `head`, `oldest`, `truncated` |
 | `pane.subscribe_lines` | Subscribe to the line stream | `paneId`, `since`, `epoch` | `gap`, `head`, `epoch` |
 | `events.subscribe` | Subscribe to daemon-wide events | `since`, `epoch` | `gap`, `head`, `epoch` |
 | `pane.close` | Close a pane (SIGHUP, wait for exit) | `paneId` | `ok` |
@@ -116,7 +120,7 @@ Known event types (the `data` schema of each is in `server.schema`):
 | daemon | `daemon.started` |
 | pane | `pane.opened`, `pane.title`, `pane.exited`, `pane.resized`, `pane.closed`, `pane.state`, `pane.label` |
 | input / clients | `input` (source and byte count only), `client.attached`, `client.detached` |
-| layout | `workspace.created`, `workspace.closed`, `workspace.renamed`, `window.created`, `window.closed`, `window.renamed`, `focus` |
+| layout | `workspace.created`, `workspace.closed`, `workspace.renamed`, `window.created`, `window.closed`, `window.renamed`, `focus` (reserved, not emitted yet) |
 
 Events tied to a pane carry `paneId` next to `data`, not inside it.
 
@@ -140,9 +144,10 @@ There are three independent streams:
 A subscription is resumed by passing `since` **together with** the `epoch` it belongs to:
 
 - `gap` is `true` when `since < oldest - 1` (the ring dropped items the client never saw),
-  when `since > head` (the daemon restarted and `seq` rewound), or when the passed `epoch`
-  differs from the current one.
-- When the passed `epoch` differs from the current epoch, the daemon treats `since` as `0`:
+  when `since > head` (the daemon restarted and `seq` rewound), or when `since` is given and the
+  passed `epoch` differs from the current one. The `epoch` is compared only when `since` is
+  given; an `epoch` without `since` is a live-only subscription with `gap: false`.
+- When `since` is given and the passed `epoch` differs from the current epoch, the daemon treats `since` as `0`:
   it replays from the oldest retained item and returns `gap: true`. The client must discard its
   stored `since`. A daemon restart is reliably detected only by comparing `epoch`; `since > head`
   is a secondary signal.
@@ -253,7 +258,7 @@ are for humans and never include stack traces; match on `code`.
 | 1002 | PaneExited | The pane has exited (write) or is `stopped` (any operation that needs a live process). |
 | 1003 | Ambiguous | Reserved. The daemon does not return it; the CLI resolves targets on the client side. |
 | 1004 | Unsupported | `pane.attach` with `mode: "cells"`. |
-| 1005 | NotImplemented | `pane.respawn`, `pane.send_keys`, and `preplace` of `pane.open`. |
+| 1005 | NotImplemented | `pane.respawn`, `pane.send_keys`, `window.focus`, and `preplace` of `pane.open`. |
 | 1006 | WorkspaceNotFound | Workspace does not exist (or is being closed). |
 | 1007 | WindowNotFound | Window does not exist (or is being closed). |
 | 1008 | AlreadyExists | A workspace with that name already exists. |

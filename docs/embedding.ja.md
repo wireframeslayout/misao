@@ -28,7 +28,7 @@ client.close();
 - `MisaoClientOptions`: `socketPath`（必須）、`backoff`（部分指定可、下記参照）、`connectTimeoutMs`（既定値 `5000`）。
 - `connect()` は接続し、`server.info` を呼び、プロトコルのメジャーバージョンが一致することを確認し、ストリームを復元します。デーモンに到達できない場合（`MisaoConnectionError`）や互換性がない場合（`MisaoProtocolVersionError`、[バージョン](protocol.ja.md#バージョンと互換性) を参照）は reject されます。呼び出せるのはクライアントがアイドルのときだけで、最初の試行の前か、失敗した試行の後です。
 - `connectTimeoutMs` は、ソケット接続後のセットアップ（`server.info` の確認とストリームの復元）に時間制限を設けます。タイムアウトすると接続を閉じ、`connect()`（または現在の再接続の試行）は `MisaoConnectionError` で失敗します。これによりデーモンのハングから保護されます。
-- `request(method, params)` は `@misao/protocol` によって型付けされています。デーモンのエラーは `MisaoRpcError`（`code`、`message`。[エラー](protocol.ja.md#エラー) を参照）で reject されます。未接続の間に呼び出すと `MisaoConnectionError` で reject されます。
+- `request(method, params)` は `@misao/protocol` によって型付けされています。デーモンのエラーは `MisaoRpcError`（`code`、`message`。[エラー](protocol.ja.md#エラー) を参照）で reject されます。未接続の間に呼び出すと `MisaoConnectionError` で reject されます。`params` は送信前にスキーマで検証され、不正な場合は Zod の `ZodError` で reject されます（何も送信されません）。
 - `close()` はクライアントを終了し、再接続を止めます。
 
 ## 再接続とバックオフ
@@ -41,7 +41,7 @@ client.close();
 | `maxDelayMs` | `5000` | 遅延の上限 |
 | `factor` | `2` | 試行ごとの倍率 |
 
-試行 `n`（1 から始まる）の前の遅延は `min(maxDelayMs, initialDelayMs * factor^(n-1))`（`computeBackoffDelay`）です。試行回数の上限はありません。クライアントが諦めるのは、`close()` が呼ばれた場合と、再起動後のデーモンがプロトコル非互換だと分かった場合だけで、その場合は状態が `closed` になり `cause` が付きます。切断時に処理中だったリクエストは `MisaoConnectionError` で reject されます。
+試行 `n`（1 から始まる）の前の遅延は `min(maxDelayMs, initialDelayMs * factor^(n-1))`（`computeBackoffDelay`）です。試行回数の上限はありません。クライアントが諦めるのは、`close()` が呼ばれた場合と、再起動後のデーモンがプロトコル非互換だと分かった場合だけで、どちらの場合も状態は `closed` になり、`cause` が付くのはプロトコル非互換のときだけです（再接続処理での想定外の内部エラーも `onError` に報告したうえで `closed` になります）。切断時に処理中だったリクエストは `MisaoConnectionError` で reject されます。
 
 ```ts
 client.onStateChange((state) => {
@@ -51,7 +51,7 @@ client.onStateChange((state) => {
 });
 ```
 
-`connected` は、最初の `connect()` が解決した後にも一度発行され、再接続が成功するたびにも発行されます。
+`connected` は、最初の `connect()` の終わり（Promise が解決する前）にも一度発行され、再接続が成功するたびにも発行されます。最初の通知を受け取るには、`connect()` を呼ぶ前にリスナーを登録してください。
 
 ## ストリームを追う
 

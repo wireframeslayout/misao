@@ -69,7 +69,8 @@ Details of `keys`:
 | Wrong type or out-of-range value (for example `"scrollback": "5000"`, `"rings": {"events": 0}`) | Error, exit code `1`. The daemon does not start and no command runs. |
 | Invalid JSON, unreadable file, or an explicit path that does not exist | Error, exit code `1`. |
 | Invalid `keys` (non-control prefix, duplicates, collision with the prefix) | Error, exit code `1`. |
-| Socket path too long or not absolute | Error, exit code `1`. |
+| Socket path too long or not absolute (from `misao.json` or the environment) | Error, exit code `1`. |
+| Invalid `misao serve --socket` value | Usage error, exit code `2`. |
 
 When a file has both unknown keys and invalid values, the invalid values win (error).
 
@@ -85,7 +86,8 @@ The socket path is the first of:
 | 4 | `~/.misao/misao.sock` |
 
 `misao serve --socket PATH` overrides all of these for that daemon (a relative path is resolved
-against the current directory). The paths are used for the client and the daemon alike, so a
+against the current directory). The overridden sources are still validated, so an invalid
+`$MISAO_SOCKET` or `socket` makes `serve` fail even with `--socket`. The paths are used for the client and the daemon alike, so a
 client and the daemon agree as long as they see the same environment and file. Panes started
 by the daemon get `MISAO_SOCKET` and `MISAO_PANE_ID` in their environment.
 
@@ -136,7 +138,8 @@ a systemd user unit (install, linger, cleanup, Node not on `PATH`, uninstall). I
 - `deploy/misao.service` runs `misao serve` with `Restart=on-failure` and `RestartSec=1`.
 - `KillMode=process`: on stop, systemd signals only the daemon, and the daemon closes every
   pane itself, so systemd and the daemon do not race over pane shutdown. After a crash systemd
-  leaves processes in the cgroup alone, so agents do not survive a restart.
+  does not touch processes left in the cgroup; panes that ignore SIGHUP can remain and are
+  cleaned up as described in deploy/README.md. Agents do not survive a restart.
 - After a restart, panes are not restored as live PTYs. Their metadata is kept and they appear as
   `stopped` (see [Protocol](protocol.md#pane-lifecycle-and-persistence)).
 - Run `loginctl enable-linger "$USER"` once to keep the daemon running after you log out.

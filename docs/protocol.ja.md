@@ -6,7 +6,7 @@
 
 misao デーモンは、ローカルの Unix ソケット上で JSON-RPC 2.0 API を提供します。このドキュメントはワイヤプロトコル（トランスポート、バージョン、メソッド、通知、シーケンス、購読、稼働判定、エラー）を説明します。パラメータと結果の形については、機械可読な完全スキーマが正本です（[メソッド](#メソッド)を参照）。
 
-関連文書: [設定](config.ja.md)、[CLI](cli.ja.md)、[埋め込み（Node SDK）](embedding.ja.md)。
+関連文書: [設定](config.ja.md)、[CLI](cli.ja.md)、[組み込み（Node SDK）](embedding.ja.md)。
 
 ## トランスポート
 
@@ -45,6 +45,7 @@ misao デーモンは、ローカルの Unix ソケット上で JSON-RPC 2.0 API
 
 - `mode: "cells"` の `pane.attach` は `1004`（Unsupported）を返します。動作するのは `mode: "raw"` だけです。
 - `pane.respawn` はスキーマにのみ存在し、`1005`（NotImplemented）を返します。
+- `window.focus` はスキーマにのみ存在し、`1005`（NotImplemented）を返します。`focus` イベントはスキーマに定義されていますが、まだ送られません。
 
 ## メソッド
 
@@ -54,14 +55,15 @@ misao デーモンは、ローカルの Unix ソケット上で JSON-RPC 2.0 API
 misao schema          # prints the result of server.schema as JSON
 ```
 
-または `server.schema` メソッドで取得します。特に記載がない限り、`paneId` を取るメソッドは、ペインが存在しないと `1001` を返します。
+または `server.schema` メソッドで取得します。特に記載がない限り、`paneId` を取るメソッドは、ペインが存在しないと `1001` を返します。例外は `pane.detach` で、ペインや attach が存在しなくても `ok` を返します。
 
 | メソッド | 目的 | 主なパラメータ | 結果 |
 |---|---|---|---|
 | `server.info` | デーモンの識別情報とストリームの head | なし | `protocolVersion`, `pid`, `epoch`, `uptimeSec`, `paneCount`, `eventHead` |
 | `server.schema` | プロトコル全体の JSON スキーマ | なし | `{ protocolVersion, jsonrpc, methods, notifications, events, errors }` |
 | `workspace.list` / `workspace.create` / `workspace.close` / `workspace.rename` | ワークスペースを管理する | `name`（rename は `newName`） | ワークスペース情報（`name`, `windows`）または `ok` |
-| `window.create` / `window.close` / `window.rename` / `window.focus` | ワークスペース内のウィンドウを管理する | `workspace`, `name`, `windowId`, `clientId`（focus） | ウィンドウ情報または `ok` |
+| `window.create` / `window.close` / `window.rename` | ワークスペース内のウィンドウを管理する | `workspace`, `name`, `windowId` | ウィンドウ情報または `ok` |
+| `window.focus` | スキーマのみ | `windowId`, `clientId` | 常に `1005` |
 | `pane.open` | 新しい PTY でコマンドを開始する | `cmd`（必須）, `cwd`, `env`, `ephemeralEnv`, `cols`, `rows`, `labels`, `windowId` | `{ paneId }` |
 | `pane.info` / `pane.list` | ペインの状態を読む | `paneId`; `filter`（`state`, `labels`, `workspace`。AND 条件） | ペイン情報（単体または配列） |
 | `pane.write` | PTY にバイト列を書き込む | `paneId`, `data`（UTF-8）**または** `dataB64`, `clientId`, `source`（`hub` / `terminal`） | `ok` |
@@ -69,7 +71,7 @@ misao schema          # prints the result of server.schema as JSON
 | `pane.resize` | PTY をリサイズする | `paneId`, `cols`, `rows`, `clientId` | `ok` |
 | `pane.screen` | 現在の画面テキスト | `paneId` | `text`, `cursor`, `altScreen`, `title`, `activity` |
 | `pane.set_label` | ラベルを設定 / 解除する | `paneId`, `set`, `unset`（少なくとも 1 つ） | 変更後の `{ labels }` |
-| `pane.attach` / `pane.detach` | 生の出力をこの接続へストリームする | `paneId`, `clientId`, `mode`, `replay`（`raw` / `snapshot` / `none`）, `cols`, `rows` | attach: `head`, `oldest`, `truncated` |
+| `pane.attach` / `pane.detach` | 生の出力をこの接続へストリームする | `paneId`, `clientId`, `mode`（既定は `raw`）, `replay`（`raw` / `snapshot` / `none`。既定は `none`）, `cols`, `rows` | attach: `head`, `oldest`, `truncated` |
 | `pane.subscribe_lines` | 行ストリームを購読する | `paneId`, `since`, `epoch` | `gap`, `head`, `epoch` |
 | `events.subscribe` | デーモン全体のイベントを購読する | `since`, `epoch` | `gap`, `head`, `epoch` |
 | `pane.close` | ペインを閉じる（SIGHUP、終了を待つ） | `paneId` | `ok` |
@@ -100,7 +102,7 @@ misao schema          # prints the result of server.schema as JSON
 | daemon | `daemon.started` |
 | pane | `pane.opened`, `pane.title`, `pane.exited`, `pane.resized`, `pane.closed`, `pane.state`, `pane.label` |
 | input / clients | `input`（ソースとバイト数のみ）, `client.attached`, `client.detached` |
-| layout | `workspace.created`, `workspace.closed`, `workspace.renamed`, `window.created`, `window.closed`, `window.renamed`, `focus` |
+| layout | `workspace.created`, `workspace.closed`, `workspace.renamed`, `window.created`, `window.closed`, `window.renamed`, `focus`（予約済み。まだ送られません） |
 
 ペインに紐づくイベントでは、`paneId` は `data` の中ではなく `data` の隣に置かれます。
 
@@ -123,8 +125,8 @@ misao schema          # prints the result of server.schema as JSON
 
 購読は、`since` を、それが属する `epoch` と**一緒に**渡して再開します。
 
-- `gap` が `true` になるのは、`since < oldest - 1`（クライアントが一度も見ていない項目をリングが破棄した）、`since > head`（デーモンが再起動して `seq` が巻き戻った）、または渡した `epoch` が現在のものと異なる場合です。
-- 渡した `epoch` が現在の epoch と異なるとき、デーモンは `since` を `0` として扱います。保持している最も古い項目から再生し、`gap: true` を返します。クライアントは保存していた `since` を破棄しなければなりません。デーモンの再起動を確実に検出できるのは `epoch` の比較だけで、`since > head` は二次的なシグナルです。
+- `gap` が `true` になるのは、`since < oldest - 1`（クライアントが一度も見ていない項目をリングが破棄した）、`since > head`（デーモンが再起動して `seq` が巻き戻った）、または `since` を渡していて、渡した `epoch` が現在のものと異なる場合です。`epoch` が比較されるのは `since` を渡したときだけです。`since` なしで `epoch` だけを渡すと、ライブのみの購読になり `gap: false` です。
+- `since` を渡していて、渡した `epoch` が現在の epoch と異なるとき、デーモンは `since` を `0` として扱います。保持している最も古い項目から再生し、`gap: true` を返します。クライアントは保存していた `since` を破棄しなければなりません。デーモンの再起動を確実に検出できるのは `epoch` の比較だけで、`since > head` は二次的なシグナルです。
 - `since` がリングより古いとき、デーモンは `oldest` から再生し、`gap: true` を返します。
 - `epoch` を省略すると、デーモンは世代を比較できず、上記の `since` のチェックにフォールバックします。必ずペアで送ってください（SDK の型がこれを強制します）。
 - 同じ接続で同じ `(stream, pane)` に新しく購読すると、古い購読が置き換えられるため、クライアントが重複を受け取ることはありません。
@@ -146,7 +148,7 @@ misao schema          # prints the result of server.schema as JSON
 
 - 購読者が切断されるのは、**リングに追い越された場合だけ**です。つまり、カーソルの次の項目がすでに破棄されたときです。この判定はソケットが書き込み可能でない間も行われるため、まったく読まないクライアントも検出されます。
 - 16 MiB の送信キュー上限が適用されるのは、**`pane.attach` の生の出力とレスポンスだけ**です。キューがこれを超えた接続は閉じられます。行とイベントの購読はこの上限を使いません。
-- 購読者が追い越されて切断されると、SDK は再接続し、最後の `since` と `epoch` で再購読します。デーモンは `gap: true`（epoch の変更なし）を返し、SDK は理由 `truncated` で `gap` を報告します。[埋め込み](embedding.ja.md#ストリームを追う)を参照してください。
+- 購読者が追い越されて切断されると、SDK は再接続し、最後の `since` と `epoch` で再購読します。デーモンは `gap: true`（epoch の変更なし）を返し、SDK は理由 `truncated` で `gap` を報告します。[組み込み](embedding.ja.md#ストリームを追う)を参照してください。
 - 同じ接続で `pane.attach` と購読を併用する場合: 生の出力によってキューが高水位を超え続けている間は、購読も一時停止します。
 
 実測した挙動（目安にすぎません。マシンと Node のバージョンに依存します）:
@@ -199,9 +201,9 @@ misao schema          # prints the result of server.schema as JSON
 | 1002 | PaneExited | ペインが終了している（write）、または `stopped` である（生きたプロセスを必要とする操作すべて）。 |
 | 1003 | Ambiguous | 予約済み。デーモンは返しません。CLI が対象の解決をクライアント側で行います。 |
 | 1004 | Unsupported | `mode: "cells"` の `pane.attach`。 |
-| 1005 | NotImplemented | `pane.respawn`、`pane.send_keys`、`pane.open` の `preplace`。 |
+| 1005 | NotImplemented | `pane.respawn`、`pane.send_keys`、`window.focus`、`pane.open` の `preplace`。 |
 | 1006 | WorkspaceNotFound | ワークスペースが存在しない（または閉じている途中）。 |
 | 1007 | WindowNotFound | ウィンドウが存在しない（または閉じている途中）。 |
 | 1008 | AlreadyExists | その名前のワークスペースがすでに存在する。 |
 
-SDK はこれらを `code` を持つ `MisaoRpcError` として表面化します。[埋め込み](embedding.ja.md)を参照してください。
+SDK はこれらを `code` を持つ `MisaoRpcError` として表面化します。[組み込み](embedding.ja.md)を参照してください。

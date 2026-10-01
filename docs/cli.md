@@ -103,7 +103,9 @@ does not resize. See [Keys in attach](#keys-in-attach). Input bytes are sent wit
 misao new [--cwd DIR] [--label k=v ...] [--env K=V ...] [--workspace W] [--window NAME] [--attach | --json] [-- cmd ...]
 ```
 
-Creates a pane. Without `cmd` it runs the login shell (`$SHELL -l`). `--label` and `--env` can be
+Creates a pane. Without `cmd` it runs your login shell with `-l`. The shell comes from the OS
+user database, not from `$SHELL`; if it cannot be determined, the command fails with a usage
+error (exit `2`). `--label` and `--env` can be
 repeated. The pane always gets `origin=terminal`, which marks it as unregistered. Without
 `--workspace` / `--window` the daemon's default window is used; with one of them the other
 defaults to `default`, and missing workspaces and windows are created. `--attach` enters the
