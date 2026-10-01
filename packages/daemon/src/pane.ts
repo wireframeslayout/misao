@@ -18,6 +18,8 @@ import { newPaneId } from './ulid.js';
 const { Terminal } = xterm;
 type Terminal = TerminalType;
 
+/** 行リングの 1 エントリあたりの固定オーバーヘッド (オブジェクト・配列スロット・文字列ヘッダ)。空行ばかりでもエントリ数が膨らまないよう size に足す。 */
+export const LINE_ENTRY_OVERHEAD = 64;
 const KILL_GRACE_MS = 3000;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
@@ -144,9 +146,13 @@ export class Pane extends EventEmitter {
     this.term.write(data, () => this.tracker.notifyScreenUpdated());
     this.emit('output', seq, data, ts);
     for (const text of this.assembler.push(data)) {
-      const lineSeq = this.linesRing.push(text, text.length + 1, ts);
-      this.emit('line', lineSeq, text, ts);
+      this.emitLine(text, ts);
     }
+  }
+
+  private emitLine(text: string, ts: string): void {
+    const seq = this.linesRing.push(text, text.length + LINE_ENTRY_OVERHEAD, ts);
+    this.emit('line', seq, text, ts);
   }
 
   private handleExit(exitCode: number, signal: number | undefined): void {
@@ -155,8 +161,7 @@ export class Pane extends EventEmitter {
     if (rest !== '') {
       // 改行なしで終わった最終行も行ストリームに流す
       const ts = nowIso();
-      const seq = this.linesRing.push(rest, rest.length + 1, ts);
-      this.emit('line', seq, rest, ts);
+      this.emitLine(rest, ts);
     }
     this.exitCode = signal ? null : exitCode;
     this.signal = signal || null;

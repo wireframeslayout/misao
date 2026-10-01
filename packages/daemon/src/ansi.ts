@@ -8,22 +8,57 @@ type State = 'ground' | 'esc' | 'escInter' | 'csi' | 'osc' | 'oscEsc' | 'str' | 
  * - \n \r \t 以外の C0 と DEL は捨てる
  * - `\r\n` は改行。単独 `\r` は「以降に書かれた文字で行を上書き」= 現在行バッファの破棄
  * - 行は `\n` で確定する。未確定の行は pending で覗ける。
+ * - 行の文字列は 1 文字ずつ連結しない (V8 の ConsString が木のまま残るため)。
+ *   デコード済みの連続区間を slice で切り出して parts に溜め、確定時に join して平坦な文字列にする。
  */
 export class AnsiLineAssembler {
   private readonly decoder = new StringDecoder('utf8');
   private state: State = 'ground';
-  private line = '';
+  /** 現在行のうち確定済みの断片 (push をまたぐ分と、途中で途切れた区間)。 */
+  private parts: string[] = [];
+  /** 現在の push のテキストと、そのうち現在行に属する直近の連続区間 [runStart, runEnd)。 */
+  private src = '';
+  private runStart = 0;
+  private runEnd = 0;
+  /** step 中の文字の src 上の開始位置。 */
+  private pos = 0;
   private pendingCr = false;
 
   get pending(): string {
-    return this.line;
+    this.closeRun();
+    return this.parts.join('');
   }
 
   push(chunk: Buffer | string): string[] {
     const text = typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
     const out: string[] = [];
-    for (const ch of text) this.step(ch, out);
+    this.src = text;
+    this.runStart = this.runEnd = 0;
+    for (let i = 0; i < text.length; ) {
+      const ch = String.fromCodePoint(text.codePointAt(i)!);
+      this.pos = i;
+      this.step(ch, out);
+      i += ch.length;
+    }
+    this.closeRun();
+    this.src = '';
     return out;
+  }
+
+  private closeRun(): void {
+    if (this.runEnd > this.runStart) this.parts.push(this.src.slice(this.runStart, this.runEnd));
+    this.runStart = this.runEnd = 0;
+  }
+
+  private resetLine(): void {
+    this.parts = [];
+    this.runStart = this.runEnd = 0;
+  }
+
+  private appendChar(ch: string): void {
+    if (this.runEnd > this.runStart && this.runEnd !== this.pos) this.closeRun();
+    if (this.runEnd === this.runStart) this.runStart = this.pos;
+    this.runEnd = this.pos + ch.length;
   }
 
   private step(ch: string, out: string[]): void {
@@ -83,17 +118,18 @@ export class AnsiLineAssembler {
     if (c === 0x1b) {
       this.state = 'esc';
     } else if (c === 0x0a) {
-      out.push(this.line);
-      this.line = '';
+      this.closeRun();
+      out.push(this.parts.join(''));
+      this.parts = [];
       this.pendingCr = false;
     } else if (c === 0x0d) {
       this.pendingCr = true;
     } else if (c === 0x09 || (c >= 0x20 && c !== 0x7f)) {
       if (this.pendingCr) {
-        this.line = '';
+        this.resetLine();
         this.pendingCr = false;
       }
-      this.line += ch;
+      this.appendChar(ch);
     }
   }
 }
