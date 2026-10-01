@@ -1,11 +1,11 @@
 import { test } from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { StateTracker } from '../src/state-tracker.js';
 import type { AgentState } from '../src/state-tracker.js';
 import type { AgentProfile, ProfileScreen, ProfileVerdict } from '../src/profile.js';
 
 const SCREEN: ProfileScreen = { rows: ['hello'], title: '', altScreen: false };
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 interface Change {
   state: AgentState;
@@ -75,56 +75,89 @@ test('スピナーが 3 秒止まると title 段は意見を手放し、bytes �
   tracker.stop();
 });
 
-test('プロファイルは title / bytes より優先され、blocked を出せる。null なら次の段へ落ちる', async () => {
+/** プロファイルの debounce は setTimeout なので、mock.timers で時間を手で進める。 */
+function mockTimers(t: TestContext): void {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+}
+
+test('プロファイルは title / bytes より優先され、blocked を出せる。null なら次の段へ落ちる', (t) => {
+  mockTimers(t);
   const verdicts: { current: ProfileVerdict } = { current: 'blocked' };
   const { tracker, changes, clock } = setup(fakeProfile(verdicts));
-  tracker.recordOutput(10);
-  await sleep(200);
+  tracker.notifyScreenUpdated();
+  t.mock.timers.tick(120);
   assert.deepEqual(changes, [{ state: 'blocked', decidedBy: 'fake', prev: 'unknown' }]);
   clock.now = 10;
   tracker.setTitle('◐ task'); // title は working だが、プロファイルの方が優先
   assert.equal(tracker.snapshot().agentState, 'blocked');
   verdicts.current = null;
-  tracker.recordOutput(10);
-  await sleep(200);
+  tracker.notifyScreenUpdated();
+  t.mock.timers.tick(120);
   assert.deepEqual(changes.at(-1), { state: 'working', decidedBy: 'title', prev: 'blocked' });
   tracker.stop();
 });
 
-test('プロファイルの判定は debounce され、出力が続いても 300ms 以内に 1 度は判定する', async () => {
+test('プロファイルの判定は画面更新の通知でだけ予約される (出力の受信では読まない)', (t) => {
+  mockTimers(t);
   let calls = 0;
   const profile: AgentProfile = { name: 'fake', matches: () => true, classify: () => (calls++, 'working') };
-  const changes: Change[] = [];
-  const tracker = new StateTracker({
-    profile,
-    readScreen: () => SCREEN,
-    onChange: (state, decidedBy, prev) => changes.push({ state, decidedBy, prev }),
-    now: Date.now,
-  });
-  for (let i = 0; i < 4; i++) {
-    tracker.recordOutput(1);
-    await sleep(60);
-  }
-  assert.equal(calls, 0, '出力が 60ms 間隔で続く間は、120ms の静けさが来ないので判定しない');
-  for (let i = 0; i < 3; i++) {
-    tracker.recordOutput(1);
-    await sleep(60);
-  }
-  assert.ok(calls >= 1, '最初の出力から 300ms で、出力が続いていても判定する');
-  assert.equal(changes[0]?.state, 'working');
+  const { tracker } = setup(profile);
+  tracker.recordOutput(10);
+  t.mock.timers.tick(500);
+  assert.equal(calls, 0, '解析前の画面を読まない');
+  tracker.notifyScreenUpdated();
+  t.mock.timers.tick(120);
+  assert.equal(calls, 1);
   tracker.stop();
 });
 
-test('markExited は exit で終端し、以後の出力・タイトル・tick では変わらない', async () => {
+test('プロファイルの判定は debounce され、更新が続いても最初の更新から 300ms で 1 度は判定する', (t) => {
+  mockTimers(t);
+  let calls = 0;
+  const profile: AgentProfile = { name: 'fake', matches: () => true, classify: () => (calls++, 'working') };
+  const clock = { now: 0 };
+  const tracker = new StateTracker({
+    profile,
+    readScreen: () => SCREEN,
+    onChange: () => undefined,
+    now: () => clock.now,
+  });
+  const updateAfter = (ms: number): void => {
+    t.mock.timers.tick(ms);
+    clock.now += ms;
+    tracker.notifyScreenUpdated();
+  };
+  updateAfter(0);
+  for (let i = 0; i < 4; i++) updateAfter(60); // 240ms: 120ms の静けさが来ない
+  assert.equal(calls, 0);
+  t.mock.timers.tick(60); // 最初の更新から 300ms
+  assert.equal(calls, 1);
+  tracker.stop();
+});
+
+test('stop / markExited の後は、遅れて届く画面更新の通知で判定しない', (t) => {
+  mockTimers(t);
+  let calls = 0;
+  const profile: AgentProfile = { name: 'fake', matches: () => true, classify: () => (calls++, 'working') };
+  const { tracker } = setup(profile);
+  tracker.stop();
+  tracker.notifyScreenUpdated();
+  t.mock.timers.tick(1000);
+  assert.equal(calls, 0);
+});
+
+test('markExited は exit で終端し、以後の出力・タイトル・tick では変わらない', (t) => {
+  mockTimers(t);
   const verdicts: { current: ProfileVerdict } = { current: 'working' };
   const { tracker, changes, clock } = setup(fakeProfile(verdicts));
-  tracker.recordOutput(10); // プロファイル判定の予約中に終了しても、後から上書きされない
+  tracker.notifyScreenUpdated(); // プロファイル判定の予約中に終了しても、後から上書きされない
   tracker.markExited();
   assert.deepEqual(changes, [{ state: 'exited', decidedBy: 'exit', prev: 'unknown' }]);
   tracker.recordOutput(500);
+  tracker.notifyScreenUpdated();
   tracker.setTitle('◐ task');
   tickAt(tracker, clock, 10_000);
-  await sleep(200);
+  t.mock.timers.tick(1000);
   assert.deepEqual(tracker.snapshot(), { agentState: 'exited', decidedBy: 'exit' });
   assert.equal(changes.length, 1);
 });

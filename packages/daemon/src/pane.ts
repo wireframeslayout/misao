@@ -129,7 +129,8 @@ export class Pane extends EventEmitter {
     this.activity++;
     this.tracker.recordOutput(data.length);
     const seq = this.rawRing.push(data, data.length, ts);
-    this.term.write(data);
+    // プロファイルは解析済みの画面を読む必要があるので、write の完了で通知する
+    this.term.write(data, () => this.tracker.notifyScreenUpdated());
     this.emit('output', seq, data, ts);
     for (const text of this.assembler.push(data)) {
       const lineSeq = this.linesRing.push(text, text.length + 1, ts);

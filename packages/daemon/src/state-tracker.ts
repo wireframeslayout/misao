@@ -15,7 +15,7 @@ const PROFILE_MAX_WAIT_MS = 300;
 export interface StateTrackerOptions {
   /** この pane に使うプロファイル。無ければ title / bytes 段だけで判定する。 */
   profile?: AgentProfile;
-  /** プロファイル判定のための現在の画面。profile があるときだけ呼ぶ。 */
+  /** プロファイル判定のための現在の画面。profile があるときだけ、notifyScreenUpdated の後に呼ぶ。 */
   readScreen: () => ProfileScreen;
   /** 状態または decidedBy が変わるたびに呼ぶ。 */
   onChange: (state: AgentState, decidedBy: string, prev: AgentState) => void;
@@ -31,6 +31,8 @@ export class StateTracker {
   private state: AgentState = 'unknown';
   private decidedBy = 'none';
   private isExited = false;
+  /** stop 後は、遅れて届く画面更新の通知でタイマーを作り直さない。 */
+  private isStopped = false;
   private profileVerdict: ProfileVerdict = null;
   private readonly bytes: ByteActivity;
   private readonly title = new TitleActivity();
@@ -52,6 +54,14 @@ export class StateTracker {
   recordOutput(bytes: number): void {
     if (this.isExited) return;
     this.bytes.record(bytes, this.opts.now());
+  }
+
+  /**
+   * 画面モデル (xterm) が出力を解析し終えたときに呼ぶ。プロファイル判定はここから予約する。
+   * 出力の受信時に予約すると、解析前の古い画面を読んでしまう (最後のチャンクを取り逃す)。
+   */
+  notifyScreenUpdated(): void {
+    if (this.isStopped) return; // markExited も stop を通る
     this.scheduleProfile();
   }
 
@@ -66,7 +76,6 @@ export class StateTracker {
   setTitle(title: string): void {
     if (this.isExited) return;
     this.title.setTitle(title, this.opts.now());
-    this.scheduleProfile();
     this.evaluate();
   }
 
@@ -79,6 +88,7 @@ export class StateTracker {
 
   /** タイマーを止める (dispose 用)。状態は変えない。 */
   stop(): void {
+    this.isStopped = true;
     clearInterval(this.tickTimer);
     if (this.profileTimer) clearTimeout(this.profileTimer);
     this.profileTimer = undefined;
