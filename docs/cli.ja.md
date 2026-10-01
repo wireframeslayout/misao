@@ -67,7 +67,7 @@ misao [options] <command> [args]
 misao ls [--state blocked|working|idle|exited] [--task N] [--workspace W] [--json]
 ```
 
-列: `STATE PANE NAME TASK AGENT CWD LAST`。順序は blocked、working、idle、exited、stopped、unknown で、同じ state の中では出力が新しいものが先です。`--state` はエージェントの state で、`--task` は `task` ラベル（`#` は省略可）で、`--workspace` はワークスペース名で絞り込みます。`--json` はペイン情報オブジェクトの配列を出力します（[プロトコル](protocol.ja.md#メソッド)を参照）。
+列: `STATE PANE NAME TASK AGENT CWD LAST`。`AGENT` はペインの前面コマンドです（取得できない場合は起動コマンドの basename）。順序は blocked、working、idle、exited、stopped、unknown で、同じ state の中では出力が新しいものが先です。`--state` はエージェントの state で、`--task` は `task` ラベル（`#` は省略可）で、`--workspace` はワークスペース名で絞り込みます。`--json` はペイン情報オブジェクトの配列を出力します（[プロトコル](protocol.ja.md#メソッド)を参照）。
 
 ```bash
 misao ls --state blocked

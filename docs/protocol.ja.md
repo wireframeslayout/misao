@@ -165,6 +165,7 @@ misao schema          # prints the result of server.schema as JSON
 
 - `pane.open` は PTY 上で `cmd` を起動します。子プロセスの環境は、デーモンの環境から `TMUX`、`TMUX_PANE`、`STY`、`ZELLIJ*` を取り除き、`MISAO_SOCKET`、`MISAO_PANE_ID`、`TERM=xterm-256color`、`COLORTERM=truecolor` を加え、続いて `env`、さらに `ephemeralEnv` を重ねたものです。
 - 終了したペインは、閉じられるまで `processState: "exited"`、`exitCode`、`signal` とともに一覧に残ります。`pane.close` で削除されます。
+- **`fgCommand`**: `processState: "running"` のペインに限り、`pane.info` / `pane.list` はペインの前面プロセスグループのコマンド名を報告します。呼び出しのたびに計算します。インタプリタ（`node`、`bun`、`python`、`ruby`、`perl`）の場合は、拡張子を除いたスクリプト名です。表示用の名前なので、制御文字は取り除かれ、最大 64 文字です。取得できない場合は省略されます。Linux 以外では node-pty の `process` の値です。
 - **`ephemeralEnv`**: `env` と同様に子プロセスへ注入される環境変数ですが、`persistence.json` には保存されず、`pane.info`、`pane.list`、イベントにも表示されません。トークンなどの秘密情報に使ってください。`env` は永続化されます。同じキーでは `env` を上書きします。デーモンの再起動後、ペインは `stopped` になり値は失われるため、将来の respawn では再度渡す必要があります。
 - **`persistence.json`**: デーモンは、ワークスペース、ウィンドウ、ペインの記録（`cmd`、`cwd`、`env`、`labels`、サイズ）を、データディレクトリ（既定ではソケットのディレクトリ）の `persistence.json` に、`fsync` を伴ってアトミックに保存します。サイズの変更は少し遅れて保存され、定義とラベルの変更はレスポンスの前に保存されます。ファイルが壊れている場合や `version` が未知の場合、デーモンは起動しません。
 - **`stopped`**: デーモンが再起動すると PTY は失われ、メタデータだけが残ります。復元されたペインは `processState: "stopped"`、`pid: null`、`agentState: "unknown"`、`decidedBy: "none"` で現れます。`stopped` のペインに対する入力、リサイズ、screen、attach、行の購読は `1002` を返します。`pane.close` で記録は削除されます。記録からのペインの再起動（`pane.respawn`）はまだ実装されていません（`1005`）。

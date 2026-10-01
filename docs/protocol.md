@@ -204,6 +204,12 @@ Measured behaviour (an indication only; it depends on the machine and Node versi
   `TERM=xterm-256color`, and `COLORTERM=truecolor`, then `env`, then `ephemeralEnv`.
 - A pane that has exited stays listed with `processState: "exited"`, `exitCode`, and `signal`
   until it is closed. `pane.close` removes it.
+- **`fgCommand`**: only for a pane with `processState: "running"`, `pane.info` / `pane.list` report
+  the command name of the pane's foreground process group. It is computed on each call. For an
+  interpreter (`node`, `bun`, `python`, `ruby`, `perl`) it is the script name without its
+  extension. It is a display name: control characters are removed and it is at most 64
+  characters. It is omitted when it cannot be read. On non-Linux platforms it is the value of
+  node-pty's `process`.
 - **`ephemeralEnv`**: environment variables injected into the child like `env`, but never saved
   to `persistence.json` and never shown in `pane.info`, `pane.list`, or events. Use it for tokens
   and other secrets; `env` is persisted. On the same key it overrides `env`. After a daemon
