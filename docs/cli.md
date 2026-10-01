@@ -45,8 +45,8 @@ exactly one pane, it is the target; if it matches several, the command fails wit
 Rules worth knowing:
 
 - A query of **digits only** (optionally `W-` first) is a window number and is decided at
-  stage 4 only; it never falls through to ids or names. Because ULIDs can contain digits only
-  in a fragment, write a pane id fragment that is only digits **with `p_`** (for example `p_12`).
+  stage 4 only; it never falls through to ids or names. A pane id fragment that is only digits would
+  be read as a window number, so write it **with `p_`** (for example `p_12`).
 - `misao ls` shows ids as `p_01M3…7Q` (first 4 characters, `…`, and the shortest unique tail
   of at least 2 characters). The tail alone (`7Q`) works as a target.
 - In tables the NAME column shows `W-806 · display name` for panes registered by a hub (they
