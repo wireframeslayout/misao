@@ -1,5 +1,6 @@
 import type { PaneInfo } from '@misao/protocol';
 import { ByteActivity } from './byte-activity.js';
+import type { Logger } from './log.js';
 import type { AgentProfile, ProfileScreen, ProfileVerdict } from './profile.js';
 import { TitleActivity } from './title-activity.js';
 
@@ -23,7 +24,7 @@ export interface StateTrackerOptions {
   onChange: (state: AgentState, decidedBy: string, prev: AgentState) => void;
   now: () => number;
   /** プロファイルの例外など、判定を続けながら残すべき出来事。 */
-  log: (msg: string) => void;
+  log: Pick<Logger, 'warn'>;
 }
 
 /**
@@ -137,10 +138,10 @@ export class StateTracker {
       return verdict;
     } catch (e) {
       this.profileFailures++;
-      this.opts.log(`profile ${profile.name} failed (${this.profileFailures}/${PROFILE_MAX_FAILURES}): ${(e as Error).message}`);
+      this.opts.log.warn(`profile ${profile.name} failed (${this.profileFailures}/${PROFILE_MAX_FAILURES}): ${(e as Error).message}`);
       if (this.profileFailures >= PROFILE_MAX_FAILURES) {
         this.profile = undefined;
-        this.opts.log(`profile ${profile.name} disabled after ${PROFILE_MAX_FAILURES} consecutive failures`);
+        this.opts.log.warn(`profile ${profile.name} disabled after ${PROFILE_MAX_FAILURES} consecutive failures`);
       }
       return null;
     }

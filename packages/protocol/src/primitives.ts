@@ -63,7 +63,7 @@ export const SinceSchema = SeqSchema.describe(
 export const LabelsSchema = z
   .record(z.string(), z.string())
   .describe(
-    'Free-form labels. The daemon never interprets them. Recommended keys: owner, task, agent, origin, windowId. Recommended origin values: "hub", "terminal"; a pane created by `misao new` carries origin=terminal (used to discover unregistered panes). The windowId key is a convention for the caller\'s own window id and is unrelated to the daemon\'s window id.',
+    'Free-form labels. The daemon never interprets them. Recommended keys: owner, task, agent, origin, windowId, name. Recommended origin values: "hub", "terminal"; a pane created by `misao new` carries origin=terminal (used to discover unregistered panes). The windowId key is the hub-side window number (e.g. 806; the CLI displays it as W-806) and is unrelated to the daemon\'s window id. The name key is a human-readable display name.',
   );
 
 export const SubscribeResultSchema = z.looseObject({

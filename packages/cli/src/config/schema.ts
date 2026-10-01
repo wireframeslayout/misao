@@ -1,10 +1,6 @@
+import { DEFAULT_DAEMON_LIMITS, DEFAULT_LOG_LEVEL, LOG_LEVELS } from '@misao/daemon';
 import * as z from 'zod';
 import { parseKeySpec, parsePrefixKeySpec } from './keys.js';
-
-const DEFAULT_SCROLLBACK = 5000;
-const DEFAULT_RAW_RING_BYTES = 1024 * 1024;
-const DEFAULT_LINES_RING_BYTES = 64 * 1024;
-const DEFAULT_EVENT_RING_CAP = 1000;
 
 function keySpecSchema(parse: (spec: string) => number) {
   return z.string().transform((spec, ctx) => {
@@ -58,17 +54,17 @@ const KeysSchema = z
   });
 
 const RingsSchema = z.strictObject({
-  rawBytes: z.int().min(1).default(DEFAULT_RAW_RING_BYTES),
-  linesBytes: z.int().min(1).default(DEFAULT_LINES_RING_BYTES),
-  events: z.int().min(1).default(DEFAULT_EVENT_RING_CAP),
+  rawBytes: z.int().min(1).default(DEFAULT_DAEMON_LIMITS.rawRingBytes),
+  linesBytes: z.int().min(1).default(DEFAULT_DAEMON_LIMITS.linesRingBytes),
+  events: z.int().min(1).default(DEFAULT_DAEMON_LIMITS.events),
 });
 
 export const MisaoConfigSchema = z.strictObject({
   keys: KeysSchema.prefault({}),
-  scrollback: z.int().min(1).default(DEFAULT_SCROLLBACK),
+  scrollback: z.int().min(1).default(DEFAULT_DAEMON_LIMITS.scrollback),
   rings: RingsSchema.prefault({}),
   socket: z.string().min(1).optional(),
-  logLevel: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+  logLevel: z.enum(LOG_LEVELS).default(DEFAULT_LOG_LEVEL),
 });
 
 export type MisaoConfig = z.output<typeof MisaoConfigSchema>;

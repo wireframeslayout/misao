@@ -11,6 +11,10 @@ import type { PaneInfo, RpcRequest } from '@misao/protocol';
 import { nowIso } from './clock.js';
 import { Connection } from './connection.js';
 import { EventLog } from './event-log.js';
+import { resolveDaemonLimits } from './limits.js';
+import type { DaemonLimitOptions } from './limits.js';
+import { DEFAULT_LOG_LEVEL, createLogger } from './log.js';
+import type { LogLevel, Logger } from './log.js';
 import { parseParams } from './params.js';
 import type { ParsedParams } from './params.js';
 import { RpcFailure } from './rpc-error.js';
@@ -51,14 +55,17 @@ type Handlers = {
   [M in ImplementedMethod]: (params: ParsedParams<M>, ctx: RequestContext) => unknown;
 };
 
-export interface DaemonOptions {
+export interface DaemonOptions extends DaemonLimitOptions {
   socketPath: string;
   pidPath: string;
   /** persistence.json の場所。 */
   statePath: string;
   /** 保存の実体。省略時は savePersistedState (ファイルへ原子的に書く)。 */
   saveState?: (path: string, state: PersistedState) => void;
+  /** ログの出力先。省略時は stderr。閾値は logLevel で決める。 */
   log?: (msg: string) => void;
+  /** ログの閾値 (error < warn < info < debug)。省略時は info。 */
+  logLevel?: LogLevel;
   /** 稼働判定のプロファイル (Claude / Codex など)。省略時は汎用の判定だけ。 */
   profiles?: readonly AgentProfile[];
 }
@@ -67,13 +74,13 @@ export class Daemon {
   readonly socketPath: string;
   private readonly pidPath: string;
   private readonly statePath: string;
-  private readonly log: (msg: string) => void;
+  private readonly log: Logger;
   private readonly registry = new PaneRegistry();
   private readonly layout = new Layout();
   private readonly persister: StatePersister;
   private readonly lifecycle: PaneLifecycle;
   private readonly io: PaneIo;
-  private readonly events = new EventLog();
+  private readonly events: EventLog;
   private readonly conns = new Set<Connection>();
   private server: net.Server | undefined;
   private readonly startedAt = Date.now();
@@ -82,10 +89,13 @@ export class Daemon {
   private readonly handlers: Handlers;
 
   constructor(opts: DaemonOptions) {
+    const limits = resolveDaemonLimits(opts);
+    this.events = new EventLog(limits.events);
     this.socketPath = opts.socketPath;
     this.pidPath = opts.pidPath;
     this.statePath = opts.statePath;
-    this.log = opts.log ?? ((m) => process.stderr.write(`[misao ${nowIso()}] ${m}\n`));
+    const sink = opts.log ?? ((m) => process.stderr.write(`[misao ${nowIso()}] ${m}\n`));
+    this.log = createLogger(opts.logLevel ?? DEFAULT_LOG_LEVEL, sink);
     const save = opts.saveState ?? savePersistedState;
     this.persister = new StatePersister({
       snapshot: () => ({ version: 1, workspaces: this.layout.toPersisted(), panes: this.registry.toPersisted() }),
@@ -100,6 +110,7 @@ export class Daemon {
       persister: this.persister,
       profiles: opts.profiles ?? [],
       log: this.log,
+      limits,
       releasePane: (id) => this.io.release(id),
     });
     this.io = new PaneIo({
@@ -143,7 +154,7 @@ export class Daemon {
     // pid ファイルで排他を取った後は、socketPath にあるファイルを自分のものとして扱える。
     try {
       this.loadState();
-      if (await removeStaleSocket(this.socketPath)) this.log('removed stale socket');
+      if (await removeStaleSocket(this.socketPath)) this.log.info('removed stale socket');
     } catch (e) {
       fs.rmSync(this.pidPath, { force: true });
       throw e;
@@ -152,18 +163,18 @@ export class Daemon {
       this.server = net.createServer((socket) => this.accept(socket));
       await listenUnixSocket(this.server, this.socketPath);
       // listen 後の accept 失敗 (EMFILE など) でデーモンごと落ちないよう、その接続だけを諦める。
-      this.server.on('error', (e) => this.log(`server error: ${e.message}`));
+      this.server.on('error', (e) => this.log.error(`server error: ${e.message}`));
     } catch (e) {
       this.server?.close();
       for (const f of [this.socketPath, this.pidPath]) fs.rmSync(f, { force: true });
       throw e;
     }
     this.events.emit('daemon.started', { pid: process.pid, protocolVersion: PROTOCOL_VERSION });
-    this.log(`listening on ${this.socketPath} (pid ${process.pid})`);
+    this.log.info(`listening on ${this.socketPath} (pid ${process.pid})`);
   }
 
   async shutdown(): Promise<void> {
-    this.log('shutting down');
+    this.log.info('shutting down');
     // close() は接続が全部閉じるまで完了しないので、先に接続を切ってから待つ。
     const server = this.server;
     const closed = new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
@@ -216,7 +227,7 @@ export class Daemon {
       if (e instanceof RpcFailure) {
         this.sendError(conn, req.id, e.code, e.message);
       } else {
-        this.log(`internal error in ${req.method}: ${(e as Error).stack}`);
+        this.log.error(`internal error in ${req.method}: ${(e as Error).stack}`);
         this.sendError(conn, req.id, ErrorCode.Internal, (e as Error).message);
       }
       return;

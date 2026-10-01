@@ -6,6 +6,7 @@ import type { PaneInfo } from '@misao/protocol';
 import { AnsiLineAssembler } from './ansi.js';
 import { buildChildEnv } from './child-env.js';
 import { nowIso } from './clock.js';
+import type { Logger } from './log.js';
 import type { AgentProfile } from './profile.js';
 import { SeqRing } from './ring.js';
 import { flushTerminal, serializeSnapshot, viewportText } from './screen.js';
@@ -17,9 +18,6 @@ import { newPaneId } from './ulid.js';
 const { Terminal } = xterm;
 type Terminal = TerminalType;
 
-const RAW_RING_BYTES = 1024 * 1024;
-const LINES_RING_BYTES = 64 * 1024;
-const SCROLLBACK = 5000;
 const KILL_GRACE_MS = 3000;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
@@ -33,10 +31,16 @@ export interface PaneOpenOptions {
   cols?: number;
   rows?: number;
   socketPath: string;
+  /** headless 端末のスクロールバック行数。 */
+  scrollback: number;
+  /** raw 出力リングの上限バイト数。 */
+  rawRingBytes: number;
+  /** 行ストリームリングの上限バイト数。 */
+  linesRingBytes: number;
   /** この pane の稼働判定に使うプロファイル。無ければ汎用の title / bytes 段だけで判定する。 */
   profile?: AgentProfile;
   /** プロファイルの例外など、稼働判定の出来事を残す。 */
-  log: (msg: string) => void;
+  log: Logger;
 }
 
 export interface PaneInfoMeta {
@@ -61,8 +65,8 @@ export interface PaneScreen {
  */
 export class Pane extends EventEmitter {
   readonly id = newPaneId();
-  readonly rawRing = new SeqRing<Buffer>(RAW_RING_BYTES);
-  readonly linesRing = new SeqRing<string>(LINES_RING_BYTES);
+  readonly rawRing: SeqRing<Buffer>;
+  readonly linesRing: SeqRing<string>;
   readonly clients = new Set<string>();
   readonly cmd: string[];
   readonly cwd: string;
@@ -87,11 +91,13 @@ export class Pane extends EventEmitter {
 
   constructor(opts: PaneOpenOptions) {
     super();
+    this.rawRing = new SeqRing<Buffer>(opts.rawRingBytes);
+    this.linesRing = new SeqRing<string>(opts.linesRingBytes);
     this.cmd = opts.cmd;
     this.cwd = opts.cwd ?? process.cwd();
     this.cols = opts.cols ?? DEFAULT_COLS;
     this.rows = opts.rows ?? DEFAULT_ROWS;
-    this.term = new Terminal({ cols: this.cols, rows: this.rows, scrollback: SCROLLBACK, allowProposedApi: true });
+    this.term = new Terminal({ cols: this.cols, rows: this.rows, scrollback: opts.scrollback, allowProposedApi: true });
     this.proc = pty.spawn(opts.cmd[0]!, opts.cmd.slice(1), {
       name: 'xterm-256color',
       cols: this.cols,
@@ -111,7 +117,9 @@ export class Pane extends EventEmitter {
       }),
       onChange: (state, decidedBy, prev) => this.emit('state', state, decidedBy, prev),
       now: Date.now,
-      log: (msg) => opts.log(`pane ${this.id}: ${msg}`),
+      log: {
+        warn: (msg) => opts.log.warn(`pane ${this.id}: ${msg}`),
+      },
     });
     this.term.onTitleChange((t) => {
       this.title = t;
