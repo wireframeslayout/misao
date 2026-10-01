@@ -183,6 +183,24 @@ test('接続が切れたら「接続が切れました」で 1、端末は戻っ
   assert.deepEqual(io.rawModes, [true, false]);
 });
 
+test('一覧の入力待ちで終了シグナルを受けたら 1 で終わり、端末は戻っている', async () => {
+  const daemon = await startTestDaemon();
+  try {
+    const a = await openTestPane(daemon.client, ECHO('sig'), { labels: { name: 'sig' } });
+    const { io, end } = await startLoop(daemon, a);
+    await waitFor(() => io.out().includes('marker-sig'));
+    io.stdin.write(key('d'));
+    await waitFor(() => io.out().includes('番号で入る'));
+    io.emitSignal('SIGTERM');
+    assert.equal(await end, 1);
+    assert.match(io.err(), /終了シグナルを受けたため終了しました/);
+    assert.deepEqual(io.rawModes, [true, false]);
+    await daemon.client.request('pane.close', { paneId: a });
+  } finally {
+    await daemon.stop();
+  }
+});
+
 test('--readonly の一覧には n を出さない', async () => {
   const daemon = await startTestDaemon();
   try {

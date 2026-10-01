@@ -19,18 +19,53 @@ TUI、SSH 端末はすべてクライアントです。
 - エージェントの稼働状態（working / blocked / idle / exited）をデーモン内で判定する
 - 制御側のアプリが落ちていても、SSH 端末から `misao ls / attach / new / kill / send` で操作できる
 
+## パッケージ（予定）
+
+| パッケージ | 役割 |
+|---|---|
+| `@misao/protocol` | ソケット API の JSON schema と TypeScript 型 |
+| `@misao/daemon` | PTY のホスト、画面モデル、リングバッファ、イベント |
+| `misao`（cli） | `serve`、`ls`、`attach`、`new`、`kill`、`send`、`screen`、`tail`、`events` |
+| `@misao/sdk` | 再接続と `since` 追従を備えた Node クライアント |
+| `@misao/bridge`、`@misao/web`、`@misao/profile-*` | 後のフェーズ |
+
 ## 開発
 
-Node.js 24 以上が必要です。`npm ci` → `npm run build` → `npm run typecheck` → `npm test` の順に実行します。
+Node.js 24 以上が必要です。
 
-`npm run test:e2e` は、一時ディレクトリでデーモン（`misao serve`）を実際に起動し、偽エージェント・偽 hub・
-vim・bash で通して確かめる e2e テストです（`packages/e2e`）。`npm test` には含まれません。外部ツールが要る
-ケースは環境変数で有効にします: `MISAO_E2E_CLAUDE=1`（Claude Code）、`MISAO_E2E_CODEX=1`（Codex）、
-`MISAO_E2E_SYSTEMD=1`（一時的な systemd ユーザー unit を作る）。`MISAO_E2E_FULL=1` で Phase 0 の検証と
-同じ規模に戻します。
+```bash
+npm ci          # インストール（node-pty をネイティブビルドする）
+npm run build   # 全パッケージを tsc -b でビルド
+npm run typecheck
+npm test        # ワークスペースごとに tsx 経由の node:test（src に対して実行するのでビルド不要）
+npm run smoke   # ビルドした CLI を直接実行する
+npm run test:e2e  # 実際のデーモンプロセスに対する e2e テスト（後述）
+```
 
-systemd のユーザー unit で常駐させる手順は [deploy/README.md](deploy/README.md) を参照してください。
+e2e テスト（`packages/e2e`）は、一時ディレクトリで `misao serve` を起動し、偽エージェント・偽 hub・
+vim・bash で通して確かめます。`npm test` には含まれません。外部ツールが要るケースは環境変数で
+有効にします: `MISAO_E2E_CLAUDE=1`（Claude Code）、`MISAO_E2E_CODEX=1`（Codex）、
+`MISAO_E2E_SYSTEMD=1`（一時的な systemd ユーザー unit を作る）。`MISAO_E2E_FULL=1` で Phase 0 の
+検証と同じ規模に戻します。
+
+systemd でデーモンを動かす手順は [deploy/README.md](deploy/README.md) を参照してください。
+
+開発中は CLI を `node packages/cli/dist/main.js` か `npx misao` で実行します（`npm run build` の後、
+bin のリンクを作るために一度だけ `npm rebuild misao` を実行してください）。
+
+## ドキュメント
+
+英語版が正本です。各文書の隣に日本語版（`*.ja.md`）があります。
+
+| 文書 | 内容 |
+|---|---|
+| [docs/protocol.ja.md](docs/protocol.ja.md) | ソケットプロトコル: メソッド・通知・`seq` / `epoch` / `gap`・エラー |
+| [docs/cli.ja.md](docs/cli.ja.md) | `misao` コマンド: 対象指定・コマンド・attach のキー操作・終了コード |
+| [docs/config.ja.md](docs/config.ja.md) | `misao.json`・ソケットの場所・メモリの目安・サービスとして動かす |
+| [docs/embedding.ja.md](docs/embedding.ja.md) | Node SDK・ラベル規約・シークレット・エージェントプロファイル |
 
 ## ライセンス
 
 [Apache License 2.0](LICENSE)。コントリビューションには [CLA](CLA.md) への同意が必要です。
+
+English: [README.md](README.md)

@@ -6,6 +6,9 @@ import { writeLine } from '../output.js';
 export const TTY_RESET =
   '\x1b[0m\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?1l\x1b[?25h\x1b[?9l\x1b[?1004l\x1b>';
 
+/** attach と一覧で受けて終了する (終了コード 1) シグナル。 */
+export const TERMINATION_SIGNALS = ['SIGTERM', 'SIGHUP', 'SIGINT', 'SIGQUIT'] as const;
+
 /**
  * 端末を raw mode にして、どう終わっても (正常終了 / シグナル / 例外) 元に戻す。
  * 戻す処理は restore() で 1 回だけ行う。
@@ -30,9 +33,8 @@ export class TtyGuard {
       onSignal();
     };
     // raw mode 中の Ctrl-C はバイトとして pane に送られる。ここで受けるのは kill -INT など外からのシグナル。
-    const interruptSignals = ['SIGTERM', 'SIGHUP', 'SIGINT', 'SIGQUIT'] as const;
     this.cleanups = [
-      ...interruptSignals.map((signal) => this.io.onSignal(signal, interrupt)),
+      ...TERMINATION_SIGNALS.map((signal) => this.io.onSignal(signal, interrupt)),
       this.io.onUncaughtException((error) => {
         this.restore();
         writeLine(this.io.stderr, `[misao] 予期しないエラー: ${error.message}`);

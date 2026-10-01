@@ -1,0 +1,243 @@
+# Embedding
+
+English | [日本語](embedding.ja.md)
+
+How to drive misao from your own Node.js program with the SDK (`@misao/sdk`), and the
+conventions an embedding app should follow (labels, secrets, agent profiles). The wire
+semantics (`seq`, `epoch`, `gap`, pull-model subscriptions, activity detection) are
+defined once in [Protocol](protocol.md) and only linked from here.
+
+Related documents: [Protocol](protocol.md), [Configuration](config.md), [CLI](cli.md).
+
+The packages (`@misao/sdk`, `@misao/protocol`, `@misao/daemon`) are workspace packages of this
+repository for now and are not published to npm. They are ESM and need Node.js 24 or later (declared in `engines` of the repository root
+`package.json`).
+
+## Connecting
+
+```ts
+import os from 'node:os';
+import { MisaoClient, resolveSocketPath } from '@misao/sdk';
+
+const socketPath = resolveSocketPath({ env: process.env, homeDir: os.homedir() });
+const client = new MisaoClient({ socketPath });
+await client.connect();
+
+const panes = await client.request('pane.list', {});
+client.close();
+```
+
+- `resolveSocketPath` applies the same order as the CLI: `$MISAO_SOCKET`, then `explicitPath`
+  (for example the `socket` of `misao.json`), then `$MISAO_DIR/misao.sock`, then
+  `~/.misao/misao.sock`. A path longer than `MAX_SOCKET_PATH_BYTES` (107 bytes) throws
+  `MisaoPathError`. See [Socket location](config.md#socket-location).
+- `MisaoClientOptions`: `socketPath` (required), `backoff` (partial, see below), and
+  `connectTimeoutMs` (default `5000`).
+- `connect()` connects, calls `server.info`, checks that the protocol major versions match, and
+  restores streams. It rejects when the daemon is unreachable (`MisaoConnectionError`) or
+  incompatible (`MisaoProtocolVersionError`, see [Versioning](protocol.md#versioning-and-compatibility)).
+  It can be called only while the client is idle: before the first attempt, or after a failed one.
+- `connectTimeoutMs` bounds the setup after the socket connects (the `server.info` check and
+  stream restore). On timeout the connection is closed and `connect()` (or the current reconnect
+  attempt) fails with `MisaoConnectionError`. This protects against a hung daemon.
+- `request(method, params)` is typed by `@misao/protocol`. A daemon error rejects with
+  `MisaoRpcError` (`code`, `message`; see [Errors](protocol.md#errors)). Calling it while not
+  connected rejects with `MisaoConnectionError`. `params` are validated by the schema before
+  sending; invalid params reject with a Zod `ZodError` and nothing is sent.
+- `close()` ends the client and stops reconnecting.
+
+## Reconnect and backoff
+
+After a successful `connect()`, a lost connection is retried until you call `close()`.
+
+| Option (`backoff`) | Default | Meaning |
+|---|---|---|
+| `initialDelayMs` | `100` | Delay before the first retry |
+| `maxDelayMs` | `5000` | Upper bound of the delay |
+| `factor` | `2` | Multiplier per attempt |
+
+The delay before attempt `n` (starting at 1) is `min(maxDelayMs, initialDelayMs * factor^(n-1))`
+(`computeBackoffDelay`). There is no attempt limit. The only reasons for the client to give up
+are `close()` and a daemon that turns out to be protocol-incompatible after a restart; either
+way the state becomes `closed`, and `cause` is set only for the incompatible daemon (an unexpected
+internal error in the reconnect loop is reported to `onError` and also ends in `closed`). Requests in flight at the time of the disconnect reject
+with `MisaoConnectionError`.
+
+```ts
+client.onStateChange((state) => {
+  // { status: 'connected' }
+  // { status: 'reconnecting', attempt, delayMs, cause }
+  // { status: 'closed', cause? }
+});
+```
+
+`connected` is also emitted once at the end of the first `connect()`, before its promise
+resolves, and again after each successful reconnect. To receive the first one, register the
+listener before calling `connect()`.
+
+## Following streams
+
+```ts
+import { parseKnownEvent } from '@misao/protocol';
+
+const lines = await client.subscribeLines(paneId, (line) => {
+  console.log(line.seq, line.text);
+});
+
+const events = await client.subscribeEvents((event) => {
+  const known = parseKnownEvent(event);      // undefined for event types this version does not know
+  if (known?.type === 'pane.state') console.log(known.paneId, known.data.state);
+});
+
+// Later, for example before a process restart:
+const saved = lines.cursor;                  // { seq, epoch }
+lines.unsubscribe();
+```
+
+- With no options a subscription is live only. To resume, pass **`since` and `epoch` together**:
+  `{ since: saved.seq, epoch: saved.epoch }`. The type forbids passing only one, because without
+  the `epoch` the daemon cannot tell whether `seq` was rewound by a restart.
+  `Subscription.cursor` always returns the latest position and can be stored as is.
+- While connected, the SDK keeps the last `seq` of each stream, drops duplicates, and after a
+  reconnect re-subscribes every stream with that `since` and the `epoch` it saw. You do not
+  re-subscribe by hand.
+- If the daemon's `epoch` changed (the daemon restarted), the SDK resets the position to `0`; the
+  daemon replays from the oldest retained item, and `onGap` fires with reason `epoch`.
+- If the position fell out of the ring (or the SDK was disconnected because the ring overtook it
+  — see the [pull model](protocol.md#subscriptions-pull-model-and-back-pressure)), the daemon
+  returns `gap: true` and `onGap` fires with reason `truncated`.
+- Only one subscription per stream (events, or lines of one pane) can exist; a second one
+  rejects with a plain `Error` (`stream already registered: <key>`).
+- Handler exceptions do not stop delivery; they are reported to `onError`.
+
+## Callbacks
+
+Each `on...` method returns a function that removes the callback.
+
+| Method | Called when | Argument |
+|---|---|---|
+| `onStateChange` | Connected, reconnecting, or closed | `ConnectionState` |
+| `onGap` | Items were missed on a stream | `{ stream, reason }`, `stream` is `{ kind: 'events' }` or `{ kind: 'lines', paneId }`, `reason` is `'epoch'` or `'truncated'` |
+| `onSubscriptionError` | The daemon rejected a re-subscribe (for example the pane is gone). The stream is dropped. | `{ stream, error: MisaoRpcError }` |
+| `onNotification` | A notification that is not a stream subscription, namely `pane.output` | `{ method, params }` |
+| `onError` | A callback or handler you registered threw | `unknown` |
+
+How to recover from `onGap`: the missed output is gone from the stream, so rebuild state from a
+snapshot (for example `pane.screen`, or `pane.info`) and continue from the new position. Inside
+the callback `client.request` already works, because the connection is usable before streams are
+restored.
+
+`onError` is the single place for exceptions thrown by your callbacks; they never stop
+reconnecting, delivery, or gap notifications. With no `onError` listener, the SDK prints them to
+`console.error`.
+
+## Re-attaching after reconnect
+
+`pane.attach` (raw output) has no `since`, so the SDK does **not** restore it. After every
+reconnect you must attach again. Register the output handler once; `onNotification` listeners
+survive reconnects.
+
+```ts
+const clientId = 'my-app-1';
+
+client.onNotification((n) => {
+  if (n.method === 'pane.output' && n.params.paneId === paneId) {
+    term.write(Buffer.from(n.params.dataB64, 'base64'));
+  }
+});
+
+const attach = (): Promise<unknown> =>
+  client.request('pane.attach', { paneId, clientId, replay: 'snapshot', cols, rows });
+
+await attach();
+client.onStateChange((state) => {
+  if (state.status === 'connected') attach().catch((error) => report(error));
+});
+```
+
+- `replay: "snapshot"` sends one full screen first (`pane.output` with `replay: "snapshot"`):
+  reset your terminal view before drawing it. `replay: "raw"` replays the raw ring instead
+  (`truncated` tells you if it already lost bytes); `"none"` is live only.
+- After a daemon restart the pane is `stopped` and attach answers `1002`; check `pane.info`
+  first (see [Pane lifecycle](protocol.md#pane-lifecycle-and-persistence)).
+- Attaching the same pane again on the same connection replaces the earlier attach.
+- Send input with `pane.write` and `source: 'hub'` (your app) or `'terminal'`; the daemon records
+  only the byte count.
+
+## Passing secrets
+
+`env` of `pane.open` is saved to `persistence.json`. Pass tokens and other secrets in
+`ephemeralEnv`: it reaches the child process but is never persisted and never appears in
+`pane.info`, `pane.list`, or events.
+
+```ts
+const { paneId } = await client.request('pane.open', {
+  cmd: ['claude'],
+  cwd: '/work/repo',
+  env: { MY_APP_MODE: 'agent' },
+  ephemeralEnv: { MY_APP_TOKEN: token },
+  labels: { owner: 'my-app', task: '439', agent: 'claude', origin: 'hub' },
+});
+```
+
+After a daemon restart the pane is `stopped` and the secret is gone; when respawning exists
+(not implemented yet, `1005`) the caller must pass `ephemeralEnv` again. On the same key,
+`ephemeralEnv` overrides `env`.
+
+## Label conventions
+
+Labels are free-form string pairs; **the daemon never interprets them**. They exist so that
+apps and the CLI agree on how to describe a pane. Use `pane.set_label` or `labels` of
+`pane.open`, and filter with `pane.list` (`filter.labels` matches when every key/value is equal).
+
+| Key | Meaning | Example |
+|---|---|---|
+| `owner` | The app or user that owns the pane | `azito` |
+| `task` | Task number the pane works on (`#` is optional; the CLI ignores a leading `#`) | `439` |
+| `agent` | Identifier of the agent running in the pane | `claude` |
+| `origin` | How the pane was created: `hub` (by the controlling app) or `terminal` (by a person with `misao new`) | `hub` |
+| `windowId` | The **hub's window number**, e.g. `806`. The CLI shows it as `W-806` and accepts `806` / `W-806` as a [target](cli.md#targeting-panes). Unrelated to the daemon's window id (`w_...`). | `806` |
+| `name` | Human-readable display name | `misao plan` |
+
+Panes made by `misao new` always carry `origin=terminal`, so a hub can find panes that it has
+not registered yet (no `windowId`) and offer to register them.
+
+## Agent profiles
+
+[Activity detection](protocol.md#activity-detection) has a plug-in point for agent-specific
+screen rules. A profile decides `working`, `blocked`, or `idle` from the visible screen; it is
+the only way to get `blocked`.
+
+```ts
+interface AgentProfile {
+  readonly name: string;                              // becomes pane.state decidedBy
+  matches(cmd: readonly string[]): boolean;           // chosen by pane.open's cmd; first match wins
+  classify(screen: ProfileScreen): 'working' | 'blocked' | 'idle' | null; // null = no opinion
+}
+interface ProfileScreen { rows: readonly string[]; title: string; altScreen: boolean }
+```
+
+`classify` must be a pure function of the screen. Profiles are passed to the daemon through
+`DaemonOptions.profiles`, so they are available when you embed the daemon in your own process:
+
+```ts
+import { Daemon } from '@misao/daemon';
+import type { AgentProfile } from '@misao/daemon';
+
+const myAgent: AgentProfile = {
+  name: 'my-agent',
+  matches: (cmd) => cmd[0]?.endsWith('my-agent') === true,
+  classify: ({ rows }) => (rows.some((r) => r.includes('Proceed? [y/n]')) ? 'blocked' : null),
+};
+
+const daemon = new Daemon({
+  socketPath,
+  pidPath,
+  statePath,          // persistence.json
+  profiles: [myAgent],
+});
+await daemon.start();
+```
+
+`misao serve` does not take profiles; it runs with the generic title and bytes rules. Profiles for
+Claude Code and Codex are not shipped yet.

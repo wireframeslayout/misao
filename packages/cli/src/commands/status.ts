@@ -2,6 +2,9 @@ import { connectDaemon } from '../connect.js';
 import { CliError } from '../errors.js';
 import { writeJson, writeLine } from '../output.js';
 import type { Command } from './command.js';
+import { expectPositionals } from './shared.js';
+
+const USAGE = 'misao status [--json]';
 
 function formatUptime(totalSec: number): string {
   const h = Math.floor(totalSec / 3600);
@@ -13,9 +16,10 @@ function formatUptime(totalSec: number): string {
 export const statusCommand: Command = {
   name: 'status',
   summary: 'デーモンの稼働状況を表示する',
-  usage: 'misao status [--json]',
+  usage: USAGE,
   options: {},
-  async run({ io, isJson, config }) {
+  async run({ args, io, isJson, config }) {
+    expectPositionals(args, 0, 0, USAGE);
     const socket = config.socket;
     let client;
     try {

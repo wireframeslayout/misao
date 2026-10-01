@@ -33,6 +33,18 @@ export interface CliIo {
   onUncaughtException(handler: (error: Error) => void): () => void;
 }
 
+/**
+ * ログインシェルを読む。シェルが無い (Windows) か、ユーザー情報を取れない (passwd に無い uid で
+ * os.userInfo() が投げる) 環境では null。シェルが要るのは new / 一覧の n だけで、そこで usage エラーにする。
+ */
+export function readLoginShell(readUserInfo: () => { shell: string | null }): string | null {
+  try {
+    return readUserInfo().shell;
+  } catch {
+    return null;
+  }
+}
+
 export function nodeIo(): CliIo {
   return {
     stdout: process.stdout,
@@ -42,7 +54,7 @@ export function nodeIo(): CliIo {
     homeDir: os.homedir(),
     cwd: process.cwd(),
     pid: process.pid,
-    shell: os.userInfo().shell,
+    shell: readLoginShell(() => os.userInfo()),
     now: Date.now,
     onSignal(signal, handler) {
       process.on(signal, handler);

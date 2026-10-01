@@ -4,8 +4,10 @@ import { askLine } from '../prompt.js';
 import { writeLine } from '../output.js';
 import { displayName, foregroundCommand, paneStateKey, relativeTime, shortDisplayName, sortPanes, stateLabel, taskLabel } from '../view/pane-view.js';
 import { renderTable } from '../view/table.js';
+import { TERMINATION_SIGNALS } from './tty.js';
 
-export type PickerChoice = { kind: 'pane'; pane: PaneInfo } | { kind: 'new' } | { kind: 'quit' };
+/** signal は入力待ちの間に終了シグナルを受けた。 */
+export type PickerChoice = { kind: 'pane'; pane: PaneInfo } | { kind: 'new' } | { kind: 'quit' } | { kind: 'signal' };
 
 /** attach できるペイン (終了済み・停止中を除く)。ls と同じ並び。 */
 export function attachablePanes(panes: readonly PaneInfo[]): PaneInfo[] {
@@ -28,7 +30,7 @@ export interface PickerOptions {
   canCreate: boolean;
 }
 
-/** 番号付きの一覧を出し、番号 / n / q を受け付ける。入力が閉じたら quit。 */
+/** 番号付きの一覧を出し、番号 / n / q を受け付ける。入力が閉じたら quit、終了シグナルを受けたら signal。 */
 export async function runPicker(io: CliIo, panes: readonly PaneInfo[], options: PickerOptions): Promise<PickerChoice> {
   const choices = attachablePanes(panes);
   for (const line of options.header) writeLine(io.stdout, line);
@@ -49,12 +51,19 @@ export async function runPicker(io: CliIo, panes: readonly PaneInfo[], options: 
   }
   const guide = ['番号で入る', ...(options.canCreate ? ['n で新しいペイン'] : []), 'q で終了'].join(' · ');
   writeLine(io.stdout, guide);
-  for (;;) {
-    const answer = (await askLine(io, '> '))?.trim().toLowerCase();
-    if (answer === undefined || answer === 'q') return { kind: 'quit' };
-    if (answer === 'n' && options.canCreate) return { kind: 'new' };
-    const chosen = /^\d+$/.test(answer) ? choices[Number(answer) - 1] : undefined;
-    if (chosen !== undefined) return { kind: 'pane', pane: chosen };
-    writeLine(io.stderr, `[misao] ${guide} のいずれかを入力してください`);
+  const interrupted = new AbortController();
+  const cleanups = TERMINATION_SIGNALS.map((signal) => io.onSignal(signal, () => interrupted.abort()));
+  try {
+    for (;;) {
+      const answer = (await askLine(io, '> ', interrupted.signal))?.trim().toLowerCase();
+      if (interrupted.signal.aborted) return { kind: 'signal' };
+      if (answer === undefined || answer === 'q') return { kind: 'quit' };
+      if (answer === 'n' && options.canCreate) return { kind: 'new' };
+      const chosen = /^\d+$/.test(answer) ? choices[Number(answer) - 1] : undefined;
+      if (chosen !== undefined) return { kind: 'pane', pane: chosen };
+      writeLine(io.stderr, `[misao] ${guide} のいずれかを入力してください`);
+    }
+  } finally {
+    for (const cleanup of cleanups) cleanup();
   }
 }

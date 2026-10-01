@@ -55,6 +55,17 @@ To run the daemon under systemd, see [deploy/README.md](deploy/README.md).
 During development run the CLI with `node packages/cli/dist/main.js`, or `npx misao`
 (after `npm run build`, run `npm rebuild misao` once to create the bin link).
 
+## Documentation
+
+English is the canonical version; each document has a Japanese edition (`*.ja.md`) next to it.
+
+| Document | Contents |
+|---|---|
+| [docs/protocol.md](docs/protocol.md) | Socket protocol: methods, notifications, `seq` / `epoch` / `gap`, errors |
+| [docs/cli.md](docs/cli.md) | The `misao` command: targets, commands, attach keys, exit codes |
+| [docs/config.md](docs/config.md) | `misao.json`, socket location, memory sizing, running as a service |
+| [docs/embedding.md](docs/embedding.md) | Node SDK, label conventions, secrets, agent profiles |
+
 ## License
 
 [Apache License 2.0](LICENSE). Contributions require agreeing to the [CLA](CLA.md).
