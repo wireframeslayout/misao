@@ -1019,7 +1019,11 @@ test('DaemonOptions.profiles のプロファイルが cmd に matches した pan
         events.filter((e) => e.type === 'pane.state' && e.paneId === matched.paneId).map((e) => e.data.state),
         ['blocked'],
       );
-      assert.equal((await info(other.paneId)).agentState, 'unknown'); // matches しない pane は汎用判定 (blocked は出ない)
+      // matches しない pane は汎用判定だけ (blocked は出ず、プロファイルも使われない)。経過時間で bytes 段の idle になりうるので unknown までは固定しない
+      const otherInfo = await info(other.paneId);
+      assert.notEqual(otherInfo.agentState, 'blocked');
+      assert.notEqual(otherInfo.decidedBy, 'fake-agent');
+      assert.ok(!events.some((e) => e.type === 'pane.state' && e.paneId === other.paneId && e.data.state === 'blocked'));
     } finally {
       client.close();
       await daemon.shutdown();
