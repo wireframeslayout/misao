@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { SocketPathError, resolveSocketPath } from '@misao/sdk';
+import { MisaoPathError, resolveSocketPath } from '@misao/sdk';
 import type { z } from 'zod';
 import { resolveConfigCandidates } from './paths.js';
 import type { ConfigEnv } from './paths.js';
@@ -45,8 +45,20 @@ function formatPath(path: PropertyKey[]): string {
   return path.length === 0 ? '(root)' : path.map(String).join('.');
 }
 
+/** パス設定の不正（MisaoPathError）を ConfigError に包み直す。それ以外の例外はそのまま投げる。 */
+function withPathErrorAsConfigError<T>(resolve: () => T, source: string | null): T {
+  try {
+    return resolve();
+  } catch (error) {
+    if (!(error instanceof MisaoPathError)) throw error;
+    const context = source === null ? '' : ` (config: ${source})`;
+    throw new ConfigError(`invalid path setting: ${error.message}${context}`, { cause: error });
+  }
+}
+
 function readFirstConfig(input: LoadConfigInput): ReadResult | null {
-  for (const candidate of resolveConfigCandidates(input)) {
+  const candidates = withPathErrorAsConfigError(() => resolveConfigCandidates(input), null);
+  for (const candidate of candidates) {
     try {
       return { source: candidate.path, text: readFileSync(candidate.path, 'utf8') };
     } catch (error) {
@@ -107,23 +119,6 @@ function validateConfig(
   return { config: second.data, warnings };
 }
 
-function resolveSocket(config: MisaoConfig, input: LoadConfigInput, source: string | null): string {
-  try {
-    return resolveSocketPath({
-      env: input.env,
-      explicitPath: config.socket,
-      homeDir: input.homeDir,
-    });
-  } catch (error) {
-    if (error instanceof SocketPathError) {
-      throw new ConfigError(`invalid socket path (${source ?? 'defaults'}): ${error.message}`, {
-        cause: error,
-      });
-    }
-    throw error;
-  }
-}
-
 /**
  * 設定ファイルを探索・検証し、ソケットパスを解決した設定を返す。
  * 最初に見つかった 1 ファイルだけを使う（マージしない）。副作用は持たず、
@@ -137,5 +132,9 @@ export function loadConfig(input: LoadConfigInput): LoadedConfig {
       : validateConfig(parseJson(found), found.source);
   const source = found?.source ?? null;
   const { socket: _configSocket, ...rest } = config;
-  return { config: { ...rest, socket: resolveSocket(config, input, source) }, source, warnings };
+  const socket = withPathErrorAsConfigError(
+    () => resolveSocketPath({ env: input.env, explicitPath: config.socket, homeDir: input.homeDir }),
+    source,
+  );
+  return { config: { ...rest, socket }, source, warnings };
 }

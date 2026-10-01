@@ -140,6 +140,31 @@ test('socket は explicitPath として扱われ、$MISAO_SOCKET に負ける', 
   );
 });
 
+test('$MISAO_DIR の ~/ は設定ファイル探索でもソケットと同じく展開される', () => {
+  const home = emptyHome();
+  mkdirSync(path.join(home, 'd'), { recursive: true });
+  writeFileSync(path.join(home, 'd', 'misao.json'), JSON.stringify({ scrollback: 7 }));
+  const { config, source } = loadConfig({ env: { MISAO_DIR: '~/d' }, homeDir: home });
+  assert.equal(source, path.join(home, 'd', 'misao.json'));
+  assert.equal(config.scrollback, 7);
+  assert.equal(config.socket, path.join(home, 'd', 'misao.sock'));
+});
+
+test('相対パスの $MISAO_DIR は ConfigError', () => {
+  assert.throws(
+    () => loadConfig({ env: { MISAO_DIR: 'rel' }, homeDir: emptyHome() }),
+    (error: unknown) => error instanceof ConfigError && error.message.includes('MISAO_DIR'),
+  );
+});
+
+test('$MISAO_SOCKET が不正なときは原因の env 名を示す', () => {
+  const file = writeConfig({});
+  assert.throws(
+    () => loadConfig({ flagPath: file, env: { MISAO_SOCKET: 'rel.sock' }, homeDir: emptyHome() }),
+    (error: unknown) => error instanceof ConfigError && error.message.includes('MISAO_SOCKET'),
+  );
+});
+
 test('長すぎる socket は ConfigError（設定ファイルのパスを含む）', () => {
   const file = writeConfig({ socket: `/${'a'.repeat(120)}.sock` });
   assert.throws(

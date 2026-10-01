@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   MAX_SOCKET_PATH_BYTES,
-  SocketPathError,
+  MisaoPathError,
+  resolveMisaoDir,
   resolveSocketPath,
 } from '../src/socket-path.js';
 
@@ -61,18 +62,18 @@ test('~/ は homeDir に展開される', () => {
   );
 });
 
-test('相対パスは SocketPathError', () => {
+test('相対パスは MisaoPathError', () => {
   assert.throws(
     () => resolveSocketPath({ env: {}, explicitPath: 'rel/a.sock', homeDir }),
-    SocketPathError,
+    MisaoPathError,
   );
   assert.throws(
     () => resolveSocketPath({ env: { MISAO_SOCKET: './a.sock' }, homeDir }),
-    SocketPathError,
+    MisaoPathError,
   );
   assert.throws(
     () => resolveSocketPath({ env: { MISAO_DIR: 'rel' }, homeDir }),
-    SocketPathError,
+    MisaoPathError,
   );
 });
 
@@ -92,7 +93,7 @@ test('長さ境界: 107 バイトは OK、108 バイトは NG', () => {
   assert.equal(resolveSocketPath({ env: {}, explicitPath: ok, homeDir }), ok);
   const ng = pathOfBytes(MAX_SOCKET_PATH_BYTES + 1);
   assert.equal(Buffer.byteLength(ng), 108);
-  assert.throws(() => resolveSocketPath({ env: {}, explicitPath: ng, homeDir }), SocketPathError);
+  assert.throws(() => resolveSocketPath({ env: {}, explicitPath: ng, homeDir }), MisaoPathError);
 });
 
 test('長さはバイト数で数える（マルチバイト）', () => {
@@ -102,5 +103,13 @@ test('長さはバイト数で数える（マルチバイト）', () => {
   assert.equal(resolveSocketPath({ env: {}, explicitPath: ok, homeDir }), ok);
   const ng = pathOfBytes(MAX_SOCKET_PATH_BYTES + 1, 'あ');
   assert.equal(Buffer.byteLength(ng), 108);
-  assert.throws(() => resolveSocketPath({ env: {}, explicitPath: ng, homeDir }), SocketPathError);
+  assert.throws(() => resolveSocketPath({ env: {}, explicitPath: ng, homeDir }), MisaoPathError);
+});
+
+test('resolveMisaoDir: 未設定・空文字は undefined、~/ は展開、相対は MisaoPathError', () => {
+  assert.equal(resolveMisaoDir({ env: {}, homeDir }), undefined);
+  assert.equal(resolveMisaoDir({ env: { MISAO_DIR: '' }, homeDir }), undefined);
+  assert.equal(resolveMisaoDir({ env: { MISAO_DIR: '~/d' }, homeDir }), '/home/u/d');
+  assert.equal(resolveMisaoDir({ env: { MISAO_DIR: '/var/m' }, homeDir }), '/var/m');
+  assert.throws(() => resolveMisaoDir({ env: { MISAO_DIR: 'rel' }, homeDir }), MisaoPathError);
 });

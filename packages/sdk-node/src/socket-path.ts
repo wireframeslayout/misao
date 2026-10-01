@@ -6,10 +6,11 @@ export const MAX_SOCKET_PATH_BYTES = 107;
 const SOCKET_FILE_NAME = 'misao.sock';
 const DEFAULT_DIR_NAME = '.misao';
 
-export class SocketPathError extends Error {
+/** misao のパス設定（$MISAO_SOCKET / $MISAO_DIR / 明示指定）が不正。 */
+export class MisaoPathError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'SocketPathError';
+    this.name = 'MisaoPathError';
   }
 }
 
@@ -32,17 +33,29 @@ function isSet(value: string | undefined): value is string {
 function expandHome(source: string, value: string, homeDir: string): string {
   const expanded = value === '~' ? homeDir : value.startsWith('~/') ? path.join(homeDir, value.slice(2)) : value;
   if (!path.isAbsolute(expanded)) {
-    throw new SocketPathError(`${source} must be an absolute path or start with "~/": ${value}`);
+    throw new MisaoPathError(`${source} must be an absolute path or start with "~/": ${value}`);
   }
   return expanded;
+}
+
+export interface ResolveMisaoDirInput {
+  readonly env: Pick<SocketPathEnv, 'MISAO_DIR'>;
+  readonly homeDir: string;
+}
+
+/**
+ * $MISAO_DIR を `~/` 展開した絶対パスで返す。未設定（空文字を含む）なら undefined。
+ * 設定ファイル探索とソケット解決で同じ解釈を使うため、ここに一本化する。
+ */
+export function resolveMisaoDir({ env, homeDir }: ResolveMisaoDirInput): string | undefined {
+  return isSet(env.MISAO_DIR) ? expandHome('MISAO_DIR', env.MISAO_DIR, homeDir) : undefined;
 }
 
 function selectSocketPath({ env, explicitPath, homeDir }: ResolveSocketPathInput): string {
   if (isSet(env.MISAO_SOCKET)) return expandHome('MISAO_SOCKET', env.MISAO_SOCKET, homeDir);
   if (explicitPath !== undefined) return expandHome('socket path', explicitPath, homeDir);
-  if (isSet(env.MISAO_DIR)) {
-    return path.join(expandHome('MISAO_DIR', env.MISAO_DIR, homeDir), SOCKET_FILE_NAME);
-  }
+  const misaoDir = resolveMisaoDir({ env, homeDir });
+  if (misaoDir !== undefined) return path.join(misaoDir, SOCKET_FILE_NAME);
   return path.join(expandHome('home directory', homeDir, homeDir), DEFAULT_DIR_NAME, SOCKET_FILE_NAME);
 }
 
@@ -55,7 +68,7 @@ export function resolveSocketPath(input: ResolveSocketPathInput): string {
   const resolved = selectSocketPath(input);
   const bytes = Buffer.byteLength(resolved);
   if (bytes > MAX_SOCKET_PATH_BYTES) {
-    throw new SocketPathError(
+    throw new MisaoPathError(
       `socket path is ${bytes} bytes, exceeding the limit of ${MAX_SOCKET_PATH_BYTES}: ${resolved}`,
     );
   }

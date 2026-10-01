@@ -31,3 +31,10 @@ test('空文字の env は未設定扱い', () => {
     { path: '/home/u/.misao/misao.json', isExplicit: false },
   ]);
 });
+
+test('$MISAO_DIR の ~/ は homeDir に展開される', () => {
+  assert.deepEqual(resolveConfigCandidates({ env: { MISAO_DIR: '~/d' }, homeDir }), [
+    { path: '/home/u/d/misao.json', isExplicit: false },
+    { path: '/home/u/.misao/misao.json', isExplicit: false },
+  ]);
+});
