@@ -19,7 +19,7 @@ const { Terminal } = xterm;
 type Terminal = TerminalType;
 
 /** 行リングの 1 エントリあたりの固定オーバーヘッド (オブジェクト・配列スロット・文字列ヘッダ)。空行ばかりでもエントリ数が膨らまないよう size に足す。 */
-export const LINE_ENTRY_OVERHEAD = 64;
+const LINE_ENTRY_OVERHEAD = 64;
 const KILL_GRACE_MS = 3000;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
