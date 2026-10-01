@@ -27,7 +27,7 @@ export function encodeKeys(names: readonly string[]): Buffer {
     if (named !== undefined) return Buffer.from(named);
     if (/^c-/i.test(name)) {
       try {
-        return Buffer.from([parseKeySpec(name)]);
+        return Buffer.from([parseKeySpec(`C-${name.slice(2)}`)]);
       } catch {
         throw new CliError('usage', `不明なキー名です: ${name}`);
       }
