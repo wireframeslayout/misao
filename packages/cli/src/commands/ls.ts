@@ -65,7 +65,7 @@ export const lsCommand: Command = {
     } else if (panes.length === 0) {
       writeLine(io.stdout, '[misao] 該当するペインはありません');
     } else {
-      for (const line of renderRows(panes, shortPaneIds(all.map((p) => p.paneId)), io.homeDir, io.now())) writeLine(io.stdout, line);
+      for (const line of renderRows(panes, shortPaneIds(all), io.homeDir, io.now())) writeLine(io.stdout, line);
     }
     return 0;
   },

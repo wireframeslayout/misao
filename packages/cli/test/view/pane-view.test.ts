@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import type { PaneInfo } from '@misao/protocol';
 import {
   displayName,
   foregroundCommand,
@@ -17,6 +18,11 @@ import {
 import { makePane } from '../helpers/pane.js';
 
 const HOME = '/home/test';
+
+
+function panesOf(...paneIds: string[]): PaneInfo[] {
+  return paneIds.map((paneId) => makePane({ paneId }));
+}
 
 test('sortPanes: blocked → working → idle → exited → stopped → unknown、同状態は新しい順', () => {
   const t = (s: number): string => new Date(Date.UTC(2026, 0, 1, 0, 0, s)).toISOString();
@@ -100,10 +106,10 @@ test('shortPaneIds: 先頭 4 文字…末尾 2 文字。衝突したら末尾を
   const a = 'p_01M3XXXXXXXXXXXXXXXXXXXX7Q';
   const b = 'p_01M3XXXXXXXXXXXXXXXXXXXXR8';
   const c = 'p_01M3XXXXXXXXXXXXXXXXXXXY7Q';
-  const one = shortPaneIds([a, b]);
+  const one = shortPaneIds(panesOf(a, b));
   assert.equal(one.get(a), 'p_01M3…7Q');
   assert.equal(one.get(b), 'p_01M3…R8');
-  const three = shortPaneIds([a, b, c]);
+  const three = shortPaneIds(panesOf(a, b, c));
   assert.equal(three.get(a), 'p_01M3…X7Q');
   assert.equal(three.get(c), 'p_01M3…Y7Q');
   assert.equal(three.get(b), 'p_01M3…R8');
@@ -114,12 +120,26 @@ test('shortPaneIds: 末尾は先頭 4 文字が違う pane や、他の ID の�
   const a = 'p_01M3XXXXXXXXXXXXXXXXXXXXR8';
   const b = 'p_01M4YYYYYYYYYYYYYYYYYYYYR8';
   const c = 'p_01M5ZZZZZZZZZZZZZZZZZZZZ01';
-  const ids = shortPaneIds([a, b, c]);
+  const ids = shortPaneIds(panesOf(a, b, c));
   assert.equal(ids.get(a), 'p_01M3…XR8');
   assert.equal(ids.get(b), 'p_01M4…YR8');
   assert.equal(ids.get(c), 'p_01M5…Z01', '01 だと他の ID の先頭に当たる');
-  const lower = shortPaneIds(['p_01M3XXXXXXXXXXXXXXXXXXXXab', 'p_01M4YYYYYYYYYYYYYYYYYYYYAB']);
+  const lower = shortPaneIds(panesOf('p_01M3XXXXXXXXXXXXXXXXXXXXab', 'p_01M4YYYYYYYYYYYYYYYYYYYYAB'));
   assert.equal(lower.get('p_01M3XXXXXXXXXXXXXXXXXXXXab'), 'p_01M3…Xab', '大文字小文字を区別せずに比べる');
+});
+
+test('shortPaneIds: 末尾が windowId と等しいケースでは、窓番号の段に当たらない長さまで伸ばす', () => {
+  const a = 'p_01M3XXXXXXXXXXXXXXXXXXXXR8';
+  const panes = [makePane({ paneId: a }), makePane({ paneId: 'p_01M4YYYYYYYYYYYYYYYYYYYYQQ', labels: { windowId: 'W-r8' } })];
+  assert.equal(shortPaneIds(panes).get(a), 'p_01M3…XR8', 'R8 は W-r8 の窓番号と同じ');
+});
+
+test('shortPaneIds: 数字だけの末尾は窓番号として扱われるので、文字を含むまで伸ばす', () => {
+  const a = 'p_01M3XXXXXXXXXXXXXXXXXXXK12';
+  const b = 'p_01M3XXXXXXXXXXXXXXXXXX9812';
+  const ids = shortPaneIds(panesOf(a, b));
+  assert.equal(ids.get(a), 'p_01M3…K12');
+  assert.equal(ids.get(b), 'p_01M3…X9812');
 });
 
 test('shortDisplayName: 登録済みは窓番号だけ、未登録は NAME 列と同じ', () => {

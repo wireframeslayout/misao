@@ -17,7 +17,10 @@ const STATE_SYMBOLS: Record<PaneStateKey, string> = {
 
 const NO_VALUE = '—';
 const ID_PREFIX_LENGTH = 4;
-const MIN_SUFFIX_LENGTH = 2;
+/** ID の前方・後方一致に使う最短の長さ。短縮 ID の末尾もこの長さ以上にする (照合と表示で共有)。 */
+export const MIN_ID_FRAGMENT_LENGTH = 2;
+const WINDOW_ID_PREFIX = /^w-/i;
+const WINDOW_NUMBER_QUERY = /^(w-)?\d+$/i;
 
 export function paneStateKey(pane: PaneInfo): PaneStateKey {
   return pane.processState === 'stopped' ? 'stopped' : pane.agentState;
@@ -49,7 +52,17 @@ export function isRegistered(pane: PaneInfo): boolean {
 
 /** hub 側の窓番号 806 を W-806 と表示する。すでに W- が付いていればそのまま。 */
 export function formatWindowId(windowId: string): string {
-  return /^w-/i.test(windowId) ? `W-${windowId.slice(2)}` : `W-${windowId}`;
+  return `W-${stripWindowPrefix(windowId)}`;
+}
+
+/** 窓番号の先頭の w- / W- を除く。 */
+export function stripWindowPrefix(windowId: string): string {
+  return windowId.replace(WINDOW_ID_PREFIX, '');
+}
+
+/** 窓番号の形 (806 / W-806) の対象指定か。 */
+export function isWindowNumberQuery(query: string): boolean {
+  return WINDOW_NUMBER_QUERY.test(query);
 }
 
 /** ホームディレクトリ配下を ~ に短縮する。 */
@@ -99,19 +112,24 @@ export function relativeTime(iso: string | null, now: number): string {
 
 /**
  * `p_01M3…7Q` 形式 (先頭 4 文字 + … + 一意になる最短の末尾、最小 2)。
- * 末尾は単独で対象指定 (`misao attach 7Q`) に使うので、resolveTarget の前方・後方一致と同じ規則
- * (大文字小文字を区別しない) で、他のどの pane の ID の先頭にも末尾にも当たらない長さにする。
+ * 末尾は単独で対象指定 (`misao attach 7Q`) に使うので、resolveTarget で他の pane に当たらない長さまで伸ばす:
+ * 他の ID の先頭・末尾 (大文字小文字を区別しない) と一致せず、窓番号の段に吸われる形 (数字だけ、
+ * またはいずれかの pane の windowId と等しい) でもない長さ。
  */
-export function shortPaneIds(paneIds: readonly string[]): Map<string, string> {
+export function shortPaneIds(panes: readonly PaneInfo[]): Map<string, string> {
   const result = new Map<string, string>();
-  const bodies = paneIds.map((id) => id.slice(2).toUpperCase());
-  paneIds.forEach((id, index) => {
-    const body = id.slice(2);
+  const bodies = panes.map((p) => p.paneId.slice(2).toUpperCase());
+  const windowIds = new Set(
+    panes.map((p) => p.labels.windowId).filter((w): w is string => w !== undefined && w !== '').map((w) => stripWindowPrefix(w).toUpperCase()),
+  );
+  panes.forEach((pane, index) => {
+    const body = pane.paneId.slice(2);
     const others = bodies.filter((_, i) => i !== index);
-    let length = MIN_SUFFIX_LENGTH;
-    const collides = (suffix: string): boolean => others.some((o) => o.startsWith(suffix) || o.endsWith(suffix));
-    while (length < body.length && collides(body.slice(-length).toUpperCase())) length++;
-    result.set(id, `p_${body.slice(0, ID_PREFIX_LENGTH)}…${body.slice(-length)}`);
+    const isUnusable = (suffix: string): boolean =>
+      isWindowNumberQuery(suffix) || windowIds.has(suffix) || others.some((o) => o.startsWith(suffix) || o.endsWith(suffix));
+    let length = MIN_ID_FRAGMENT_LENGTH;
+    while (length < body.length && isUnusable(body.slice(-length).toUpperCase())) length++;
+    result.set(pane.paneId, `p_${body.slice(0, ID_PREFIX_LENGTH)}…${body.slice(-length)}`);
   });
   return result;
 }

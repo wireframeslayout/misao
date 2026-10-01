@@ -70,3 +70,20 @@ test('0 件は not_found、複数は ambiguous で候補を返す', () => {
   assert.equal(err.candidates?.[0]?.name, 'W-806 · misao 計画');
   expectError(() => resolveTarget('', panes, HOME), 'usage');
 });
+
+test('窓番号の形のクエリは窓番号の段だけで決め、閉じた窓番号で別のペインに落ちない', () => {
+  const byId = makePane({ paneId: 'p_01M3XXXXXXXXXXXXXXXXXXX806', labels: {} });
+  const byName = makePane({ paneId: 'p_01M3XXXXXXXXXXXXXXXXXXXXKK', labels: { name: 'issue-806-fix' } });
+  const err = expectError(() => resolveTarget('806', [byId, byName], HOME), 'not_found');
+  assert.match(err.message, /^W-806 は見つかりません。misao ls で確認してください/);
+  assert.match(err.message, /p_ を付けて/);
+  expectError(() => resolveTarget('W-806', [byId, byName], HOME), 'not_found');
+  assert.equal(resolveTarget('p_806', [byId, byName], HOME), byId, '数字だけの ID は p_ を付ければ ID として引ける');
+});
+
+test('ID の部分一致は 2 文字以上。1 文字では確定しない', () => {
+  const only = makePane({ paneId: 'p_01M3XXXXXXXXXXXXXXXXXXXXQZ', labels: {} });
+  expectError(() => resolveTarget('Z', [only], HOME), 'not_found');
+  expectError(() => resolveTarget('p_0', [only], HOME), 'not_found');
+  assert.equal(resolveTarget('QZ', [only], HOME), only);
+});

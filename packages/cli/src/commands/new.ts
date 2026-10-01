@@ -51,7 +51,7 @@ export const newCommand: Command = {
         writeJson(io, created);
         return 0;
       }
-      const shortId = shortPaneIds(panes.map((p) => p.paneId)).get(paneId)!;
+      const shortId = shortPaneIds(panes).get(paneId)!;
       writeLine(io.stdout, `[misao] ペイン ${shortId} を作成しました（${foregroundCommand(created)} · ${tildify(created.cwd, io.homeDir)}）`);
       writeLine(io.stdout, '       AZITO の Objects に「未登録」として表示されます。登録すると窓として扱えます');
       writeLine(io.stdout, `       入る: misao attach ${shortSuffix(shortId)}`);

@@ -49,6 +49,12 @@ describe('引数まわり (デーモン不要)', () => {
     for (const name of ['ls', 'attach', 'new', 'kill', 'send', 'screen', 'tail', 'events', 'label', 'status', 'schema', 'serve']) {
       assert.match(help.out, new RegExp(`^  ${name} `, 'm'), name);
     }
+    assert.match(help.out, /^対象 <target> の書き方:$/m);
+    assert.match(help.out, /数字だけの ID は p_ を付けて書く/);
+    const sendHelp = await misao(undefined, ['send', '--help']);
+    assert.equal(sendHelp.code, 0);
+    assert.match(sendHelp.out, /^対象 <target> の書き方:$/m);
+    assert.doesNotMatch((await misao(undefined, ['status', '--help'])).out, /対象 <target>/);
   });
 
   test('不明なコマンド・不明なオプションは 2、--json ならエラーも JSON', async () => {
