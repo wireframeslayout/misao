@@ -15,5 +15,8 @@
   },
   "scripts": {
     "test": "node --conditions=@misao/source --import tsx --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
   }
 }
