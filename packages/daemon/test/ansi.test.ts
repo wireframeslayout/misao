@@ -66,3 +66,18 @@ test('CSI / ESC 中間バイト途中の CR LF も ground に戻る', () => {
 test('ESC 直後の範囲外 (非 ASCII) 文字は再解釈され消費されない', () => {
   check('\x1bあいう\n', ['あいう']);
 });
+
+test('SGR で途切れた区間・サロゲートペア・チャンク境界をまたぐ行を 1 行に連結する', () => {
+  check('\x1b[31mred\x1b[0m 😀 \x1b[1mbold\x1b[0m tail\n', ['red 😀 bold tail']);
+  check('a\x1b[0mb\x1b[0mc\x1b[0md\x1b[0me\x1b[0mf\x1b[0mg\x1b[0mh\x1b[0mi\x1b[0mj\x1b[0mk\x1b[0ml\x1b[0mm\x1b[0mn\n', ['abcdefghijklmn']);
+});
+test('CR による上書きは区間の途中でも直前までの断片を捨てる', () => {
+  check('0123456789abcdef\x1b[0mXYZ\rnew\x1b[0mline\n', ['newline']);
+});
+test('pending は確定済みの断片と未確定の区間を連結して返し、続きの push で行が伸びる', () => {
+  const a = new AnsiLineAssembler();
+  a.push('abc\x1b[0mde');
+  assert.equal(a.pending, 'abcde');
+  assert.deepEqual(a.push('f\ng'), ['abcdef']);
+  assert.equal(a.pending, 'g');
+});
