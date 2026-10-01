@@ -13,6 +13,12 @@ const BURST_ROUNDS = scale(100, 1000);
 const EXIT_TIMEOUT_MS = scale(120_000, 15 * 60_000);
 /** 遅い購読者のテスト用。burst 1 ラウンド (約 0.5 MiB) は収まり、数ラウンドで溢れる容量。 */
 const SMALL_LINES_RING_BYTES = 1024 * 1024;
+/**
+ * 遅い購読者 (リングに収まる停止) のテスト用。burst 1 ラウンド (1 万行) はリングの size で約 1.1 MiB (文字数 + 行ごとのオーバーヘッド 64)、
+ * 送信すると約 1.6 MB。24 ラウンドは送信量が 16 MiB (旧実装の切断上限) を超え、リングには収まる。
+ */
+const ROOMY_LINES_RING_BYTES = 32 * 1024 * 1024;
+const ROOMY_STALL_ROUNDS = 24;
 
 interface Env {
   daemon: DaemonProcess;
@@ -29,14 +35,17 @@ async function startEnv(config: Parameters<typeof startDaemonProcess>[0]): Promi
 
 let env: Env; // 既定の設定
 let small: Env; // 行リングを小さくしたデーモン
+let roomy: Env; // 行リングを 32 MiB にしたデーモン
 
 before(async () => {
   env = await startEnv({});
   small = await startEnv({ rings: { linesBytes: SMALL_LINES_RING_BYTES } });
+  roomy = await startEnv({ rings: { linesBytes: ROOMY_LINES_RING_BYTES } });
 });
 after(async () => {
   await env.daemon.stop();
   await small.daemon.stop();
+  await roomy.daemon.stop();
 });
 
 /** 購読の結果。subscriber は呼び出し側が close する。 */
@@ -123,14 +132,15 @@ describe('v3: 行ストリームのマーカー検出', () => {
   });
 
   test('遅い購読者 (リングに収まる停止): 切断も gap もなく、全件が連続して届く', { timeout: 120_000 }, async () => {
-    const s = await startMarkers(small, 'S1', 1, () => blockThread(1500)); // burst 1 ラウンド (約 0.5 MiB) はリングに収まる
-    await waitForHead(small, s);
+    // 停止中の出力は 16 MiB (旧実装なら送信キューの上限で切断) を超えるが、リング (32 MiB) には収まる
+    const s = await startMarkers(roomy, 'S1', ROOMY_STALL_ROUNDS, () => blockThread(6000));
+    await waitForHead(roomy, s);
     assert.deepEqual([s.gaps, s.connectionChanges], [[], []]);
     assert.equal(countBreaks(s.seqs), 0);
     const { expected, unique } = assertNoFalseMarkers(s, 'S1', s.outFile);
     assert.deepEqual(expected.filter((marker) => !unique.has(marker)), []);
     s.sub.close();
-    await small.client.request('pane.close', { paneId: s.paneId });
+    await roomy.client.request('pane.close', { paneId: s.paneId });
   });
 
   test('遅い購読者 (リングを超える停止): リングに追い越されたときだけ切断され、gap(truncated) で知らされる', { timeout: 120_000 }, async () => {
