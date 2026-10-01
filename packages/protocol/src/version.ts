@@ -7,7 +7,7 @@
  *   未知の enum 値は "unknown" として読む。送信側 (params) は厳密に検証する。
  * - 削除や意味の変更は major。
  */
-export const PROTOCOL_VERSION = '0.1.0';
+export const PROTOCOL_VERSION = '0.2.0';
 
 function parseMajor(version: string): string {
   const major = version.split('.')[0];

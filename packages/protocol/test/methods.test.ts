@@ -30,7 +30,7 @@ test('全メソッドの代表的な params / result', () => {
     ['window.close', { windowId: WINDOW_ID }, ok],
     ['window.rename', { windowId: WINDOW_ID, name: 'x' }, ok],
     ['window.focus', { windowId: WINDOW_ID, clientId: 'c1' }, ok],
-    ['pane.open', { cmd: ['bash'], cwd: '/tmp', env: { A: 'b' }, cols: 80, rows: 24, labels: { a: 'b' }, windowId: WINDOW_ID, preplace: [{ path: 'a/b.txt', content: 'x', mode: 0o644 }] }, { paneId: PANE_ID }],
+    ['pane.open', { cmd: ['bash'], cwd: '/tmp', env: { A: 'b' }, ephemeralEnv: { TOKEN: 't' }, cols: 80, rows: 24, labels: { a: 'b' }, windowId: WINDOW_ID, preplace: [{ path: 'a/b.txt', content: 'x', mode: 0o644 }] }, { paneId: PANE_ID }],
     ['pane.info', { paneId: PANE_ID }, paneInfo],
     ['pane.list', { filter: { state: 'running', labels: { a: 'b' }, workspace: 'main' } }, [paneInfo]],
     ['pane.write', { paneId: PANE_ID, data: 'ls\n', source: 'hub', clientId: 'c' }, ok],
@@ -61,6 +61,7 @@ test('result は未知のフィールドを受け入れ、params は捨てる', 
 test('pane.open の境界値', () => {
   assert.equal(params('pane.open', { cmd: [] }), false);
   assert.equal(params('pane.open', { cmd: ['sh'], cols: 0 }), false);
+  assert.equal(params('pane.open', { cmd: ['sh'], ephemeralEnv: { A: 1 } }), false);
   assert.equal(params('pane.open', { cmd: ['sh'], preplace: [{ path: '/etc/passwd', content: '' }] }), false);
   assert.equal(params('pane.open', { cmd: ['sh'], preplace: [{ path: '../x', content: '' }] }), false);
   assert.equal(params('pane.open', { cmd: ['sh'], preplace: [{ path: 'a/../x', content: '' }] }), false);

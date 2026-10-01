@@ -37,6 +37,12 @@ test('result は未知のフィールドを許し、params は additionalPropert
   assert.equal(schema.methods['pane.open']?.params['additionalProperties'], undefined);
 });
 
+test('pane.open の params に ephemeralEnv があり、respawn での再指定を説明している', () => {
+  const props = schema.methods['pane.open']?.params['properties'] as Record<string, Record<string, unknown>>;
+  assert.ok(props['ephemeralEnv']);
+  assert.match(String(props['ephemeralEnv']['description']), /On respawn the caller must pass them again/);
+});
+
 test('pane.write / pane.set_label の params は anyOf で表現される', () => {
   assert.equal((schema.methods['pane.write']?.params['anyOf'] as unknown[]).length, 2);
   assert.equal((schema.methods['pane.set_label']?.params['anyOf'] as unknown[]).length, 2);
