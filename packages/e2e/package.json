@@ -1,0 +1,17 @@
+{
+  "name": "@misao/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test:e2e": "node --conditions=@misao/source --import tsx --test --test-concurrency=1 \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@misao/daemon": "0.0.0",
+    "@misao/protocol": "0.0.0",
+    "@misao/sdk": "0.0.0",
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "^1.1.0"
+  }
+}

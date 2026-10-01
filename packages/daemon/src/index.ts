@@ -6,3 +6,4 @@ export { DEFAULT_LOG_LEVEL, LOG_LEVELS } from './log.js';
 export type { LogLevel } from './log.js';
 export { ensureSocketDir, listenUnixSocket } from './socket.js';
 export type { AgentProfile, ProfileScreen, ProfileVerdict } from './profile.js';
+export { viewportText } from './screen.js';
