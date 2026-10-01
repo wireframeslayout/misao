@@ -1,3 +1,4 @@
+import { MisaoConnectionError } from '@misao/sdk';
 import type { MisaoClient, Subscription } from '@misao/sdk';
 import { parseKnownEvent } from '@misao/protocol';
 import type { PaneInfo } from '@misao/protocol';
@@ -99,22 +100,29 @@ export async function runSession(opts: SessionOptions): Promise<SessionEnd> {
         }),
       );
     }
-    events = await client.subscribeEvents((event) => {
-      const known = parseKnownEvent(event);
-      if (known?.type === 'pane.exited' && known.paneId === paneId) {
-        finish({ reason: 'exited', exitCode: known.data.exitCode, signal: known.data.signal });
-      }
-    });
-    await client.request('pane.attach', {
-      paneId,
-      clientId,
-      replay: opts.replay,
-      ...(isReadonly ? {} : { cols: size.cols, rows: size.rows }),
-    });
-    isAttached = true;
-    // attach の前に終わっていたペインは終了イベントが来ないので、状態を見て終わらせる。
-    const current = await client.request('pane.info', { paneId });
-    if (current.processState !== 'running') finish({ reason: 'exited', exitCode: current.exitCode, signal: current.signal });
+    try {
+      events = await client.subscribeEvents((event) => {
+        const known = parseKnownEvent(event);
+        if (known?.type === 'pane.exited' && known.paneId === paneId) {
+          finish({ reason: 'exited', exitCode: known.data.exitCode, signal: known.data.signal });
+        }
+      });
+      await client.request('pane.attach', {
+        paneId,
+        clientId,
+        replay: opts.replay,
+        ...(isReadonly ? {} : { cols: size.cols, rows: size.rows }),
+      });
+      isAttached = true;
+      // attach の前に終わっていたペインは終了イベントが来ないので、状態を見て終わらせる。
+      const current = await client.request('pane.info', { paneId });
+      if (current.processState !== 'running') finish({ reason: 'exited', exitCode: current.exitCode, signal: current.signal });
+    } catch (error) {
+      // 起動中の要求が接続断で失敗したときは、状態通知より先に届いても disconnected として終える。
+      if (!(error instanceof MisaoConnectionError)) throw error;
+      isDisconnected = true;
+      finish({ reason: 'disconnected' });
+    }
     return { ...(await done), inputCount };
   } finally {
     for (const cleanup of cleanups) cleanup();
