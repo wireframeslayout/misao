@@ -16,7 +16,7 @@ export class TtyGuard {
 
   constructor(private readonly io: CliIo) {}
 
-  /** raw mode に入る。SIGTERM / SIGHUP では端末を戻してから onSignal を呼ぶ。 */
+  /** raw mode に入る。SIGTERM / SIGHUP / SIGINT / SIGQUIT では端末を戻してから onSignal を呼ぶ。 */
   enter(onSignal: () => void): void {
     const { stdin } = this.io;
     if (!stdin.isTTY || stdin.setRawMode === undefined) {
@@ -29,9 +29,10 @@ export class TtyGuard {
       this.restore();
       onSignal();
     };
+    // raw mode 中の Ctrl-C はバイトとして pane に送られる。ここで受けるのは kill -INT など外からのシグナル。
+    const interruptSignals = ['SIGTERM', 'SIGHUP', 'SIGINT', 'SIGQUIT'] as const;
     this.cleanups = [
-      this.io.onSignal('SIGTERM', interrupt),
-      this.io.onSignal('SIGHUP', interrupt),
+      ...interruptSignals.map((signal) => this.io.onSignal(signal, interrupt)),
       this.io.onUncaughtException((error) => {
         this.restore();
         writeLine(this.io.stderr, `[misao] 予期しないエラー: ${error.message}`);

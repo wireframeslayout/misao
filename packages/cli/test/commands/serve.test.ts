@@ -81,16 +81,18 @@ test('serve: misao.json の上限と logLevel が実際のデーモンまで届�
   }
 });
 
-test('serve: 既定の logLevel (info) では listening を stderr に出し、SIGTERM でも 0', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-serve-'));
-  try {
-    const s = await startServe(dir, {});
-    await waitFor(() => s.io.err().includes('listening on'));
-    s.io.emitSignal('SIGTERM');
-    assert.equal(await s.exit, 0);
-    assert.match(s.io.err(), /shutting down/);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+test('serve: 既定の logLevel (info) では listening を stderr に出し、SIGTERM / SIGHUP でも shutdown して 0', async () => {
+  for (const signal of ['SIGTERM', 'SIGHUP'] as const) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-serve-'));
+    try {
+      const s = await startServe(dir, {});
+      await waitFor(() => s.io.err().includes('listening on'));
+      s.io.emitSignal(signal);
+      assert.equal(await s.exit, 0, signal);
+      assert.match(s.io.err(), /shutting down/, signal);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 

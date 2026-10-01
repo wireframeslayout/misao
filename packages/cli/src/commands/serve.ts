@@ -69,7 +69,7 @@ export const serveCommand: Command = {
     // 起動中に届いたシグナルも取りこぼさないよう、start の前に登録する。
     let stop: () => void = () => undefined;
     const stopped = new Promise<void>((resolve) => (stop = resolve));
-    const cleanups = [io.onSignal('SIGINT', stop), io.onSignal('SIGTERM', stop)];
+    const cleanups = (['SIGINT', 'SIGTERM', 'SIGHUP'] as const).map((signal) => io.onSignal(signal, stop));
     try {
       await daemon.start();
       await stopped;

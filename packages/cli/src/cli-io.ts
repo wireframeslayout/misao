@@ -1,7 +1,7 @@
 import * as os from 'node:os';
 
 /** attach / tail / serve が受け取るシグナル。 */
-export type CliSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP' | 'SIGWINCH';
+export type CliSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP' | 'SIGQUIT' | 'SIGWINCH';
 
 export interface CliOutput {
   write(chunk: string | Uint8Array): unknown;

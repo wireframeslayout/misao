@@ -15,8 +15,8 @@ test('enter は raw mode に入り、restore は戻して TTY_RESET を 1 回だ
   assert.equal(io.out(), TTY_RESET);
 });
 
-test('SIGTERM / SIGHUP では端末を戻してから通知する', () => {
-  for (const signal of ['SIGTERM', 'SIGHUP'] as const) {
+test('SIGTERM / SIGHUP / SIGINT / SIGQUIT では端末を戻してから通知する', () => {
+  for (const signal of ['SIGTERM', 'SIGHUP', 'SIGINT', 'SIGQUIT'] as const) {
     const io = createTestIo({ isTTY: true });
     const guard = new TtyGuard(io);
     const seen: boolean[] = [];
