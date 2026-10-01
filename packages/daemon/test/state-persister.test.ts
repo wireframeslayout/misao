@@ -14,7 +14,7 @@ function setup(state: PersistedState): { persister: StatePersister; saved: Persi
       if (fail.on) throw new Error('disk full');
       saved.push(s);
     },
-    log: (m) => logs.push(m),
+    log: { error: (m) => logs.push(m) },
   });
   return { persister, saved, logs, fail };
 }

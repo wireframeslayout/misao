@@ -2,6 +2,7 @@ import { ErrorCode } from '@misao/protocol';
 import type { Layout, ResolvedWindow } from './layout.js';
 import type { EventLog } from './event-log.js';
 import type { ParsedParams } from './params.js';
+import type { Logger } from './log.js';
 import { Pane } from './pane.js';
 import { selectProfile } from './profile.js';
 import type { AgentProfile } from './profile.js';
@@ -20,7 +21,7 @@ export interface PaneLifecycleHost {
   persister: StatePersister;
   /** 稼働判定のプロファイル。pane の cmd に最初に matches したものを使う。 */
   profiles: readonly AgentProfile[];
-  log: (msg: string) => void;
+  log: Logger;
   /** 全接続から、この pane の attachment と行購読を外す。 */
   releasePane(paneId: string): void;
 }

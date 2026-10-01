@@ -1,5 +1,6 @@
 import { checkConsistency } from './persistence.js';
 import type { PersistedState } from './persistence.js';
+import type { Logger } from './log.js';
 
 /** サイズ変更の保存を遅らせる時間。連続した resize を 1 回の保存にまとめる。 */
 const SIZE_SAVE_DELAY_MS = 1000;
@@ -8,7 +9,7 @@ export interface StatePersisterOptions {
   /** 現在の状態。保存のたびに呼ぶ。 */
   snapshot: () => PersistedState;
   save: (state: PersistedState) => void;
-  log: (msg: string) => void;
+  log: Pick<Logger, 'error'>;
 }
 
 /**
@@ -51,7 +52,7 @@ export class StatePersister {
     try {
       this.saveNow();
     } catch (e) {
-      this.opts.log(`failed to persist state: ${(e as Error).message}`);
+      this.opts.log.error(`failed to persist state: ${(e as Error).message}`);
     }
   }
 

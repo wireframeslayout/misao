@@ -6,6 +6,7 @@ import type { PaneInfo } from '@misao/protocol';
 import { AnsiLineAssembler } from './ansi.js';
 import { buildChildEnv } from './child-env.js';
 import { nowIso } from './clock.js';
+import type { Logger } from './log.js';
 import type { AgentProfile } from './profile.js';
 import { SeqRing } from './ring.js';
 import { flushTerminal, serializeSnapshot, viewportText } from './screen.js';
@@ -36,7 +37,7 @@ export interface PaneOpenOptions {
   /** この pane の稼働判定に使うプロファイル。無ければ汎用の title / bytes 段だけで判定する。 */
   profile?: AgentProfile;
   /** プロファイルの例外など、稼働判定の出来事を残す。 */
-  log: (msg: string) => void;
+  log: Logger;
 }
 
 export interface PaneInfoMeta {
@@ -111,7 +112,9 @@ export class Pane extends EventEmitter {
       }),
       onChange: (state, decidedBy, prev) => this.emit('state', state, decidedBy, prev),
       now: Date.now,
-      log: (msg) => opts.log(`pane ${this.id}: ${msg}`),
+      log: {
+        warn: (msg) => opts.log.warn(`pane ${this.id}: ${msg}`),
+      },
     });
     this.term.onTitleChange((t) => {
       this.title = t;

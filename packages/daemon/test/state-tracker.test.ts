@@ -23,7 +23,7 @@ function setup(profile?: AgentProfile): { tracker: StateTracker; changes: Change
     readScreen: () => SCREEN,
     onChange: (state, decidedBy, prev) => changes.push({ state, decidedBy, prev }),
     now: () => clock.now,
-    log: (m) => logs.push(m),
+    log: { warn: (m) => logs.push(m) },
   });
   return { tracker, changes, clock, logs };
 }
@@ -123,7 +123,7 @@ test('プロファイルの判定は debounce され、更新が続いても最�
     readScreen: () => SCREEN,
     onChange: () => undefined,
     now: () => clock.now,
-    log: () => undefined,
+    log: { warn: () => undefined },
   });
   const updateAfter = (ms: number): void => {
     t.mock.timers.tick(ms);
