@@ -3,6 +3,7 @@ import { ErrorCode } from './errors.js';
 import { knownEventData } from './events.js';
 import { RpcMessageSchema } from './jsonrpc.js';
 import { methods } from './methods/index.js';
+import type { MethodDef } from './methods/index.js';
 import { notifications } from './notifications.js';
 import { PROTOCOL_VERSION } from './version.js';
 
@@ -26,7 +27,7 @@ export function buildProtocolJsonSchema(): ProtocolJsonSchema {
   return {
     protocolVersion: PROTOCOL_VERSION,
     jsonrpc: z.toJSONSchema(RpcMessageSchema, { io: 'output' }),
-    methods: mapValues(methods, (m: { params: z.ZodType; result: z.ZodType }) => ({
+    methods: mapValues(methods, (m: MethodDef) => ({
       params: z.toJSONSchema(m.params, { io: 'input' }),
       result: z.toJSONSchema(m.result, { io: 'output' }),
     })),

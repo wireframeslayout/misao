@@ -14,12 +14,14 @@ export const RpcSuccessResponseSchema = z.looseObject({
   jsonrpc: z.literal('2.0'),
   id: RpcIdSchema,
   result: z.unknown(),
+  error: z.never().optional().describe('A response carries exactly one of result or error'),
 });
 
 export const RpcErrorResponseSchema = z.looseObject({
   jsonrpc: z.literal('2.0'),
   id: RpcIdSchema.nullable().describe('null when the request could not be parsed'),
   error: RpcErrorSchema,
+  result: z.never().optional().describe('A response carries exactly one of result or error'),
 });
 
 export const RpcResponseSchema = z.union([RpcSuccessResponseSchema, RpcErrorResponseSchema]);

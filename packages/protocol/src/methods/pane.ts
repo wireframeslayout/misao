@@ -2,6 +2,7 @@ import * as z from 'zod';
 import {
   ClientIdSchema,
   DimensionSchema,
+  InputSourceSchema,
   LabelsSchema,
   OkResultSchema,
   PaneIdSchema,
@@ -13,14 +14,12 @@ import {
 } from '../primitives.js';
 import { PaneInfoSchema, ProcessStateSchema } from '../pane-info.js';
 
-const InputSourceSchema = z.enum(['hub', 'terminal']);
-
 export const PreplaceFileSchema = z.object({
   path: z
     .string()
-    .regex(/^(?![/\\])(?!(?:.*[/\\])?\.\.(?:[/\\]|$)).+$/)
+    .regex(/^(?!\.\.?(?:[/\\]|$))[^/\\\0]+(?:[/\\](?!\.\.?(?:[/\\]|$))[^/\\\0]+)*$/)
     .describe(
-      'Path relative to the temporary directory. Absolute paths and ".." segments are rejected.',
+      'File path relative to the temporary directory. Absolute paths, empty / "." / ".." segments, a trailing separator and NUL are rejected.',
     ),
   content: z.string().describe('File content (UTF-8 string)'),
   mode: z.int().min(0).max(0o777).optional().describe('File mode (0 to 0o777)'),

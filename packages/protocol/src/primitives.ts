@@ -38,6 +38,10 @@ export const TsSchema = z
   .iso.datetime()
   .describe('Time recorded by the daemon (ISO 8601, UTC)');
 
+export const InputSourceSchema = z
+  .enum(['hub', 'terminal'])
+  .describe('Origin of the input: the controlling app (hub) or a terminal client');
+
 export const DimensionSchema = z.int().positive().describe('Positive integer (columns or rows)');
 
 export const SinceSchema = SeqSchema.describe(

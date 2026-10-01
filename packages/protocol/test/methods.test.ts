@@ -65,6 +65,9 @@ test('pane.open の境界値', () => {
   assert.equal(params('pane.open', { cmd: ['sh'], preplace: [{ path: '../x', content: '' }] }), false);
   assert.equal(params('pane.open', { cmd: ['sh'], preplace: [{ path: 'a/../x', content: '' }] }), false);
   assert.equal(params('pane.open', { cmd: ['sh'], preplace: [{ path: 'a/..b/x', content: '' }] }), true);
+  for (const path of ['', '.', './x', 'a/', 'a//b', 'a\u0000b', 'a\\..\\x']) {
+    assert.equal(params('pane.open', { cmd: ['sh'], preplace: [{ path, content: '' }] }), false, path);
+  }
   assert.equal(params('pane.open', { cmd: ['sh'], preplace: [{ path: 'x', content: '', mode: 0o1000 }] }), false);
 });
 

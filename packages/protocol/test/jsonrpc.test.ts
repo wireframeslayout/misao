@@ -39,3 +39,9 @@ test('異常系: jsonrpc 違い、id 型違い、result も error もない', ()
   assert.equal(RpcMessageSchema.safeParse({ jsonrpc: '2.0', id: 1 }).success, false);
   assert.equal(RpcMessageSchema.safeParse({ jsonrpc: '2.0', id: null, result: 1 }).success, false);
 });
+
+test('result と error の両方を持つ応答は拒否', () => {
+  const both = { jsonrpc: '2.0', id: 1, result: 1, error: { code: ErrorCode.Internal, message: 'x' } };
+  assert.equal(RpcResponseSchema.safeParse(both).success, false);
+  assert.equal(RpcMessageSchema.safeParse(both).success, false);
+});

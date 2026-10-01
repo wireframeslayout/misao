@@ -4,13 +4,13 @@ import { AgentStateSchema } from './pane-info.js';
 import {
   ClientIdSchema,
   DimensionSchema,
+  InputSourceSchema,
   LabelsSchema,
   WindowIdSchema,
   WindowNameSchema,
   WorkspaceNameSchema,
 } from './primitives.js';
 
-const InputSourceSchema = z.enum(['hub', 'terminal']);
 const WorkspaceRenamedSchema = z.looseObject({
   name: WorkspaceNameSchema,
   newName: WorkspaceNameSchema,
