@@ -93,7 +93,7 @@ export class PaneIo {
     return { ok: true };
   }
 
-  /** 接続の切断からも呼ばれるので、保存はしない (サイズは次の保存で反映される)。 */
+  /** 接続の切断からも呼ばれるので、サイズの継承は遅らせて保存する (失敗しても RPC は落とさない)。 */
   detach(conn: Connection, paneId: string): void {
     const att = conn.attachments.get(paneId);
     if (!att) return;
@@ -107,6 +107,7 @@ export class PaneIo {
       const inherited = pane.forgetClient(att.clientId);
       if (inherited) {
         this.host.events.emit('pane.resized', { cols: pane.cols, rows: pane.rows, clientId: inherited }, paneId);
+        this.host.persister.saveSoon();
       }
     }
     this.host.events.emit('client.detached', { clientId: att.clientId }, paneId);

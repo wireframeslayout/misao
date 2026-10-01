@@ -61,3 +61,40 @@ test('saveNow は遅らせていた保存を取り消す (同じ内容を含む�
   persister.flush();
   assert.equal(saved.length, 1);
 });
+
+test('保存に失敗した saveNow は、遅らせていた保存の予約を残す (flush で保存される)', () => {
+  const { persister, saved, fail } = setup(empty);
+  persister.saveSoon();
+  fail.on = true;
+  assert.throws(() => persister.saveNow(), /disk full/);
+  fail.on = false;
+  persister.flush();
+  assert.equal(saved.length, 1);
+});
+
+test('タイマーでの保存が失敗しても、次の saveSoon で予約し直され、再びタイマーで保存される', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { persister, saved, logs, fail } = setup(empty);
+  fail.on = true;
+  persister.saveSoon();
+  t.mock.timers.tick(1000);
+  assert.equal(saved.length, 0);
+  assert.match(logs.join('\n'), /disk full/);
+  fail.on = false;
+  persister.saveSoon();
+  t.mock.timers.tick(1000);
+  assert.equal(saved.length, 1);
+  persister.flush(); // 保存済みなので何もしない
+  assert.equal(saved.length, 1);
+});
+
+test('タイマーでの保存が失敗したまま shutdown しても、flush で保存される', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { persister, saved, fail } = setup(empty);
+  fail.on = true;
+  persister.saveSoon();
+  t.mock.timers.tick(1000);
+  fail.on = false;
+  persister.flush();
+  assert.equal(saved.length, 1);
+});

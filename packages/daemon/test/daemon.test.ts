@@ -8,6 +8,7 @@ import xterm from '@xterm/headless';
 import { PaneInfoSchema, methods, parseKnownEvent } from '@misao/protocol';
 import type { EventParams, MethodName, PaneInfo } from '@misao/protocol';
 import { Daemon } from '../src/daemon.js';
+import type { AgentProfile } from '../src/profile.js';
 import { savePersistedState } from '../src/persistence.js';
 import type { PersistedState } from '../src/persistence.js';
 import { viewportText } from '../src/screen.js';
@@ -791,6 +792,42 @@ test('workspace.close の待機中は配下への window.create / pane.open / re
   });
 });
 
+test('window.close の待機中の workspace.close は、closing window を理由に WorkspaceNotFound で拒否する', async () => {
+  await withRestart(async (_restart, client) => {
+    await client.request('workspace.create', { name: 'proj' });
+    const win = await client.request<{ windowId: string }>('window.create', { workspace: 'proj', name: 'main' });
+    await openStubborn(client, win.windowId);
+    const closing = client.request('window.close', { windowId: win.windowId });
+    await expectRpcMessage(client.request('workspace.close', { name: 'proj' }), 1006, /closing window/);
+    await closing;
+  });
+});
+
+test('所有者の detach で継承したサイズは、shutdown 後の再起動で復元される', async () => {
+  await withTempDir(async (dir) => {
+    const first = await startDaemon(dir);
+    const c1 = await RpcClient.connect(first.socketPath);
+    const c2 = await RpcClient.connect(first.socketPath);
+    const { paneId } = await openPane(c1, ['sh', '-c', 'sleep 30']);
+    await c1.request('pane.attach', { paneId, clientId: 'A', replay: 'none', cols: 100, rows: 30 });
+    await c2.request('pane.attach', { paneId, clientId: 'B', replay: 'none', cols: 60, rows: 20 });
+    await c2.request('pane.detach', { paneId }); // 所有者 B が離脱し、A のサイズ (100x30) を継承する
+    c1.close();
+    c2.close();
+    await first.shutdown();
+
+    const second = await startDaemon(dir);
+    const client = await RpcClient.connect(second.socketPath);
+    try {
+      const info = await client.request<PaneInfo>('pane.info', { paneId });
+      assert.deepEqual([info.cols, info.rows], [100, 30]);
+    } finally {
+      client.close();
+      await second.shutdown();
+    }
+  });
+});
+
 test('window.close の待機中は、その window への pane.open を拒否する', async () => {
   await withRestart(async (restart, client) => {
     await client.request('workspace.create', { name: 'proj' });
@@ -894,5 +931,102 @@ test('サイズ変更の遅らせた保存は shutdown でまとめて 1 回行�
     client.close();
     await daemon.shutdown();
     assert.equal(calls.n, callsBefore + 1);
+  });
+});
+
+/** 出力を 3 秒続けて、その後は静かにする。 */
+const BURST_THEN_QUIET = 'i=0; while [ $i -lt 15 ]; do head -c 400 /dev/zero | tr "\\0" x; echo; sleep 0.2; i=$((i+1)); done; sleep 30';
+
+test('稼働判定: 出力が続けば working、静かになれば idle、終了で exited。pane.state の順序と pane.info が一致する', { timeout: 30_000 }, async () => {
+  await withDaemon(async (_daemon, client) => {
+    const events = await collectEvents(client);
+    const { paneId } = await openPane(client, ['sh', '-c', BURST_THEN_QUIET]);
+    const info = (): Promise<PaneInfo> => client.request<PaneInfo>('pane.info', { paneId });
+    assert.deepEqual([(await info()).agentState, (await info()).decidedBy], ['unknown', 'none']);
+    await waitFor(async () => (await info()).agentState === 'working', 8000);
+    assert.equal((await info()).decidedBy, 'bytes');
+    await waitFor(async () => (await info()).agentState === 'idle', 12_000);
+    await client.request('pane.close', { paneId });
+    assert.deepEqual([(await client.request<PaneInfo[]>('pane.list')).length], [0]);
+
+    const states = events.filter((e) => e.type === 'pane.state').map((e) => e.data);
+    assert.deepEqual(
+      states.map((s) => [s.state, s.decidedBy, s.prev]),
+      [
+        ['working', 'bytes', 'unknown'],
+        ['idle', 'bytes', 'working'],
+        ['exited', 'exit', 'idle'],
+      ],
+    );
+    const order = eventTypes(events).filter((t) => ['pane.exited', 'pane.state', 'pane.closed'].includes(t));
+    assert.deepEqual(order.slice(-3), ['pane.exited', 'pane.state', 'pane.closed']);
+  });
+});
+
+test('稼働判定: 終了した pane の pane.info は exited / exit を返す', async () => {
+  await withDaemon(async (_daemon, client) => {
+    const { paneId } = await openPane(client, ['sh', '-c', 'exit 0']);
+    await waitFor(async () => (await client.request<PaneInfo>('pane.info', { paneId })).agentState === 'exited');
+    const info = await client.request<PaneInfo>('pane.info', { paneId });
+    assert.deepEqual([info.decidedBy, info.processState], ['exit', 'exited']);
+  });
+});
+
+test('pane.screen の activity は出力と resize で増え、静かな間は変わらない。lastOutputAt も更新される', async () => {
+  await withDaemon(async (_daemon, client) => {
+    const { paneId } = await openPane(client, ['sh', '-c', 'exec cat']);
+    const screen = (): Promise<{ activity: number; text: string }> => client.request('pane.screen', { paneId });
+    const info = (): Promise<PaneInfo> => client.request<PaneInfo>('pane.info', { paneId });
+    assert.equal((await info()).lastOutputAt, null);
+    const a0 = (await screen()).activity;
+    await client.request('pane.write', { paneId, data: 'hello\n' });
+    // pty のエコーと cat の出力は別チャンクで届くので、2 行そろうまで待つ
+    await waitFor(async () => (await screen()).text.split('\n').filter((l) => l === 'hello').length === 2);
+    assert.notEqual((await info()).lastOutputAt, null);
+    // 出力が落ち着いたことを、activity が 150ms 変わらないことで確かめる
+    let a1 = (await screen()).activity;
+    for (;;) {
+      await sleep(150);
+      const next = (await screen()).activity;
+      if (next === a1) break;
+      a1 = next;
+    }
+    assert.ok(a1 > a0, '出力で増える');
+    await sleep(150);
+    assert.equal((await screen()).activity, a1, '静かな間は変わらない');
+    await client.request('pane.resize', { paneId, cols: 100, rows: 30 });
+    assert.ok((await screen()).activity > a1, 'resize で増える');
+  });
+});
+
+test('DaemonOptions.profiles のプロファイルが cmd に matches した pane で使われ、blocked と decidedBy が載る', async () => {
+  const profile: AgentProfile = {
+    name: 'fake-agent',
+    matches: (cmd) => cmd.includes('fake-agent-marker'),
+    classify: (screen) => (screen.rows.some((r) => r.includes('NEEDS-APPROVAL')) ? 'blocked' : null),
+  };
+  await withTempDir(async (dir) => {
+    const daemon = await startDaemon(dir, { profiles: [profile] });
+    const client = await RpcClient.connect(daemon.socketPath);
+    try {
+      const events = await collectEvents(client);
+      const matched = await openPane(client, ['sh', '-c', 'echo NEEDS-APPROVAL; sleep 30', 'fake-agent-marker']);
+      const other = await openPane(client, ['sh', '-c', 'echo NEEDS-APPROVAL; sleep 30']);
+      const info = (paneId: string): Promise<PaneInfo> => client.request<PaneInfo>('pane.info', { paneId });
+      await waitFor(async () => (await info(matched.paneId)).agentState === 'blocked');
+      assert.equal((await info(matched.paneId)).decidedBy, 'fake-agent');
+      assert.deepEqual(
+        events.filter((e) => e.type === 'pane.state' && e.paneId === matched.paneId).map((e) => e.data.state),
+        ['blocked'],
+      );
+      // matches しない pane は汎用判定だけ (blocked は出ず、プロファイルも使われない)。経過時間で bytes 段の idle になりうるので unknown までは固定しない
+      const otherInfo = await info(other.paneId);
+      assert.notEqual(otherInfo.agentState, 'blocked');
+      assert.notEqual(otherInfo.decidedBy, 'fake-agent');
+      assert.ok(!events.some((e) => e.type === 'pane.state' && e.paneId === other.paneId && e.data.state === 'blocked'));
+    } finally {
+      client.close();
+      await daemon.shutdown();
+    }
   });
 });

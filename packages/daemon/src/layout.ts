@@ -55,7 +55,9 @@ export class Layout {
     const target = this.require(name);
     this.assertWorkspaceOpen(name);
     const ids = target.windows.map((w) => w.id);
-    for (const id of ids) this.assertWindowOpen(id);
+    if (ids.some((id) => this.closingWindows.has(id))) {
+      throw new RpcFailure(ErrorCode.WorkspaceNotFound, `workspace has a closing window: ${name}`);
+    }
     this.closingWorkspaces.add(name);
     for (const id of ids) this.closingWindows.add(id);
     return ids;

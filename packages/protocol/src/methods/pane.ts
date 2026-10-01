@@ -115,6 +115,7 @@ export const paneMethods = {
       cursor: z.looseObject({ x: z.int().min(0), y: z.int().min(0) }),
       altScreen: z.boolean(),
       title: z.string(),
+      activity: z.int().min(0).describe('Counter that increases on every output and resize; unchanged while the pane is quiet'),
     }),
   },
   'pane.set_label': {
