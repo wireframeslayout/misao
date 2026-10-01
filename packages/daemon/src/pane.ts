@@ -15,8 +15,8 @@ import { newPaneId } from './ulid.js';
 const { Terminal } = xterm;
 type Terminal = TerminalType;
 
-export const RAW_RING_BYTES = 1024 * 1024;
-export const LINES_RING_BYTES = 64 * 1024;
+const RAW_RING_BYTES = 1024 * 1024;
+const LINES_RING_BYTES = 64 * 1024;
 const SCROLLBACK = 5000;
 const KILL_GRACE_MS = 3000;
 const DEFAULT_COLS = 80;
