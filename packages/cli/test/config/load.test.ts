@@ -37,7 +37,7 @@ test('ファイル無しは既定値', () => {
   assert.deepEqual(loaded.config, {
     keys: { prefix: 0x1e, detach: 0x64, next: 0x6e, prev: 0x70, list: 0x6c },
     scrollback: 5000,
-    rings: { rawBytes: 1048576, linesBytes: 65536, events: 1000 },
+    rings: { rawBytes: 1048576, linesBytes: 4194304, events: 1000 },
     logLevel: 'info',
     socket: path.join(home, '.misao', 'misao.sock'),
   });
