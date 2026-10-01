@@ -975,14 +975,23 @@ test('稼働判定: 終了した pane の pane.info は exited / exit を返す'
 test('pane.screen の activity は出力と resize で増え、静かな間は変わらない。lastOutputAt も更新される', async () => {
   await withDaemon(async (_daemon, client) => {
     const { paneId } = await openPane(client, ['sh', '-c', 'exec cat']);
-    const screen = (): Promise<{ activity: number }> => client.request('pane.screen', { paneId });
+    const screen = (): Promise<{ activity: number; text: string }> => client.request('pane.screen', { paneId });
     const info = (): Promise<PaneInfo> => client.request<PaneInfo>('pane.info', { paneId });
     assert.equal((await info()).lastOutputAt, null);
     const a0 = (await screen()).activity;
     await client.request('pane.write', { paneId, data: 'hello\n' });
-    await waitFor(async () => (await screen()).activity > a0);
+    // pty のエコーと cat の出力は別チャンクで届くので、2 行そろうまで待つ
+    await waitFor(async () => (await screen()).text.split('\n').filter((l) => l === 'hello').length === 2);
     assert.notEqual((await info()).lastOutputAt, null);
-    const a1 = (await screen()).activity;
+    // 出力が落ち着いたことを、activity が 150ms 変わらないことで確かめる
+    let a1 = (await screen()).activity;
+    for (;;) {
+      await sleep(150);
+      const next = (await screen()).activity;
+      if (next === a1) break;
+      a1 = next;
+    }
+    assert.ok(a1 > a0, '出力で増える');
     await sleep(150);
     assert.equal((await screen()).activity, a1, '静かな間は変わらない');
     await client.request('pane.resize', { paneId, cols: 100, rows: 30 });
