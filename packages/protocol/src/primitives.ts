@@ -1,6 +1,7 @@
 import * as z from 'zod';
 
-const ULID_PATTERN = '[0-9A-HJKMNP-TV-Z]{26}';
+// 128bit なので先頭文字は 0-7 に限られる。
+const ULID_PATTERN = '[0-7][0-9A-HJKMNP-TV-Z]{25}';
 
 export const UlidSchema = z
   .string()
@@ -38,9 +39,20 @@ export const TsSchema = z
   .iso.datetime()
   .describe('Time recorded by the daemon (ISO 8601, UTC)');
 
+const INPUT_SOURCES = ['hub', 'terminal'] as const;
+
+/** 送信側 (params) 用。未知の値は拒否する。 */
 export const InputSourceSchema = z
-  .enum(['hub', 'terminal'])
+  .enum(INPUT_SOURCES)
   .describe('Origin of the input: the controlling app (hub) or a terminal client');
+
+/** 受信側 (イベント data) 用。未知の値は "unknown" として読む。 */
+export const ReportedInputSourceSchema = z
+  .enum([...INPUT_SOURCES, 'unknown'])
+  .catch('unknown')
+  .describe(
+    'Origin of the input: the controlling app (hub) or a terminal client. The daemon never sends "unknown"; receivers read values they do not know as "unknown".',
+  );
 
 export const DimensionSchema = z.int().positive().describe('Positive integer (columns or rows)');
 
@@ -58,12 +70,16 @@ export const SubscribeResultSchema = z.looseObject({
   gap: z
     .boolean()
     .describe(
-      'True when since is older than the retained range (since < oldest-1) or ahead of head (the daemon restarted): events were missed.',
+      'True when events were missed: since is older than the retained range (since < oldest-1), since is ahead of head, or the epoch passed with since differs from the current one. A daemon restart is detected only by comparing epoch.',
     ),
   head: SeqSchema.describe(
     'Latest seq at subscribe time. Replay covers seq <= head; live delivery covers seq > head.',
   ),
   epoch: EpochSchema,
 });
+
+export const SubscribeEpochSchema = EpochSchema.describe(
+  'Epoch that since belongs to. If it differs from the current epoch, the daemon returns gap: true and replays from the oldest retained item.',
+);
 
 export const OkResultSchema = z.looseObject({ ok: z.literal(true) });

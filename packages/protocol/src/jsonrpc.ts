@@ -28,6 +28,7 @@ export const RpcResponseSchema = z.union([RpcSuccessResponseSchema, RpcErrorResp
 
 export const RpcNotificationSchema = z.looseObject({
   jsonrpc: z.literal('2.0'),
+  id: z.never().optional().describe('A notification carries no id'),
   method: z.string(),
   params: z.record(z.string(), z.unknown()),
 });

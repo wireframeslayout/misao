@@ -8,6 +8,7 @@ import {
   PaneIdSchema,
   SeqSchema,
   SinceSchema,
+  SubscribeEpochSchema,
   SubscribeResultSchema,
   WindowIdSchema,
   WorkspaceNameSchema,
@@ -17,21 +18,23 @@ import { PaneInfoSchema, ProcessStateSchema } from '../pane-info.js';
 export const PreplaceFileSchema = z.object({
   path: z
     .string()
-    .regex(/^(?!\.\.?(?:[/\\]|$))[^/\\\0]+(?:[/\\](?!\.\.?(?:[/\\]|$))[^/\\\0]+)*$/)
+    .regex(/^(?!\.\.?(?:[/\\]|$))[^/\\\0:]+(?:[/\\](?!\.\.?(?:[/\\]|$))[^/\\\0:]+)*$/)
     .describe(
-      'File path relative to the temporary directory. Absolute paths, empty / "." / ".." segments, a trailing separator and NUL are rejected.',
+      'File path relative to the temporary directory. Absolute paths, empty / "." / ".." segments, a trailing separator, NUL and ":" (Windows drive letters) are rejected. This is only a first check: the daemon must always confirm after path.resolve that the path stays inside the temporary directory.',
     ),
   content: z.string().describe('File content (UTF-8 string)'),
   mode: z.int().min(0).max(0o777).optional().describe('File mode (0 to 0o777)'),
 });
 
 export const PaneListFilterSchema = z
-  .object({
+  .strictObject({
     state: ProcessStateSchema.optional(),
     labels: LabelsSchema.optional().describe('Matches when every key/value is equal'),
     workspace: WorkspaceNameSchema.optional(),
   })
-  .describe('All conditions are ANDed');
+  .describe(
+    'All conditions are ANDed. Unknown conditions are rejected (InvalidParams) so an old daemon never ignores a filter and returns every pane.',
+  );
 
 const PaneRefSchema = z.object({ paneId: PaneIdSchema });
 
@@ -50,7 +53,7 @@ export const paneMethods = {
       cols: DimensionSchema.optional(),
       rows: DimensionSchema.optional(),
       labels: LabelsSchema.optional(),
-      window: WindowIdSchema.optional().describe(
+      windowId: WindowIdSchema.optional().describe(
         'Target window. Defaults to the default workspace/window.',
       ),
       preplace: z
@@ -133,14 +136,18 @@ export const paneMethods = {
       rows: DimensionSchema.optional(),
     }),
     result: z.looseObject({
-      headSeq: SeqSchema,
+      head: SeqSchema.describe('Latest raw output seq covered by the replay'),
       oldest: SeqSchema,
       truncated: z.boolean(),
     }),
   },
   'pane.detach': { params: PaneRefSchema, result: OkResultSchema },
   'pane.subscribe_lines': {
-    params: z.object({ paneId: PaneIdSchema, since: SinceSchema.optional() }),
+    params: z.object({
+      paneId: PaneIdSchema,
+      since: SinceSchema.optional(),
+      epoch: SubscribeEpochSchema.optional(),
+    }),
     result: SubscribeResultSchema,
   },
   'pane.close': { params: PaneRefSchema, result: OkResultSchema },
@@ -151,7 +158,7 @@ export const paneMethods = {
     result: z.looseObject({ paneId: PaneIdSchema }),
   },
   'events.subscribe': {
-    params: z.object({ since: SinceSchema.optional() }),
+    params: z.object({ since: SinceSchema.optional(), epoch: SubscribeEpochSchema.optional() }),
     result: SubscribeResultSchema,
   },
 };

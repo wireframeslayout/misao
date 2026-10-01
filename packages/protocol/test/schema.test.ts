@@ -44,7 +44,7 @@ test('pane.write / pane.set_label の params は anyOf で表現される', () =
 
 test('regex は pattern として出力される', () => {
   const props = schema.methods['pane.info']?.params['properties'] as Record<string, Record<string, unknown>>;
-  assert.equal(props['paneId']?.['pattern'], '^p_[0-9A-HJKMNP-TV-Z]{26}$');
+  assert.equal(props['paneId']?.['pattern'], '^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$');
 });
 
 test('description が出力に含まれる', () => {

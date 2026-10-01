@@ -6,7 +6,13 @@ export const PaneOutputParamsSchema = z.looseObject({
   ts: TsSchema,
   paneId: PaneIdSchema,
   dataB64: z.string().describe('Raw PTY output, base64'),
-  replay: z.literal('snapshot').optional().describe('Set when the data is a screen snapshot'),
+  replay: z
+    .enum(['snapshot', 'unknown'])
+    .catch('unknown')
+    .optional()
+    .describe(
+      'Set when the data is a replay. "snapshot": a screen snapshot. The daemon never sends "unknown"; receivers read replay kinds they do not know as "unknown".',
+    ),
 });
 
 export const PaneLineParamsSchema = z.looseObject({

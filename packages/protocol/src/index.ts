@@ -3,11 +3,14 @@ export {
   ClientIdSchema,
   DimensionSchema,
   EpochSchema,
+  InputSourceSchema,
   LabelsSchema,
   OkResultSchema,
   PaneIdSchema,
+  ReportedInputSourceSchema,
   SeqSchema,
   SinceSchema,
+  SubscribeEpochSchema,
   SubscribeResultSchema,
   TsSchema,
   UlidSchema,
@@ -38,8 +41,14 @@ export type {
   RpcResponse,
   RpcSuccessResponse,
 } from './jsonrpc.js';
-export { AgentStateSchema, PaneInfoSchema, ProcessStateSchema, WindowRefSchema } from './pane-info.js';
-export type { AgentState, PaneInfo, ProcessState } from './pane-info.js';
+export {
+  AgentStateSchema,
+  PaneInfoSchema,
+  ProcessStateSchema,
+  ReportedProcessStateSchema,
+  WindowRefSchema,
+} from './pane-info.js';
+export type { AgentState, PaneInfo, ProcessState, ReportedProcessState } from './pane-info.js';
 export { PaneListFilterSchema, PreplaceFileSchema } from './methods/pane.js';
 export { WindowInfoSchema, WorkspaceInfoSchema } from './methods/workspace.js';
 export type { WindowInfo, WorkspaceInfo } from './methods/workspace.js';
@@ -56,4 +65,4 @@ export {
 export type { EventParams, NotificationName, NotificationParams } from './notifications.js';
 export { buildProtocolJsonSchema } from './schema.js';
 export type { JsonSchema, ProtocolJsonSchema } from './schema.js';
-export { LineSplitter, encodeMessage } from './framing.js';
+export { DEFAULT_MAX_LINE_BYTES, LineSplitter, encodeMessage } from './framing.js';

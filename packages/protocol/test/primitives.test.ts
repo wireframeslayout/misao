@@ -28,6 +28,8 @@ test('Epoch は ULID そのもの (I L O U は不可)', () => {
   assert.equal(EpochSchema.safeParse(ULID).success, true);
   assert.equal(UlidSchema.safeParse('I'.repeat(26)).success, false);
   assert.equal(EpochSchema.safeParse(ULID.slice(1)).success, false);
+  assert.equal(UlidSchema.safeParse(`8${ULID.slice(1)}`).success, false, '先頭は 0-7');
+  assert.equal(UlidSchema.safeParse(`7${'Z'.repeat(25)}`).success, true);
 });
 
 test('seq / since の境界値', () => {

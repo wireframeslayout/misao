@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   RpcMessageSchema,
+  RpcNotificationSchema,
   RpcResponseSchema,
   isNotification,
   isRequest,
@@ -44,4 +45,11 @@ test('result と error の両方を持つ応答は拒否', () => {
   const both = { jsonrpc: '2.0', id: 1, result: 1, error: { code: ErrorCode.Internal, message: 'x' } };
   assert.equal(RpcResponseSchema.safeParse(both).success, false);
   assert.equal(RpcMessageSchema.safeParse(both).success, false);
+});
+
+test('id を持つ通知は拒否', () => {
+  const bad = { jsonrpc: '2.0', id: {}, method: 'x', params: {} };
+  assert.equal(RpcNotificationSchema.safeParse(bad).success, false);
+  assert.equal(RpcMessageSchema.safeParse(bad).success, false);
+  assert.equal(RpcMessageSchema.safeParse({ ...bad, id: null }).success, false);
 });

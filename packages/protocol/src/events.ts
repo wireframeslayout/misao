@@ -4,7 +4,7 @@ import { AgentStateSchema } from './pane-info.js';
 import {
   ClientIdSchema,
   DimensionSchema,
-  InputSourceSchema,
+  ReportedInputSourceSchema,
   LabelsSchema,
   WindowIdSchema,
   WindowNameSchema,
@@ -43,7 +43,7 @@ export const knownEventData = {
   }),
   'pane.label': z.looseObject({ set: LabelsSchema, unset: z.array(z.string()) }),
   input: z
-    .looseObject({ source: InputSourceSchema, bytes: z.int().min(0) })
+    .looseObject({ source: ReportedInputSourceSchema, bytes: z.int().min(0) })
     .describe('The input content itself is not carried'),
   'client.attached': ClientEventSchema,
   'client.detached': ClientEventSchema,
@@ -64,7 +64,7 @@ export type KnownEventType = keyof typeof knownEventData;
 export type KnownEventData<T extends KnownEventType> = z.output<(typeof knownEventData)[T]>;
 
 export type KnownEvent = {
-  [T in KnownEventType]: Omit<EventParams, 'type' | 'data'> & { type: T; data: KnownEventData<T> };
+  [T in KnownEventType]: Pick<EventParams, 'seq' | 'ts' | 'paneId'> & { type: T; data: KnownEventData<T> };
 }[KnownEventType];
 
 function isKnownEventType(type: string): type is KnownEventType {

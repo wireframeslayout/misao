@@ -39,9 +39,9 @@ test('未知のフィールドを受け入れる', () => {
   assert.equal(r['future'], 1);
 });
 
-test('不正な processState / agentState は拒否', () => {
-  assert.equal(PaneInfoSchema.safeParse({ ...base, processState: 'dead' }).success, false);
-  assert.equal(PaneInfoSchema.safeParse({ ...base, agentState: 'busy' }).success, false);
+test('未知の processState / agentState は "unknown" として読む', () => {
+  assert.equal(PaneInfoSchema.parse({ ...base, processState: 'dead' }).processState, 'unknown');
+  assert.equal(PaneInfoSchema.parse({ ...base, agentState: 'busy' }).agentState, 'unknown');
 });
 
 test('必須フィールド欠落は拒否', () => {
