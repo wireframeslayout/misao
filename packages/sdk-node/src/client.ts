@@ -14,7 +14,11 @@ import type { GapInfo, SubscribeOptions, Subscription, SubscriptionErrorInfo } f
 export interface MisaoClientOptions {
   socketPath: string;
   backoff?: Partial<BackoffOptions>;
+  /** 接続確立 (server.info の確認とストリーム復元) に待つ上限。超えたら接続を閉じて失敗として扱う。既定 5000。 */
+  connectTimeoutMs?: number;
 }
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 
 export type ConnectionState =
   | { status: 'connected' }
@@ -33,6 +37,7 @@ type Phase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
 export class MisaoClient {
   private readonly socketPath: string;
   private readonly backoff: BackoffOptions;
+  private readonly connectTimeoutMs: number;
   private readonly errors = new ErrorChannel();
   private readonly subscriber = new StreamSubscriber(this.errors.report);
   private readonly stateListeners = new Listeners<ConnectionState>(this.errors.report);
@@ -44,8 +49,9 @@ export class MisaoClient {
   private establishing: RpcConnection | undefined;
   private cancelSleep: (() => void) | undefined;
 
-  constructor({ socketPath, backoff }: MisaoClientOptions) {
+  constructor({ socketPath, backoff, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS }: MisaoClientOptions) {
     this.socketPath = socketPath;
+    this.connectTimeoutMs = connectTimeoutMs;
     this.backoff = { ...DEFAULT_BACKOFF, ...backoff };
   }
 
@@ -135,6 +141,7 @@ export class MisaoClient {
   /**
    * 接続して server.info を確認し、ストリームを復元する。互換確認の後は this.conn に置くので、
    * 復元中に出る gap の通知から request() で再取得できる。失敗したら接続を閉じて throw する。
+   * 接続後の応答が connectTimeoutMs 内に揃わなければ (デーモンのハングなど) 接続を閉じて失敗にする。
    */
   private async establish(): Promise<void> {
     const conn = await RpcConnection.connect(this.socketPath, this.errors.report);
@@ -147,6 +154,11 @@ export class MisaoClient {
       if (!this.subscriber.dispatch(notification)) this.notificationListeners.emit(notification);
     });
     conn.onClose((reason) => this.handleDisconnect(conn, reason));
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      conn.close(); // 保留中の要求が reject され、下の catch に落ちる
+    }, this.connectTimeoutMs);
     try {
       const info = await conn.request('server.info', {});
       if (!isCompatibleProtocolVersion(info.protocolVersion, PROTOCOL_VERSION)) {
@@ -158,8 +170,12 @@ export class MisaoClient {
     } catch (error) {
       if (this.conn === conn) this.conn = undefined;
       conn.close();
+      if (timedOut) {
+        throw new MisaoConnectionError(`connection setup timed out after ${this.connectTimeoutMs}ms`, { cause: error });
+      }
       throw error;
     } finally {
+      clearTimeout(timer);
       if (this.establishing === conn) this.establishing = undefined;
     }
   }
