@@ -49,7 +49,16 @@ export const paneMethods = {
     params: z.object({
       cmd: z.array(z.string()).min(1),
       cwd: z.string().optional(),
-      env: z.record(z.string(), z.string()).optional(),
+      env: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe('Environment variables for the child process. Saved to persistence.json: pass secrets in ephemeralEnv instead.'),
+      ephemeralEnv: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe(
+          'Environment variables injected into the child process but never persisted to persistence.json nor exposed in pane.info, pane.list or events. Pass values that must not survive a daemon restart, such as tokens, here. On respawn the caller must pass them again. Overrides env on the same key.',
+        ),
       cols: DimensionSchema.optional(),
       rows: DimensionSchema.optional(),
       labels: LabelsSchema.optional(),
