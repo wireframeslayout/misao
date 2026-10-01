@@ -19,3 +19,13 @@ export async function stopChild(child: ChildProcess): Promise<void> {
   process.kill(pid, 'SIGKILL');
   await exited;
 }
+
+/** 記録した PID に SIGKILL を送り、終わるのを待つ (異常終了のシミュレート)。 */
+export async function killChild(child: ChildProcess): Promise<void> {
+  if (hasExited(child)) return;
+  const pid = child.pid;
+  if (pid === undefined) throw new Error('child has no pid');
+  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  process.kill(pid, 'SIGKILL');
+  await exited;
+}
