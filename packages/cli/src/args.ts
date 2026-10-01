@@ -103,3 +103,14 @@ export function splitCommand(argv: readonly string[]): SplitArgs {
     globals: new ParsedArgs([], [], values),
   };
 }
+
+/** `k=v` を [k, v] に分ける。= が無い・k が空なら usage エラー。値は空でもよい。 */
+export function parseKeyValue(item: string, optionName: string): [string, string] {
+  const at = item.indexOf('=');
+  if (at < 1) throw new CliError('usage', `${optionName} は k=v の形で指定してください: ${item}`);
+  return [item.slice(0, at), item.slice(at + 1)];
+}
+
+export function parseKeyValues(items: readonly string[], optionName: string): Record<string, string> {
+  return Object.fromEntries(items.map((item) => parseKeyValue(item, optionName)));
+}
