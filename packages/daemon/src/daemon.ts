@@ -16,7 +16,8 @@ import { parseParams } from './params.js';
 import type { ParsedParams } from './params.js';
 import { Pane } from './pane.js';
 import { RpcFailure } from './rpc-error.js';
-import { ensureSocketDir, listenUnixSocket } from './socket.js';
+import { acquirePidFile } from './pid-file.js';
+import { ensureSocketDir, listenUnixSocket, removeStaleSocket } from './socket.js';
 import { subscribeStream } from './stream.js';
 import type { RequestContext } from './stream.js';
 import { newWindowId, ulid } from './ulid.js';
@@ -24,6 +25,9 @@ import { newWindowId, ulid } from './ulid.js';
 /** 仮のモデル。workspace / window の実体は #5 で置き換える。 */
 const DEFAULT_WORKSPACE = 'default';
 const DEFAULT_WINDOW_NAME = 'default';
+
+/** 接続ごとの購読キー。同じキーの再購読は既存を置き換える。 */
+const linesKey = (paneId: string): string => `lines:${paneId}`;
 
 type ImplementedMethod =
   | 'server.info'
@@ -87,30 +91,26 @@ export class Daemon {
 
   async start(): Promise<void> {
     await ensureSocketDir(this.socketPath);
-    await this.removeStaleSocket();
-    this.server = net.createServer((socket) => this.accept(socket));
-    await listenUnixSocket(this.server, this.socketPath);
-    // listen 後の accept 失敗 (EMFILE など) でデーモンごと落ちないよう、その接続だけを諦める。
-    this.server.on('error', (e) => this.log(`server error: ${e.message}`));
-    fs.writeFileSync(this.pidPath, String(process.pid));
+    acquirePidFile(this.pidPath, process.pid);
+    // pid ファイルで排他を取った後は、socketPath にあるファイルを自分のものとして扱える。
+    try {
+      if (await removeStaleSocket(this.socketPath)) this.log('removed stale socket');
+    } catch (e) {
+      fs.rmSync(this.pidPath, { force: true });
+      throw e;
+    }
+    try {
+      this.server = net.createServer((socket) => this.accept(socket));
+      await listenUnixSocket(this.server, this.socketPath);
+      // listen 後の accept 失敗 (EMFILE など) でデーモンごと落ちないよう、その接続だけを諦める。
+      this.server.on('error', (e) => this.log(`server error: ${e.message}`));
+    } catch (e) {
+      this.server?.close();
+      for (const f of [this.socketPath, this.pidPath]) fs.rmSync(f, { force: true });
+      throw e;
+    }
     this.events.emit('daemon.started', { pid: process.pid, protocolVersion: PROTOCOL_VERSION });
     this.log(`listening on ${this.socketPath} (pid ${process.pid})`);
-  }
-
-  /** 応答するデーモンがいなければ古い socket ファイルを消す。いれば例外。 */
-  private async removeStaleSocket(): Promise<void> {
-    if (!fs.existsSync(this.socketPath)) return;
-    const alive = await new Promise<boolean>((resolve) => {
-      const s = net.connect(this.socketPath);
-      s.once('connect', () => {
-        s.destroy();
-        resolve(true);
-      });
-      s.once('error', () => resolve(false));
-    });
-    if (alive) throw new Error(`another daemon is already listening on ${this.socketPath}`);
-    fs.unlinkSync(this.socketPath);
-    this.log('removed stale socket');
   }
 
   async shutdown(): Promise<void> {
@@ -121,7 +121,10 @@ export class Daemon {
     for (const conn of this.conns) conn.socket.destroy();
     await closed;
     await Promise.all([...this.panes.values()].map((p) => p.close()));
-    for (const p of this.panes.values()) p.dispose();
+    for (const p of this.panes.values()) {
+      this.releasePane(p.id);
+      p.dispose();
+    }
     this.panes.clear();
     for (const f of [this.socketPath, this.pidPath]) fs.rmSync(f, { force: true });
   }
@@ -271,15 +274,26 @@ export class Daemon {
   private async paneAttach(p: ParsedParams<'pane.attach'>, ctx: RequestContext): Promise<unknown> {
     if (p.mode === 'cells') throw new RpcFailure(ErrorCode.Unsupported, 'mode "cells" is not supported');
     const pane = this.pane(p.paneId);
-    this.detach(ctx.conn, pane.id);
+    const replacing = ctx.conn.attachments.get(pane.id)?.clientId === p.clientId;
+    if (replacing) this.replaceAttachment(ctx.conn, pane.id);
+    else this.detach(ctx.conn, pane.id);
     if (p.cols !== undefined && p.rows !== undefined) {
       pane.resize(p.cols, p.rows, p.clientId);
       this.events.emit('pane.resized', { cols: p.cols, rows: p.rows, clientId: p.clientId }, pane.id);
     }
     // attachPane は最初の await までに購読と clients への登録を同期的に済ませる
     const attached = attachPane(ctx, pane, p.clientId, p.replay);
-    this.events.emit('client.attached', { clientId: p.clientId }, pane.id);
+    if (!replacing) this.events.emit('client.attached', { clientId: p.clientId }, pane.id);
     return attached;
+  }
+
+  /**
+   * 同じ接続・同じ clientId の再 attach 用。出力の購読だけを外し、クライアントとしては残す
+   * (clients・サイズの記録と所有権は保ち、client.detached も出さない)。
+   */
+  private replaceAttachment(conn: Connection, paneId: string): void {
+    conn.attachments.get(paneId)?.off();
+    conn.attachments.delete(paneId);
   }
 
   private paneDetach(p: ParsedParams<'pane.detach'>, ctx: RequestContext): unknown {
@@ -309,7 +323,7 @@ export class Daemon {
     const pane = this.pane(p.paneId);
     return subscribeStream({
       ctx,
-      key: `lines:${pane.id}`,
+      key: linesKey(pane.id),
       ring: pane.linesRing,
       on: (cb) => {
         pane.on('line', cb);
@@ -344,9 +358,20 @@ export class Daemon {
     const pane = this.pane(p.paneId);
     await pane.close();
     if (this.panes.get(pane.id) !== pane) return { ok: true }; // 並行した close が後始末済み
+    this.releasePane(pane.id); // client.detached は pane.closed より前に出す
     this.panes.delete(pane.id);
     this.events.emit('pane.closed', {}, pane.id);
     pane.dispose();
     return { ok: true };
+  }
+
+  /** 全接続から、この pane の attachment と行購読を外す (閉じた Pane への参照を残さない)。 */
+  private releasePane(paneId: string): void {
+    const key = linesKey(paneId);
+    for (const conn of this.conns) {
+      this.detach(conn, paneId);
+      conn.subscriptions.get(key)?.();
+      conn.subscriptions.delete(key);
+    }
   }
 }

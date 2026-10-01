@@ -4,16 +4,12 @@ import * as path from 'node:path';
 import { Daemon } from '../../src/daemon.js';
 import { RpcClient } from './rpc-client.js';
 
-export function waitFor(pred: () => boolean, ms = 5000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const t0 = Date.now();
-    const tick = (): void => {
-      if (pred()) resolve();
-      else if (Date.now() - t0 > ms) reject(new Error('timeout'));
-      else setTimeout(tick, 20);
-    };
-    tick();
-  });
+export async function waitFor(pred: () => boolean | Promise<boolean>, ms = 5000): Promise<void> {
+  const t0 = Date.now();
+  while (!(await pred())) {
+    if (Date.now() - t0 > ms) throw new Error('timeout');
+    await new Promise((r) => setTimeout(r, 20));
+  }
 }
 
 export async function withDaemon(fn: (daemon: Daemon, client: RpcClient) => Promise<void>): Promise<void> {

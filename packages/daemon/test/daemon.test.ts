@@ -2,10 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import xterm from '@xterm/headless';
 import { PaneInfoSchema, methods, parseKnownEvent } from '@misao/protocol';
 import type { EventParams, MethodName, PaneInfo } from '@misao/protocol';
+import { Daemon } from '../src/daemon.js';
 import { viewportText } from '../src/screen.js';
 import { ulid } from '../src/ulid.js';
 import { RpcClient, RpcClientError } from './helpers/rpc-client.js';
@@ -47,11 +49,16 @@ test('daemon: pane.open → subscribe_lines でマーカーを観測 → 停止'
     assert.ok(lines.some((l) => l.text === 'hello'));
     assert.deepEqual(lines.map((l) => l.seq), [...lines.map((l) => l.seq)].sort((a, b) => a - b));
 
-    // 再購読 (since=0) でリングから再生され、seq が重複せず揃う
+    // 再購読 (since=0) でリングから 1..head が一度ずつ再生され、旧購読からの配信は重ならない
+    const linesBefore = lines.length;
     const replayed: number[] = [];
     client.onNotification((n) => n.method === 'pane.line' && replayed.push(n.params.seq as number));
-    await client.request('pane.subscribe_lines', { paneId, since: 0 });
-    await waitFor(() => replayed.length >= 2);
+    const again = await client.request<{ head: number }>('pane.subscribe_lines', { paneId, since: 0 });
+    assert.ok(again.head >= 2);
+    await waitFor(() => replayed.length >= again.head);
+    await sleep(100);
+    assert.deepEqual(replayed, Array.from({ length: again.head }, (_, i) => i + 1));
+    assert.equal(lines.length, linesBefore + again.head);
 
     await waitFor(() => events.some((e) => e.type === 'pane.exited'));
     const list = await client.request<PaneInfo[]>('pane.list');
@@ -122,26 +129,35 @@ test('daemon: write / screen / snapshot attach / env 除去', async () => {
 
 test('snapshot attach: 出力が流れ続ける pane で snapshot + live == pane.screen (境界の重複なし)', async () => {
   await withDaemon(async (daemon, client) => {
+    // 出力の開始を read で制御し、出力が流れている最中に attach する
     const { paneId } = await openPane(client, [
       'sh',
       '-c',
-      'i=0; while [ $i -lt 6000 ]; do printf "\\033[3$((i%7+1))mline $i\\033[0m\\r\\n"; i=$((i+1)); done; echo FINISHED; sleep 5',
+      'echo ready; read go; i=0; while [ $i -lt 20000 ]; do printf "\\033[3$((i%7+1))mline $i\\033[0m\\r\\n"; i=$((i+1)); done; echo FINISHED; sleep 5',
     ]);
-    await sleep(30);
     const c2 = await RpcClient.connect(daemon.socketPath);
     const term = new xterm.Terminal({ cols: 80, rows: 24, scrollback: 100, allowProposedApi: true });
     const feed = (b: Buffer): Promise<void> => new Promise((r) => term.write(b, r));
     const parts: Buffer[] = [];
+    const liveSeqs: number[] = [];
     let text = '';
     c2.onNotification((n) => {
       if (n.method !== 'pane.output') return;
       const b = Buffer.from(n.params.dataB64 as string, 'base64');
       parts.push(b);
+      if (n.params.replay === undefined) liveSeqs.push(n.params.seq as number);
       text = (text + b.toString()).slice(-200);
     });
+    await waitFor(async () => (await client.request<{ text: string }>('pane.screen', { paneId })).text.includes('ready'));
+    // 書き込みの直後に attach する (出力の開始前でも最中でも、head より後は live で届く)
+    await client.request('pane.write', { paneId, data: '\r' });
     const res = await c2.request<{ head: number }>('pane.attach', { paneId, clientId: 'snap', replay: 'snapshot' });
-    assert.ok(res.head >= 0);
-    await waitFor(() => text.includes('FINISHED'));
+    assert.ok(res.head >= 1);
+    await waitFor(() => text.includes('FINISHED'), 20000);
+    // 境界をまたいでいる: head より後の live チャンクを受け取り、その seq は昇順で head を超える
+    assert.ok(liveSeqs.length >= 1, 'received live chunks after the snapshot');
+    assert.ok(liveSeqs.every((seq) => seq > res.head));
+    assert.deepEqual(liveSeqs, [...liveSeqs].sort((a, b) => a - b));
     for (const p of parts) await feed(p);
     const expected = await client.request<{ text: string }>('pane.screen', { paneId });
     assert.equal(viewportText(term), expected.text);
@@ -334,4 +350,108 @@ test('同じ pane への pane.close が並行しても pane.closed は 1 回だ�
     await sleep(100);
     assert.equal(types.filter((t) => t === 'pane.closed').length, 1);
   });
+});
+
+test('since: 0 の pane.subscribe_lines を同時に 2 本送っても、再生は置き換え後の 1 本だけで seq は重複しない', async () => {
+  await withDaemon(async (_daemon, client) => {
+    const types: string[] = [];
+    client.onNotification((n) => n.method === 'event' && types.push(n.params.type as string));
+    await client.request('events.subscribe', {});
+    const { paneId } = await openPane(client, ['sh', '-c', 'echo a; echo b; echo c']);
+    await waitFor(() => types.includes('pane.exited'));
+    const seqs: number[] = [];
+    client.onNotification((n) => n.method === 'pane.line' && seqs.push(n.params.seq as number));
+    const [r1, r2] = await Promise.all([
+      client.request<{ head: number }>('pane.subscribe_lines', { paneId, since: 0 }),
+      client.request<{ head: number }>('pane.subscribe_lines', { paneId, since: 0 }),
+    ]);
+    assert.equal(r1.head, 3);
+    assert.equal(r2.head, 3);
+    await waitFor(() => seqs.length >= 3);
+    await sleep(100);
+    assert.deepEqual(seqs, [1, 2, 3]);
+    await client.request('pane.close', { paneId });
+  });
+});
+
+test('pane.close は全接続の attach と行購読を外し、client.detached は pane.closed より前にだけ出る', async () => {
+  await withDaemon(async (daemon, client) => {
+    const events: EventParams[] = [];
+    client.onNotification((n) => n.method === 'event' && events.push(n.params as EventParams));
+    await client.request('events.subscribe', {});
+    const { paneId } = await openPane(client, ['sh', '-c', 'exec cat']);
+    const c2 = await RpcClient.connect(daemon.socketPath);
+    const c2Lines: number[] = [];
+    c2.onNotification((n) => n.method === 'pane.line' && c2Lines.push(n.params.seq as number));
+    await c2.request('pane.attach', { paneId, clientId: 'B', replay: 'none' });
+    await c2.request('pane.subscribe_lines', { paneId });
+
+    await client.request('pane.close', { paneId });
+    // 接続を閉じても、閉じた pane についての client.detached は追加で出ない
+    c2.close();
+    await sleep(200);
+    const forPane = events.filter((e) => e.paneId === paneId).map((e) => e.type);
+    assert.deepEqual(forPane.slice(-2), ['client.detached', 'pane.closed']);
+    assert.equal(forPane.filter((t) => t === 'client.detached').length, 1);
+    assert.deepEqual(c2Lines, []);
+  });
+});
+
+test('同じ接続・同じ clientId の再 attach ではサイズの所有権と記録を保ち、client.detached を出さない', async () => {
+  await withDaemon(async (daemon, client) => {
+    const types: string[] = [];
+    client.onNotification((n) => n.method === 'event' && types.push(n.params.type as string));
+    await client.request('events.subscribe', {});
+    const { paneId } = await openPane(client, ['sh', '-c', 'exec cat']);
+    const info = async (): Promise<PaneInfo> => client.request<PaneInfo>('pane.info', { paneId });
+    const c2 = await RpcClient.connect(daemon.socketPath);
+    await client.request('pane.attach', { paneId, clientId: 'A', replay: 'none', cols: 100, rows: 30 });
+    await c2.request('pane.attach', { paneId, clientId: 'B', replay: 'none', cols: 60, rows: 20 });
+    // B がサイズ指定なしで再 attach (replay を変えて再同期) しても、所有者は B のまま
+    await c2.request('pane.attach', { paneId, clientId: 'B', replay: 'snapshot' });
+    let i = await info();
+    assert.deepEqual([i.cols, i.rows, i.sizeOwner], [60, 20, 'B']);
+    assert.deepEqual([...i.clients].sort(), ['A', 'B']);
+    // A が操作して所有権を取った後、B の write で B のサイズに戻せる (記録が残っている)
+    await client.request('pane.write', { paneId, data: 'x', clientId: 'A' });
+    assert.equal((await info()).sizeOwner, 'A');
+    await c2.request('pane.write', { paneId, data: 'y', clientId: 'B' });
+    i = await info();
+    assert.deepEqual([i.cols, i.rows, i.sizeOwner], [60, 20, 'B']);
+    await sleep(50);
+    assert.equal(types.filter((t) => t === 'client.detached').length, 0);
+    assert.equal(types.filter((t) => t === 'client.attached').length, 2);
+    c2.close();
+    await client.request('pane.close', { paneId });
+  });
+});
+
+test('同じソケットと pid ファイルで 2 つ目のデーモンは起動に失敗し、1 つ目は使い続けられる', async () => {
+  await withDaemon(async (daemon, client) => {
+    const dir = path.dirname(daemon.socketPath);
+    const second = new Daemon({
+      socketPath: daemon.socketPath,
+      pidPath: path.join(dir, 'daemon.pid'),
+      log: () => undefined,
+    });
+    await assert.rejects(second.start(), /another daemon/);
+    assert.ok(fs.existsSync(daemon.socketPath));
+    assert.equal(fs.readFileSync(path.join(dir, 'daemon.pid'), 'utf8'), String(process.pid));
+    assert.equal((await client.request<{ pid: number }>('server.info')).pid, process.pid);
+  });
+});
+
+test('起動に失敗したら pid ファイルを残さない', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-it-'));
+  try {
+    const socketPath = path.join(dir, 'misao.sock');
+    const pidPath = path.join(dir, 'daemon.pid');
+    fs.mkdirSync(socketPath); // ソケットの場所にディレクトリ: 古いソケットとは断定できない
+    const daemon = new Daemon({ socketPath, pidPath, log: () => undefined });
+    await assert.rejects(daemon.start());
+    assert.equal(fs.existsSync(pidPath), false);
+    assert.ok(fs.statSync(socketPath).isDirectory());
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
