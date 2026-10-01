@@ -9,6 +9,15 @@ function flag(name: string): string | undefined {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 ? argv[i + 1] : undefined;
 }
+function requiredFlag(name: string): string {
+  const value = flag(name);
+  if (value === undefined) usage();
+  return value;
+}
+function usage(): never {
+  process.stderr.write('usage: fake-agent (markers --count N --id T --out F [--burst] [--delay MS] | question --id T)\n');
+  process.exit(2);
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const out = (s: string) => process.stdout.write(s);
 
@@ -47,9 +56,9 @@ async function noisyRound(round: number): Promise<void> {
 }
 
 async function markers(): Promise<void> {
-  const count = Number(flag('count') ?? '1');
-  const id = flag('id') ?? 'T';
-  const outFile = flag('out');
+  const count = Number(requiredFlag('count'));
+  const id = requiredFlag('id');
+  const outFile = requiredFlag('out');
   const burst = argv.includes('--burst');
   const delayMs = Number(flag('delay') ?? '0'); // 1 ラウンドごとの待ち (低速・長時間動作用)
   const nonces: string[] = [];
@@ -72,12 +81,11 @@ async function markers(): Promise<void> {
     if (delayMs > 0) await sleep(delayMs);
   }
   const summary = `FAKE_SUMMARY ${JSON.stringify({ emitted: count, nonces })}`;
-  if (outFile) fs.writeFileSync(outFile, summary + '\n');
-  else process.stderr.write(summary + '\n');
+  fs.writeFileSync(outFile, summary + '\n');
 }
 
 async function question(): Promise<void> {
-  const id = flag('id') ?? 'T';
+  const id = requiredFlag('id');
   out(`QUESTION_HEADER ${id}\r\n`);
   out('QUESTION: What is your favourite colour? > ');
   if (process.stdin.isTTY) process.stdin.setRawMode(true);
@@ -98,7 +106,4 @@ async function question(): Promise<void> {
 
 if (mode === 'markers') await markers();
 else if (mode === 'question') await question();
-else {
-  process.stderr.write('usage: fake-agent (markers --count N --id T [--burst] [--out F] | question --id T)\n');
-  process.exit(2);
-}
+else usage();

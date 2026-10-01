@@ -37,13 +37,13 @@ function analyzeSeqs(seqs: number[]): { duplicates: number; holes: number } {
  */
 export async function assertHubLogComplete(
   client: MisaoClient,
-  { logFile, agentPaneId, summaryFile, killCount }: { logFile: string; agentPaneId: string; summaryFile: string; killCount: number },
+  { logFile, agentPaneId, agentId, summaryFile, killCount }: { logFile: string; agentPaneId: string; agentId: string; summaryFile: string; killCount: number },
 ): Promise<void> {
   const { head } = await client.request('pane.subscribe_lines', { paneId: agentPaneId });
   const agentLines = () => readHubLog(logFile).filter((e) => e.kind === 'line' && e.paneId === agentPaneId);
   await waitFor(() => agentLines().at(-1)?.seq === head, 'the hub to catch up with the agent lines', { timeoutMs: 20_000 });
 
-  const expected = readAgentSummary(summaryFile).nonces.map((nonce) => `AZITO_DONE_V4_${nonce}`);
+  const expected = readAgentSummary(summaryFile).nonces.map((nonce) => `AZITO_DONE_${agentId}_${nonce}`);
   const found = new Set(agentLines().flatMap((e) => [...e.text!.matchAll(MARKER_RE)].map((m) => m[0])));
   assert.deepEqual(expected.filter((marker) => !found.has(marker)), [], '取り逃したマーカー');
   assert.deepEqual([...found].filter((marker) => !expected.includes(marker)), [], '誤検出');

@@ -15,6 +15,7 @@ type Restart = 'restart' | 'kill9';
 
 const ROUNDS = scale(60, 400);
 const DELAY_MS = 300;
+const AGENT_ID = 'V4';
 const PLAN = scale<Restart[]>(['restart', 'kill9', 'restart'], ['restart', 'restart', 'restart', 'restart', 'restart', 'kill9', 'kill9']);
 
 let daemon: DaemonProcess;
@@ -37,7 +38,7 @@ test('v4: hub を再起動 / kill -9 してもデーモンと pane は生き残�
   const startHub = (): HubProcess => startHubProcess({ socket: daemon.socket, stateFile, logFile });
 
   const bash = await openPane(client, ['bash', '--norc']);
-  const agent = await openPane(client, fakeAgentCmd('markers', '--count', String(ROUNDS), '--id', 'V4', '--delay', String(DELAY_MS), '--out', summaryFile));
+  const agent = await openPane(client, fakeAgentCmd('markers', '--count', String(ROUNDS), '--id', AGENT_ID, '--delay', String(DELAY_MS), '--out', summaryFile));
   await typeKeys(client, bash, 'echo BASH_ALIVE_V4\r');
   await waitFor(async () => (await screenText(client, bash)).includes('BASH_ALIVE_V4'), 'bash to echo');
   hub = startHub();
@@ -56,5 +57,5 @@ test('v4: hub を再起動 / kill -9 してもデーモンと pane は生き残�
   }
 
   await waitForExit(client, agent, scale(120_000, 6 * 60_000));
-  await assertHubLogComplete(client, { logFile, agentPaneId: agent, summaryFile, killCount: PLAN.filter((how) => how === 'kill9').length });
+  await assertHubLogComplete(client, { logFile, agentPaneId: agent, agentId: AGENT_ID, summaryFile, killCount: PLAN.filter((how) => how === 'kill9').length });
 });
