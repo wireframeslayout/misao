@@ -3,8 +3,9 @@
 `misao.service` runs `misao serve` under your user's systemd manager. The daemon keeps
 running (and restarts on failure) independently of any controlling app or SSH session.
 
-- `KillMode=process`: stopping or restarting the daemon does not signal other processes in
-  its cgroup.
+- `KillMode=process`: on stop, systemd signals only the daemon, which closes every pane
+  itself, so systemd and the daemon do not race over pane shutdown. After a crash, systemd
+  does not touch processes left in the cgroup. Agents do not survive a restart.
 - `Restart=on-failure`, `RestartSec=1`: the daemon comes back one second after a crash.
   Panes are not restored as live PTYs; their metadata is kept and they show up as `stopped`.
 
@@ -34,6 +35,14 @@ To keep the daemon running after you log out, enable lingering once:
 
 ```bash
 loginctl enable-linger "$USER"
+```
+
+## Cleaning up after a crash
+
+If the daemon crashes, panes that ignore SIGHUP can remain. Stop them with:
+
+```bash
+systemctl --user kill --kill-whom=all misao.service
 ```
 
 ## Node is not on systemd's PATH

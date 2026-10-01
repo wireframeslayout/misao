@@ -5,7 +5,8 @@ Description=misao daemon (headless pane server)
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/misao serve
-# デーモンの停止・再起動で、pane のプロセスまで巻き込まない
+# 停止時は、デーモンが自分で pane を閉じる (systemd と終了処理を取り合わない)。
+# クラッシュ時に残ったプロセスには systemd が触れない
 KillMode=process
 Restart=on-failure
 RestartSec=1
