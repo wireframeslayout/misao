@@ -110,6 +110,18 @@ test('shortPaneIds: 先頭 4 文字…末尾 2 文字。衝突したら末尾を
   assert.equal(shortSuffix('p_01M3…R8'), 'R8');
 });
 
+test('shortPaneIds: 末尾は先頭 4 文字が違う pane や、他の ID の先頭とも衝突しない (対象指定で一意に引ける)', () => {
+  const a = 'p_01M3XXXXXXXXXXXXXXXXXXXXR8';
+  const b = 'p_01M4YYYYYYYYYYYYYYYYYYYYR8';
+  const c = 'p_01M5ZZZZZZZZZZZZZZZZZZZZ01';
+  const ids = shortPaneIds([a, b, c]);
+  assert.equal(ids.get(a), 'p_01M3…XR8');
+  assert.equal(ids.get(b), 'p_01M4…YR8');
+  assert.equal(ids.get(c), 'p_01M5…Z01', '01 だと他の ID の先頭に当たる');
+  const lower = shortPaneIds(['p_01M3XXXXXXXXXXXXXXXXXXXXab', 'p_01M4YYYYYYYYYYYYYYYYYYYYAB']);
+  assert.equal(lower.get('p_01M3XXXXXXXXXXXXXXXXXXXXab'), 'p_01M3…Xab', '大文字小文字を区別せずに比べる');
+});
+
 test('shortDisplayName: 登録済みは窓番号だけ、未登録は NAME 列と同じ', () => {
   assert.equal(shortDisplayName(makePane({ labels: { windowId: '806', name: '表示名' } }), HOME), 'W-806');
   assert.equal(shortDisplayName(makePane({ labels: { name: 'メモ' } }), HOME), '(未登録) メモ');

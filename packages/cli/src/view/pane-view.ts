@@ -99,18 +99,20 @@ export function relativeTime(iso: string | null, now: number): string {
 
 /**
  * `p_01M3…7Q` 形式 (先頭 4 文字 + … + 一意になる最短の末尾、最小 2)。
- * 一意かどうかは、先頭 4 文字が同じ pane の中で末尾を比べて決める。
+ * 末尾は単独で対象指定 (`misao attach 7Q`) に使うので、resolveTarget の前方・後方一致と同じ規則
+ * (大文字小文字を区別しない) で、他のどの pane の ID の先頭にも末尾にも当たらない長さにする。
  */
 export function shortPaneIds(paneIds: readonly string[]): Map<string, string> {
   const result = new Map<string, string>();
-  for (const id of paneIds) {
+  const bodies = paneIds.map((id) => id.slice(2).toUpperCase());
+  paneIds.forEach((id, index) => {
     const body = id.slice(2);
-    const head = body.slice(0, ID_PREFIX_LENGTH);
-    const peers = paneIds.filter((other) => other !== id && other.slice(2, 2 + ID_PREFIX_LENGTH) === head);
+    const others = bodies.filter((_, i) => i !== index);
     let length = MIN_SUFFIX_LENGTH;
-    while (length < body.length - ID_PREFIX_LENGTH && peers.some((o) => o.endsWith(body.slice(-length)))) length++;
-    result.set(id, `p_${head}…${body.slice(-length)}`);
-  }
+    const collides = (suffix: string): boolean => others.some((o) => o.startsWith(suffix) || o.endsWith(suffix));
+    while (length < body.length && collides(body.slice(-length).toUpperCase())) length++;
+    result.set(id, `p_${body.slice(0, ID_PREFIX_LENGTH)}…${body.slice(-length)}`);
+  });
   return result;
 }
 

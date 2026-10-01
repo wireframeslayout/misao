@@ -124,6 +124,8 @@ describe('実デーモンに対するコマンド', () => {
     assert.deepEqual(none, []);
     const byWorkspace = JSON.parse((await misao(daemon, ['ls', '--json', '--workspace', 'no-such'])).out) as PaneInfo[];
     assert.deepEqual(byWorkspace, []);
+    const inDefault = JSON.parse((await misao(daemon, ['ls', '--json', '--workspace', 'default'])).out) as PaneInfo[];
+    assert.deepEqual(inDefault.map((p) => p.paneId), [paneId]);
     assert.equal((await misao(daemon, ['ls', '--state', 'bogus'])).code, 2);
 
     const label = await misao(daemon, ['label', 'W-901', 'owner=me', '--unset', 'task']);

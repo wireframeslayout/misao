@@ -26,8 +26,8 @@ function isStateFilter(value: string): value is (typeof STATE_FILTERS)[number] {
   return (STATE_FILTERS as readonly string[]).includes(value);
 }
 
-function renderRows(panes: readonly PaneInfo[], homeDir: string, now: number): string[] {
-  const shortIds = shortPaneIds(panes.map((p) => p.paneId));
+/** shortIds は絞り込み前の全ペインから作る (表示した末尾を対象指定に使っても曖昧にならないように)。 */
+function renderRows(panes: readonly PaneInfo[], shortIds: ReadonlyMap<string, string>, homeDir: string, now: number): string[] {
   const rows = panes.map((p) => [
     stateLabel(p),
     shortIds.get(p.paneId)!,
@@ -53,18 +53,19 @@ export const lsCommand: Command = {
     }
     const task = args.string('task')?.replace(/^#/, '');
     const workspace = args.string('workspace');
-    const all = await withDaemon(config.socket, (client) =>
-      client.request('pane.list', workspace === undefined ? {} : { filter: { workspace } }),
-    );
+    const all = await withDaemon(config.socket, (client) => client.request('pane.list', {}));
     const panes = sortPanes(all).filter(
-      (p) => (state === undefined || paneStateKey(p) === state) && (task === undefined || taskNumber(p) === task),
+      (p) =>
+        (state === undefined || paneStateKey(p) === state) &&
+        (task === undefined || taskNumber(p) === task) &&
+        (workspace === undefined || p.workspace === workspace),
     );
     if (isJson) {
       writeJson(io, panes);
     } else if (panes.length === 0) {
       writeLine(io.stdout, '[misao] 該当するペインはありません');
     } else {
-      for (const line of renderRows(panes, io.homeDir, io.now())) writeLine(io.stdout, line);
+      for (const line of renderRows(panes, shortPaneIds(all.map((p) => p.paneId)), io.homeDir, io.now())) writeLine(io.stdout, line);
     }
     return 0;
   },
