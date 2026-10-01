@@ -132,7 +132,8 @@ export class StreamSubscriber {
   }
 
   private activate(entry: StreamEntry, options: SubscribeOptions, result: SubscribeResult): void {
-    const epochChanged = options.epoch !== undefined && options.epoch !== result.epoch;
+    // デーモンは since があるときだけ epoch を比べる。since なし (ライブのみ) は epoch に関係なく head から。
+    const epochChanged = options.since !== undefined && options.epoch !== undefined && options.epoch !== result.epoch;
     // epoch が違うと最古から再生されるので、古い since は引き継がない。
     // since が head より先なら head に寄せる (先の seq を重複扱いで捨てないため)。
     entry.lastSeq = epochChanged ? 0 : Math.min(options.since ?? result.head, result.head);
@@ -148,8 +149,10 @@ export class StreamSubscriber {
           if (outcome.value.gap && !isEpochReset) this.gapListeners.emit({ stream: toStreamId(entry), reason: 'truncated' });
           resolve();
         } else if (outcome.error instanceof MisaoRpcError) {
+          const isActive = this.cursor.get(keyOf(entry)) === entry;
           this.cursor.remove(entry);
-          this.errorListeners.emit({ stream: toStreamId(entry), error: outcome.error });
+          // 応答待ちの間に unsubscribe されたストリームは利用側の関心外なので知らせない。
+          if (isActive) this.errorListeners.emit({ stream: toStreamId(entry), error: outcome.error });
           resolve();
         } else {
           reject(outcome.error);

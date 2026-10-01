@@ -292,3 +292,26 @@ test('close while connected does not reconnect', async () => {
   assert.equal(states.filter((s) => s.status === 'reconnecting').length, 0);
   await assert.rejects(client.connect(), /closed/);
 });
+
+test('a live-only subscription with an epoch but no since starts at head', async () => {
+  daemon.handle('events.subscribe', () => ({ result: { gap: false, head: 7, epoch: daemon.epoch } }));
+  await client.connect();
+  const sub = await client.subscribeEvents(() => undefined, { epoch: ulid(9) });
+  assert.equal(sub.cursor.seq, 7);
+  assert.deepEqual(gaps, []);
+  await dropAndWaitReconnect();
+  assert.deepEqual(daemon.received('events.subscribe').at(-1)?.params, { since: 7, epoch: daemon.epoch });
+});
+
+test('a stream unsubscribed while its resubscription is pending is not reported as an error', async () => {
+  await client.connect();
+  const sub = await client.subscribeLines(PANE_ID, () => undefined);
+  daemon.handle('pane.subscribe_lines', () => 'hold');
+  daemon.dropConnections();
+  await waitFor(() => daemon.isHolding('pane.subscribe_lines'));
+  sub.unsubscribe();
+  const before = connectedCount();
+  daemon.release('pane.subscribe_lines', { error: { code: ErrorCode.PaneNotFound, message: 'gone' } });
+  await waitFor(() => connectedCount() === before + 1);
+  assert.deepEqual(subscriptionErrors, []);
+});

@@ -32,7 +32,14 @@ export interface Reply {
   trailing?: RpcMessage[];
 }
 
-type Handler = (params: Record<string, unknown>) => Reply;
+/** 'hold' を返すと応答を保留する (release で後から返す)。 */
+type Handler = (params: Record<string, unknown>) => Reply | 'hold';
+
+interface HeldRequest {
+  socket: net.Socket;
+  id: number;
+  method: string;
+}
 
 export function notification(method: string, params: Record<string, unknown>): RpcMessage {
   return { jsonrpc: '2.0', method, params };
@@ -56,6 +63,7 @@ export class FakeDaemon {
   private server: net.Server | undefined;
   private readonly sockets = new Set<net.Socket>();
   private readonly handlers = new Map<string, Handler>();
+  private readonly held: HeldRequest[] = [];
 
   constructor() {
     this.handlers.set('server.info', () => ({
@@ -92,6 +100,19 @@ export class FakeDaemon {
       server.listen(this.socketPath, resolve);
     });
     this.server = server;
+  }
+
+  /** 保留中の method の要求があるか。 */
+  isHolding(method: string): boolean {
+    return this.held.some((h) => h.method === method);
+  }
+
+  /** 保留した method の要求すべてに reply を返す。 */
+  release(method: string, reply: Reply): void {
+    for (const h of this.held.filter((x) => x.method === method)) {
+      this.held.splice(this.held.indexOf(h), 1);
+      this.reply(h.socket, h.id, reply);
+    }
   }
 
   /** 全接続へ通知を送る。 */
@@ -144,9 +165,17 @@ export class FakeDaemon {
     const reply = this.handlers.get(request.method)?.(params) ?? {
       error: { code: -32601, message: `no handler for ${request.method}` },
     };
+    if (reply === 'hold') {
+      this.held.push({ socket, id: request.id, method: request.method });
+      return;
+    }
+    this.reply(socket, request.id, reply);
+  }
+
+  private reply(socket: net.Socket, id: number, reply: Reply): void {
     const response: RpcMessage = reply.error
-      ? { jsonrpc: '2.0', id: request.id, error: reply.error }
-      : { jsonrpc: '2.0', id: request.id, result: reply.result };
+      ? { jsonrpc: '2.0', id, error: reply.error }
+      : { jsonrpc: '2.0', id, result: reply.result };
     socket.write([response, ...(reply.trailing ?? [])].map(encodeMessage).join(''));
   }
 }
