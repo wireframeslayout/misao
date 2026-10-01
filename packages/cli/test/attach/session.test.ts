@@ -20,9 +20,13 @@ interface Running {
   end: Promise<SessionEnd>;
 }
 
-async function startSession(daemon: TestDaemon, cmd: string[], options: { readonly?: boolean } = {}): Promise<Running & { paneId: string }> {
+async function startSession(
+  daemon: TestDaemon,
+  cmd: string[],
+  options: { readonly?: boolean; columns?: number; rows?: number } = {},
+): Promise<Running & { paneId: string }> {
   const paneId = await openTestPane(daemon.client, cmd, { labels: { windowId: '806', name: 'セッション', task: '419' } });
-  const io = createTestIo({ isTTY: true, columns: 100, rows: 30 });
+  const io = createTestIo({ isTTY: true, columns: options.columns ?? 100, rows: options.rows ?? 30 });
   const pane = await daemon.client.request('pane.info', { paneId });
   const client = new MisaoClient({ socketPath: daemon.socketPath });
   await client.connect();
@@ -71,6 +75,25 @@ test('入出力をつなぎ、入力は source=terminal で送られ、サイズ
     assert.deepEqual(result, { reason: 'action', action: 'detach', inputCount: 1 });
     assertRestored(io);
     await waitFor(async () => !(await daemon.client.request('pane.info', { paneId })).clients.includes('cli-4242'));
+  } finally {
+    await daemon.stop();
+  }
+});
+
+test('端末がサイズ 0 を報告しても attach でき、ペインのサイズは変えない', async () => {
+  const daemon = await startTestDaemon();
+  try {
+    const { io, end, paneId } = await startSession(daemon, READ_ONE, { columns: 0, rows: 0 });
+    const before = await daemon.client.request('pane.info', { paneId });
+    await waitFor(() => io.out().includes('ready-marker'));
+    io.emitSignal('SIGWINCH');
+    io.stdin.write('abc\r');
+    await waitFor(() => io.out().includes('got:abc'));
+    const after = await daemon.client.request('pane.info', { paneId });
+    assert.deepEqual([after.cols, after.rows], [before.cols, before.rows]);
+    io.stdin.write(PREFIX_D);
+    assert.deepEqual(await end, { reason: 'action', action: 'detach', inputCount: 1 });
+    assertRestored(io);
   } finally {
     await daemon.stop();
   }

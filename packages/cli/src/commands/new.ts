@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { runAttachLoop } from '../attach/loop.js';
-import { terminalSize } from '../attach/tty.js';
+import { requireTerminal } from '../attach/tty.js';
 import { parseKeyValues } from '../args.js';
 import { withDaemon } from '../connect.js';
 import { CliError } from '../errors.js';
@@ -30,7 +30,7 @@ export const newCommand: Command = {
     expectPositionals(args, 0, 0, USAGE);
     const isAttach = args.flag('attach');
     if (isAttach && isJson) throw new CliError('usage', '--attach と --json は同時に指定できません');
-    if (isAttach) terminalSize(io); // 端末でなければ、ペインを作る前に使い方の誤りとして終える
+    if (isAttach) requireTerminal(io); // 端末でなければ、ペインを作る前に使い方の誤りとして終える
     const cmd = args.rest.length > 0 ? [...args.rest] : loginShell(io.shell);
     const labels = parseKeyValues(args.strings('label'), '--label');
     const env = parseKeyValues(args.strings('env'), '--env');

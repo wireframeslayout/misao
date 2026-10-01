@@ -56,11 +56,14 @@ export interface TerminalSize {
   rows: number;
 }
 
-/** 端末のサイズ。stdin / stdout が端末でない、またはサイズが取れなければ usage エラー。 */
-export function terminalSize(io: CliIo): TerminalSize {
+/** stdin / stdout が端末でなければ usage エラー。 */
+export function requireTerminal(io: CliIo): void {
+  if (!io.stdin.isTTY || !io.stdout.isTTY) throw new CliError('usage', 'attach には端末（TTY）が必要です');
+}
+
+/** 端末のサイズ。端末が 0 や不明を報告したら undefined（ペインのサイズは変えない）。 */
+export function terminalSize(io: CliIo): TerminalSize | undefined {
   const { columns, rows } = io.stdout;
-  if (!io.stdin.isTTY || !io.stdout.isTTY || columns === undefined || rows === undefined) {
-    throw new CliError('usage', 'attach には端末（TTY）が必要です');
-  }
+  if (columns === undefined || rows === undefined || columns <= 0 || rows <= 0) return undefined;
   return { cols: columns, rows };
 }

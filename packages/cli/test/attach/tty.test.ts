@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { TTY_RESET, TtyGuard, terminalSize } from '../../src/attach/tty.js';
+import { TTY_RESET, TtyGuard, requireTerminal, terminalSize } from '../../src/attach/tty.js';
 import { CliError } from '../../src/errors.js';
 import { createTestIo } from '../helpers/io.js';
 
@@ -57,9 +57,17 @@ test('TTY_RESET: alt screen / マウス / bracketed paste / カーソル表示�
   }
 });
 
-test('terminalSize: 端末なら列と行、そうでなければ usage エラー', () => {
-  assert.deepEqual(terminalSize(createTestIo({ isTTY: true, columns: 100, rows: 30 })), { cols: 100, rows: 30 });
-  for (const io of [createTestIo({ columns: 100, rows: 30 }), createTestIo({ isTTY: true })]) {
-    assert.throws(() => terminalSize(io), (e: unknown) => e instanceof CliError && e.kind === 'usage');
-  }
+test('requireTerminal: stdin と stdout が端末でなければ usage エラー', () => {
+  assert.doesNotThrow(() => requireTerminal(createTestIo({ isTTY: true, columns: 100, rows: 30 })));
+  assert.throws(
+    () => requireTerminal(createTestIo({ columns: 100, rows: 30 })),
+    (e: unknown) => e instanceof CliError && e.kind === 'usage',
+  );
 });
+
+test('terminalSize: 列と行を返し、0 や不明なら undefined', () => {
+  assert.deepEqual(terminalSize(createTestIo({ isTTY: true, columns: 100, rows: 30 })), { cols: 100, rows: 30 });
+  assert.equal(terminalSize(createTestIo({ isTTY: true })), undefined);
+  assert.equal(terminalSize(createTestIo({ isTTY: true, columns: 0, rows: 0 })), undefined);
+});
+

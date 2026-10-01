@@ -9,7 +9,7 @@ import { writeLine } from '../output.js';
 import { displayName, foregroundCommand, paneStateKey, taskNumber } from '../view/pane-view.js';
 import { PrefixFilter } from './prefix-filter.js';
 import type { PrefixAction } from './prefix-filter.js';
-import { TtyGuard, terminalSize } from './tty.js';
+import { TtyGuard, requireTerminal, terminalSize } from './tty.js';
 
 export interface SessionOptions {
   client: MisaoClient;
@@ -57,6 +57,7 @@ export async function runSession(opts: SessionOptions): Promise<SessionEnd> {
   const { client, io, pane, keys, isReadonly } = opts;
   const { paneId } = pane;
   const clientId = `cli-${io.pid}`;
+  requireTerminal(io);
   const size = terminalSize(io);
   const guard = new TtyGuard(io);
   const filter = new PrefixFilter(keys);
@@ -95,8 +96,8 @@ export async function runSession(opts: SessionOptions): Promise<SessionEnd> {
     if (!isReadonly) {
       cleanups.push(
         io.onSignal('SIGWINCH', () => {
-          const { cols, rows } = terminalSize(io);
-          fail(client.request('pane.resize', { paneId, cols, rows, clientId }));
+          const current = terminalSize(io);
+          if (current) fail(client.request('pane.resize', { paneId, ...current, clientId }));
         }),
       );
     }
@@ -111,7 +112,7 @@ export async function runSession(opts: SessionOptions): Promise<SessionEnd> {
         paneId,
         clientId,
         replay: opts.replay,
-        ...(isReadonly ? {} : { cols: size.cols, rows: size.rows }),
+        ...(isReadonly ? {} : size),
       });
       isAttached = true;
       // attach の前に終わっていたペインは終了イベントが来ないので、状態を見て終わらせる。
