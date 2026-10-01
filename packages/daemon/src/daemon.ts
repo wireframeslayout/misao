@@ -99,6 +99,7 @@ export class Daemon {
       events: this.events,
       persister: this.persister,
       profiles: opts.profiles ?? [],
+      log: this.log,
       releasePane: (id) => this.io.release(id),
     });
     this.io = new PaneIo({

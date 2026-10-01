@@ -11,6 +11,8 @@ const TICK_MS = 1000;
 const PROFILE_DEBOUNCE_MS = 120;
 /** 出力が続いても、最初の出力からこの時間以内には判定する。 */
 const PROFILE_MAX_WAIT_MS = 300;
+/** classify がこの回数続けて例外を投げたら、その pane ではプロファイルを使わない。 */
+const PROFILE_MAX_FAILURES = 3;
 
 export interface StateTrackerOptions {
   /** この pane に使うプロファイル。無ければ title / bytes 段だけで判定する。 */
@@ -20,6 +22,8 @@ export interface StateTrackerOptions {
   /** 状態または decidedBy が変わるたびに呼ぶ。 */
   onChange: (state: AgentState, decidedBy: string, prev: AgentState) => void;
   now: () => number;
+  /** プロファイルの例外など、判定を続けながら残すべき出来事。 */
+  log: (msg: string) => void;
 }
 
 /**
@@ -40,8 +44,12 @@ export class StateTracker {
   private readonly tickTimer: NodeJS.Timeout;
   private profileTimer: NodeJS.Timeout | undefined;
   private profileWaitSince: number | undefined;
+  /** 連続して失敗したら undefined にする (以後は予約しない)。 */
+  private profile: AgentProfile | undefined;
+  private profileFailures = 0;
 
   constructor(private readonly opts: StateTrackerOptions) {
+    this.profile = opts.profile;
     this.bytes = new ByteActivity(opts.now());
     this.tickTimer = setInterval(() => this.tick(), TICK_MS);
     this.tickTimer.unref();
@@ -101,7 +109,7 @@ export class StateTracker {
   }
 
   private scheduleProfile(): void {
-    const { profile } = this.opts;
+    const { profile } = this;
     if (!profile) return;
     const now = this.opts.now();
     this.profileWaitSince ??= now;
@@ -114,14 +122,34 @@ export class StateTracker {
   private runProfile(profile: AgentProfile): void {
     this.profileTimer = undefined;
     this.profileWaitSince = undefined;
-    this.profileVerdict = profile.classify(this.opts.readScreen());
+    this.profileVerdict = this.classify(profile, this.opts.readScreen());
     this.evaluate();
+  }
+
+  /**
+   * classify は外から差し込まれる実装なので、ここを境界として例外を受け止める。
+   * 失敗は「意見なし」(title / bytes 段に任せる) として扱い、続けて失敗したらこの pane では無効にする。
+   */
+  private classify(profile: AgentProfile, screen: ProfileScreen): ProfileVerdict {
+    try {
+      const verdict = profile.classify(screen);
+      this.profileFailures = 0;
+      return verdict;
+    } catch (e) {
+      this.profileFailures++;
+      this.opts.log(`profile ${profile.name} failed (${this.profileFailures}/${PROFILE_MAX_FAILURES}): ${(e as Error).message}`);
+      if (this.profileFailures >= PROFILE_MAX_FAILURES) {
+        this.profile = undefined;
+        this.opts.log(`profile ${profile.name} disabled after ${PROFILE_MAX_FAILURES} consecutive failures`);
+      }
+      return null;
+    }
   }
 
   /** 各段の意見を優先順に見て、最初に意見を持った段で決める。全段が意見なしなら現状維持。 */
   private evaluate(): void {
     if (this.isExited) return;
-    const { profile } = this.opts;
+    const { profile } = this;
     if (profile && this.profileVerdict !== null) return this.decide(this.profileVerdict, profile.name);
     const titleVerdict = this.title.verdict(this.opts.now());
     if (titleVerdict !== null) return this.decide(titleVerdict, 'title');

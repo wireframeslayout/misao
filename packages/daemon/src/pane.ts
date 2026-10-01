@@ -35,6 +35,8 @@ export interface PaneOpenOptions {
   socketPath: string;
   /** この pane の稼働判定に使うプロファイル。無ければ汎用の title / bytes 段だけで判定する。 */
   profile?: AgentProfile;
+  /** プロファイルの例外など、稼働判定の出来事を残す。 */
+  log: (msg: string) => void;
 }
 
 export interface PaneInfoMeta {
@@ -109,6 +111,7 @@ export class Pane extends EventEmitter {
       }),
       onChange: (state, decidedBy, prev) => this.emit('state', state, decidedBy, prev),
       now: Date.now,
+      log: (msg) => opts.log(`pane ${this.id}: ${msg}`),
     });
     this.term.onTitleChange((t) => {
       this.title = t;

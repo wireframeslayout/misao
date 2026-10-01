@@ -20,6 +20,7 @@ export interface PaneLifecycleHost {
   persister: StatePersister;
   /** 稼働判定のプロファイル。pane の cmd に最初に matches したものを使う。 */
   profiles: readonly AgentProfile[];
+  log: (msg: string) => void;
   /** 全接続から、この pane の attachment と行購読を外す。 */
   releasePane(paneId: string): void;
 }
@@ -113,6 +114,7 @@ export class PaneLifecycle {
         rows: p.rows,
         socketPath: this.host.socketPath,
         profile: selectProfile(this.host.profiles, p.cmd),
+        log: this.host.log,
       });
     } catch (e) {
       throw new RpcFailure(ErrorCode.InvalidParams, `spawn failed: ${(e as Error).message}`);
