@@ -9,18 +9,17 @@ import {
 } from '@misao/protocol';
 import type { PaneInfo, RpcRequest } from '@misao/protocol';
 import { nowIso } from './clock.js';
-import { attachPane } from './attach.js';
 import { Connection } from './connection.js';
 import { EventLog } from './event-log.js';
 import { parseParams } from './params.js';
 import type { ParsedParams } from './params.js';
-import type { Pane } from './pane.js';
 import { RpcFailure } from './rpc-error.js';
 import { acquirePidFile } from './pid-file.js';
 import { Layout } from './layout.js';
 import { createLayoutHandlers } from './layout-handlers.js';
 import type { LayoutMethod } from './layout-handlers.js';
 import { PaneRegistry } from './pane-registry.js';
+import { PaneIo } from './pane-io.js';
 import { PaneLifecycle } from './pane-lifecycle.js';
 import { loadPersistedState, savePersistedState } from './persistence.js';
 import type { PersistedState } from './persistence.js';
@@ -29,9 +28,6 @@ import { ensureSocketDir, listenUnixSocket, removeStaleSocket } from './socket.j
 import { subscribeStream } from './stream.js';
 import type { RequestContext } from './stream.js';
 import { ulid } from './ulid.js';
-
-/** 接続ごとの購読キー。同じキーの再購読は既存を置き換える。 */
-const linesKey = (paneId: string): string => `lines:${paneId}`;
 
 type ImplementedMethod =
   | 'server.info'
@@ -73,6 +69,7 @@ export class Daemon {
   private readonly layout = new Layout();
   private readonly persister: StatePersister;
   private readonly lifecycle: PaneLifecycle;
+  private readonly io: PaneIo;
   private readonly events = new EventLog();
   private readonly conns = new Set<Connection>();
   private server: net.Server | undefined;
@@ -98,7 +95,14 @@ export class Daemon {
       registry: this.registry,
       events: this.events,
       persister: this.persister,
-      releasePane: (id) => this.releasePane(id),
+      releasePane: (id) => this.io.release(id),
+    });
+    this.io = new PaneIo({
+      registry: this.registry,
+      events: this.events,
+      persister: this.persister,
+      conns: this.conns,
+      epoch: this.epoch,
     });
     this.handlers = {
       'server.info': () => this.serverInfo(),
@@ -106,12 +110,12 @@ export class Daemon {
       'pane.open': (p) => this.lifecycle.open(p),
       'pane.info': (p) => this.info(p.paneId),
       'pane.list': (p) => this.paneList(p),
-      'pane.write': (p) => this.paneWrite(p),
-      'pane.resize': (p) => this.paneResize(p),
-      'pane.screen': (p) => this.livePane(p.paneId).screen(),
-      'pane.attach': (p, ctx) => this.paneAttach(p, ctx),
-      'pane.detach': (p, ctx) => this.paneDetach(p, ctx),
-      'pane.subscribe_lines': (p, ctx) => this.subscribeLines(p, ctx),
+      'pane.write': (p) => this.io.write(p),
+      'pane.resize': (p) => this.io.resize(p),
+      'pane.screen': (p) => this.io.livePane(p.paneId).screen(),
+      'pane.attach': (p, ctx) => this.io.attach(p, ctx),
+      'pane.detach': (p, ctx) => this.io.detachPane(p, ctx),
+      'pane.subscribe_lines': (p, ctx) => this.io.subscribeLines(p, ctx),
       'events.subscribe': (p, ctx) => this.subscribeEvents(p, ctx),
       'pane.set_label': (p) => this.lifecycle.setLabel(p),
       'pane.close': async (p) => {
@@ -165,7 +169,7 @@ export class Daemon {
     const live = this.registry.livePanes();
     await Promise.all(live.map((p) => p.close()));
     for (const p of live) {
-      this.releasePane(p.id);
+      this.io.release(p.id);
       p.dispose();
     }
     for (const f of [this.socketPath, this.pidPath]) fs.rmSync(f, { force: true });
@@ -183,7 +187,7 @@ export class Daemon {
 
   private onConnClose(conn: Connection): void {
     this.conns.delete(conn);
-    for (const paneId of [...conn.attachments.keys()]) this.detach(conn, paneId);
+    for (const paneId of [...conn.attachments.keys()]) this.io.detach(conn, paneId);
   }
 
   private async onMessage(conn: Connection, value: unknown): Promise<void> {
@@ -251,13 +255,6 @@ export class Daemon {
     this.registry.restoreStopped(state.panes);
   }
 
-  /** 実行体のある pane。stopped (再起動後の復元分) は PaneExited。 */
-  private livePane(id: string): Pane {
-    const { live } = this.registry.getOrThrow(id);
-    if (!live) throw new RpcFailure(ErrorCode.PaneExited, 'pane is stopped');
-    return live;
-  }
-
   private info(paneId: string): PaneInfo {
     const { workspace, window } = this.layout.windowRef(this.registry.getOrThrow(paneId).record.windowId);
     return this.registry.info(paneId, workspace, window);
@@ -267,95 +264,6 @@ export class Daemon {
     const { state, labels, workspace } = p.filter ?? {};
     const windowIds = workspace === undefined ? undefined : new Set(this.layout.windowIds(workspace));
     return this.registry.filter(state, labels, windowIds).map((e) => this.info(e.record.paneId));
-  }
-
-  private paneWrite(p: ParsedParams<'pane.write'>): unknown {
-    const pane = this.livePane(p.paneId);
-    if (pane.state === 'exited') throw new RpcFailure(ErrorCode.PaneExited, 'pane has exited');
-    const data = p.dataB64 !== undefined ? Buffer.from(p.dataB64, 'base64') : Buffer.from(p.data, 'utf8');
-    // 最後に操作したクライアントのサイズを優先する
-    if (p.clientId && pane.claimSize(p.clientId)) {
-      this.persister.saveSoon();
-      this.events.emit('pane.resized', { cols: pane.cols, rows: pane.rows, clientId: p.clientId }, pane.id);
-    }
-    pane.write(data);
-    this.events.emit('input', { source: p.source ?? 'hub', bytes: data.length }, pane.id); // 内容は記録しない
-    return { ok: true };
-  }
-
-  private paneResize(p: ParsedParams<'pane.resize'>): unknown {
-    const pane = this.livePane(p.paneId);
-    const clientId = p.clientId ?? null;
-    pane.resize(p.cols, p.rows, clientId);
-    this.persister.saveSoon();
-    this.events.emit('pane.resized', { cols: p.cols, rows: p.rows, clientId }, pane.id);
-    return { ok: true };
-  }
-
-  private async paneAttach(p: ParsedParams<'pane.attach'>, ctx: RequestContext): Promise<unknown> {
-    if (p.mode === 'cells') throw new RpcFailure(ErrorCode.Unsupported, 'mode "cells" is not supported');
-    const pane = this.livePane(p.paneId);
-    const replacing = ctx.conn.attachments.get(pane.id)?.clientId === p.clientId;
-    if (replacing) this.replaceAttachment(ctx.conn, pane.id);
-    else this.detach(ctx.conn, pane.id);
-    if (p.cols !== undefined && p.rows !== undefined) {
-      pane.resize(p.cols, p.rows, p.clientId);
-      this.persister.saveSoon();
-      this.events.emit('pane.resized', { cols: p.cols, rows: p.rows, clientId: p.clientId }, pane.id);
-    }
-    // attachPane は最初の await までに購読と clients への登録を同期的に済ませる
-    const attached = attachPane(ctx, pane, p.clientId, p.replay);
-    if (!replacing) this.events.emit('client.attached', { clientId: p.clientId }, pane.id);
-    return attached;
-  }
-
-  /**
-   * 同じ接続・同じ clientId の再 attach 用。出力の購読だけを外し、クライアントとしては残す
-   * (clients・サイズの記録と所有権は保ち、client.detached も出さない)。
-   */
-  private replaceAttachment(conn: Connection, paneId: string): void {
-    conn.attachments.get(paneId)?.off();
-    conn.attachments.delete(paneId);
-  }
-
-  private paneDetach(p: ParsedParams<'pane.detach'>, ctx: RequestContext): unknown {
-    this.detach(ctx.conn, p.paneId);
-    return { ok: true };
-  }
-
-  private detach(conn: Connection, paneId: string): void {
-    const att = conn.attachments.get(paneId);
-    if (!att) return;
-    att.off();
-    conn.attachments.delete(paneId);
-    const pane = this.registry.get(paneId)?.live;
-    // 同じ clientId が別接続にも残っていれば clients から外さない
-    const stillAttached = [...this.conns].some((c) => c !== conn && c.attachments.get(paneId)?.clientId === att.clientId);
-    if (pane && !stillAttached) {
-      pane.clients.delete(att.clientId);
-      const inherited = pane.forgetClient(att.clientId);
-      if (inherited) {
-        this.events.emit('pane.resized', { cols: pane.cols, rows: pane.rows, clientId: inherited }, paneId);
-      }
-    }
-    this.events.emit('client.detached', { clientId: att.clientId }, paneId);
-  }
-
-  private subscribeLines(p: ParsedParams<'pane.subscribe_lines'>, ctx: RequestContext): unknown {
-    const pane = this.livePane(p.paneId);
-    return subscribeStream({
-      ctx,
-      key: linesKey(pane.id),
-      ring: pane.linesRing,
-      on: (cb) => {
-        pane.on('line', cb);
-        return () => pane.off('line', cb);
-      },
-      notify: (seq, text, ts) => ctx.conn.notify('pane.line', seq, ts, { paneId: pane.id, text }),
-      since: p.since,
-      epoch: p.epoch,
-      currentEpoch: this.epoch,
-    });
   }
 
   private subscribeEvents(p: ParsedParams<'events.subscribe'>, ctx: RequestContext): unknown {
@@ -374,15 +282,5 @@ export class Daemon {
       epoch: p.epoch,
       currentEpoch: this.epoch,
     });
-  }
-
-  /** 全接続から、この pane の attachment と行購読を外す (閉じた Pane への参照を残さない)。 */
-  private releasePane(paneId: string): void {
-    const key = linesKey(paneId);
-    for (const conn of this.conns) {
-      this.detach(conn, paneId);
-      conn.subscriptions.get(key)?.();
-      conn.subscriptions.delete(key);
-    }
   }
 }

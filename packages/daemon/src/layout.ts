@@ -4,8 +4,8 @@ import type { WindowDef, WorkspaceDef } from './model.js';
 import { RpcFailure } from './rpc-error.js';
 import { newWindowId } from './ulid.js';
 
-export const DEFAULT_WORKSPACE = 'default';
-export const DEFAULT_WINDOW = 'default';
+const DEFAULT_WORKSPACE = 'default';
+const DEFAULT_WINDOW = 'default';
 
 type WindowRef = PaneInfo['window'];
 
