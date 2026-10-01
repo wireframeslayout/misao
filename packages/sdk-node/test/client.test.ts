@@ -201,19 +201,21 @@ test('the subscribe result is applied before replay that arrives in the same chu
   assert.deepEqual(log, ['gap', 'event:1', 'event:2']);
 });
 
-test('replay in the same chunk as a resubscribe response is not lost', async () => {
+test('a resubscribe response is applied before replay in the same chunk (gap precedes data)', async () => {
   await client.connect();
-  const seen: number[] = [];
-  await client.subscribeEvents((e) => seen.push(e.seq));
+  const log: string[] = [];
+  client.onGap((g) => log.push(`gap:${g.reason}`));
+  await client.subscribeEvents((e) => log.push(`event:${e.seq}`));
   daemon.notify(eventNotification(1));
-  await waitFor(() => seen.length === 1);
+  await waitFor(() => log.length === 1);
+  log.length = 0;
   daemon.handle('events.subscribe', () => ({
-    result: { gap: false, head: 3, epoch: daemon.epoch },
+    result: { gap: true, head: 3, epoch: daemon.epoch },
     trailing: [eventNotification(2), eventNotification(3)],
   }));
   await dropAndWaitReconnect();
-  await waitFor(() => seen.length === 3);
-  assert.deepEqual(seen, [1, 2, 3]);
+  await waitFor(() => log.length === 3);
+  assert.deepEqual(log, ['gap:truncated', 'event:2', 'event:3']);
 });
 
 test('PaneNotFound on resubscribe removes the stream and reports it', async () => {
