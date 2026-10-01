@@ -74,6 +74,14 @@ describe('引数まわり (デーモン不要)', () => {
     assert.equal((JSON.parse(json.err) as { error: { code: string } }).error.code, 'daemon_unreachable');
   });
 
+  test('status / schema は余分な引数を使い方の誤り (2) にする', async () => {
+    for (const argv of [['status', 'extra'], ['schema', 'extra']]) {
+      const r = await misao(undefined, argv);
+      assert.equal(r.code, 2, argv.join(' '));
+      assert.match(r.err, new RegExp(`misao ${argv[0]}`));
+    }
+  });
+
   test('status は停止中を表示して 1 (--json は running:false)', async () => {
     const human = await misao(undefined, ['status']);
     assert.equal(human.code, 1);

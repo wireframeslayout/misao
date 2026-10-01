@@ -41,6 +41,10 @@ export async function runAttachLoop(opts: AttachLoopOptions): Promise<number> {
     if (next.kind === 'list') {
       const choice = await runPicker(io, await client.request('pane.list', {}), { header: next.header, canCreate: !opts.isReadonly });
       if (choice.kind === 'quit') return 0;
+      if (choice.kind === 'signal') {
+        writeLine(io.stderr, '\n[misao] 終了シグナルを受けたため終了しました');
+        return 1;
+      }
       next = { kind: 'attach', pane: choice.kind === 'new' ? await createShellPane(client, io) : choice.pane, isInitial: false };
       continue;
     }

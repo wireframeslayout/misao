@@ -68,3 +68,18 @@ test('入れるペインが無くても n / q は受け付ける', async () => {
   assert.deepEqual(await runPicker(io, [exited], options), { kind: 'quit' });
   assert.match(io.out(), /入れるペインがありません/);
 });
+
+test('入力待ちで SIGTERM / SIGHUP / SIGINT / SIGQUIT を受けたら signal を返し、ハンドラを外す', async () => {
+  for (const signal of ['SIGTERM', 'SIGHUP', 'SIGINT', 'SIGQUIT'] as const) {
+    const io = createTestIo();
+    const chosen = runPicker(io, [idle], options);
+    await new Promise((r) => setTimeout(r, 10));
+    io.emitSignal(signal);
+    assert.deepEqual(await chosen, { kind: 'signal' }, signal);
+    assert.equal(io.stdin.isPaused(), true, `${signal}: 入力の読み取りを止めている`);
+  }
+  const io = createTestIo();
+  io.stdin.write('q\n');
+  assert.deepEqual(await runPicker(io, [idle], options), { kind: 'quit' });
+  assert.doesNotThrow(() => io.emitSignal('SIGTERM'), '終わった後はハンドラが残っていない');
+});
