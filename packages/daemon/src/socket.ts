@@ -16,6 +16,9 @@ export async function ensureSocketDir(socketPath: string): Promise<void> {
   const dir = path.dirname(socketPath);
   await mkdir(dir, { recursive: true, mode: DIR_MODE });
   const stat = await lstat(dir);
+  if (stat.isSymbolicLink()) {
+    throw new Error(`socket directory ${dir} is a symbolic link; use the real path`);
+  }
   if (!stat.isDirectory()) {
     throw new Error(`socket directory ${dir} is not a directory`);
   }
@@ -45,6 +48,9 @@ export async function listenUnixSocket(server: Server, socketPath: string): Prom
         server.off('error', reject);
         resolve();
       });
+    } catch (error) {
+      server.off('error', reject);
+      throw error;
     } finally {
       process.umask(previousUmask);
     }

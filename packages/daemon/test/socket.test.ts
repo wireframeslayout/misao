@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -32,8 +32,11 @@ test('ensureSocketDir: 無ければ 0o700 で作成（親も）', async () => {
 });
 
 test('ensureSocketDir: 既存の 0o700 ディレクトリは通る', async () => {
-  const dir = path.join(root, 'a', 'b');
+  const dir = path.join(root, 'existing');
+  mkdirSync(dir, { recursive: true });
+  chmodSync(dir, 0o700);
   await ensureSocketDir(path.join(dir, 'misao.sock'));
+  assert.equal(modeOf(dir), 0o700);
 });
 
 test('ensureSocketDir: group 書き込み可のディレクトリは拒否し chmod 700 を案内', async () => {
@@ -47,6 +50,14 @@ test('ensureSocketDir: ディレクトリでないパスは拒否', async () => 
   const file = path.join(root, 'file');
   writeFileSync(file, '');
   await assert.rejects(ensureSocketDir(path.join(file, 'misao.sock')));
+});
+
+test('ensureSocketDir: シンボリックリンクは理由付きで拒否', async () => {
+  const real = path.join(root, 'real');
+  mkdirSync(real, { mode: 0o700 });
+  const link = path.join(root, 'link');
+  symlinkSync(real, link);
+  await assert.rejects(ensureSocketDir(path.join(link, 'misao.sock')), /symbolic link/);
 });
 
 test('listenUnixSocket: ソケットは 0o600、umask は復元される', async () => {
@@ -70,4 +81,19 @@ test('listenUnixSocket: listen 失敗でも umask を復元して reject', async
   const server = createServer();
   await assert.rejects(listenUnixSocket(server, path.join(root, 'nonexistent-dir', 'x.sock')));
   assert.equal(process.umask(), 0o022);
+});
+
+test('listenUnixSocket: listen が同期で例外を投げても error リスナーを残さない', async () => {
+  const dir = path.join(root, 'twice');
+  const socketPath = path.join(dir, 'misao.sock');
+  await ensureSocketDir(socketPath);
+  const server = createServer();
+  try {
+    await listenUnixSocket(server, socketPath);
+    const before = server.listenerCount('error');
+    await assert.rejects(listenUnixSocket(server, path.join(dir, 'other.sock')));
+    assert.equal(server.listenerCount('error'), before);
+  } finally {
+    server.close();
+  }
 });
