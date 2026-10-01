@@ -119,6 +119,22 @@ test('connection: onDrain はキューが空になると呼ばれ、解除後と
   assert.equal(p.conn.socket.listenerCount('drain'), 0);
 });
 
+test('connection: onDrain は購読数によらずソケットの drain リスナーを 1 つだけ使い、全員に知らせる', async () => {
+  const p = await pair();
+  p.client.pause();
+  const count = p.conn.socket.getMaxListeners() + 5; // 1 接続で多数のペインを購読する (SDK は接続を共有する)
+  const drained = new Array<number>(count).fill(0);
+  const offs = drained.map((_, i) => p.conn.onDrain(() => drained[i]!++));
+  assert.equal(p.conn.socket.listenerCount('drain'), 1);
+  const payload = 'x'.repeat(256 * 1024);
+  for (let i = 0; i < 8; i++) p.conn.notify('event', i, 'ts', { payload });
+  p.client.resume();
+  await waitUntil(() => drained.every((n) => n > 0));
+  for (const off of offs) off();
+  assert.equal(p.conn.socket.listenerCount('drain'), 0, '全員が解除したらリスナーも外す');
+  await p.close();
+});
+
 test('connection: close で購読が解除される', async () => {
   const p = await pair();
   const calls: string[] = [];

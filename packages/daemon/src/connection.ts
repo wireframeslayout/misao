@@ -21,7 +21,8 @@ export class Connection {
   /** `${stream}:${paneId}` → off。同じキーの再購読は既存を置き換える (二重配信の防止)。 */
   readonly subscriptions = new Map<string, () => void>();
   closed = false;
-  private readonly drainOffs = new Set<() => void>();
+  /** 購読ストリームの drain 待ち。ソケットには emitDrain 1 つだけを登録する (購読数でリスナーを増やさない)。 */
+  private readonly drainListeners = new Set<() => void>();
   private rejecting = false;
 
   constructor(
@@ -44,7 +45,8 @@ export class Connection {
       this.closed = true;
       for (const off of this.subscriptions.values()) off();
       this.subscriptions.clear();
-      for (const off of [...this.drainOffs]) off();
+      this.drainListeners.clear();
+      socket.off('drain', this.emitDrain);
       handlers.onClose(this);
     });
   }
@@ -87,14 +89,17 @@ export class Connection {
 
   /** 送信キューが空になったときに fn を呼ぶ。戻り値で解除する (close でも解除される)。 */
   onDrain(fn: () => void): () => void {
-    this.socket.on('drain', fn);
-    const off = (): void => {
-      this.socket.off('drain', fn);
-      this.drainOffs.delete(off);
+    if (this.drainListeners.size === 0) this.socket.on('drain', this.emitDrain);
+    this.drainListeners.add(fn);
+    return () => {
+      this.drainListeners.delete(fn);
+      if (this.drainListeners.size === 0) this.socket.off('drain', this.emitDrain);
     };
-    this.drainOffs.add(off);
-    return off;
   }
+
+  private readonly emitDrain = (): void => {
+    for (const fn of [...this.drainListeners]) fn();
+  };
 
   notify(method: string, seq: number, ts: string, params: Record<string, unknown>): void {
     this.send({ jsonrpc: '2.0', method, params: { seq, ts, ...params } });
