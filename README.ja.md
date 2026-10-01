@@ -31,6 +31,17 @@ vim・bash で通して確かめる e2e テストです（`packages/e2e`）。`n
 
 systemd のユーザー unit で常駐させる手順は [deploy/README.md](deploy/README.md) を参照してください。
 
+## ドキュメント
+
+| 文書 | 内容 |
+|---|---|
+| [docs/protocol.ja.md](docs/protocol.ja.md) | ソケットプロトコル: メソッド・通知・`seq` / `epoch` / `gap`・エラー |
+| [docs/cli.ja.md](docs/cli.ja.md) | `misao` コマンド: 対象指定・コマンド・attach のキー操作・終了コード |
+| [docs/config.ja.md](docs/config.ja.md) | `misao.json`・ソケットの場所・メモリの目安・サービスとして動かす |
+| [docs/embedding.ja.md](docs/embedding.ja.md) | Node SDK・ラベル規約・シークレット・エージェントプロファイル |
+
+英語版（[docs/protocol.md](docs/protocol.md) など）が正本です。
+
 ## ライセンス
 
 [Apache License 2.0](LICENSE)。コントリビューションには [CLA](CLA.md) への同意が必要です。
