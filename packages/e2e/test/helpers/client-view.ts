@@ -1,6 +1,7 @@
 import xterm from '@xterm/headless';
 import { viewportText } from '@misao/daemon';
 import { MisaoClient } from '@misao/sdk';
+import { waitFor } from './wait.js';
 
 export type Replay = 'raw' | 'snapshot' | 'none';
 
@@ -57,6 +58,29 @@ export class ClientView {
 
   async write(data: string): Promise<void> {
     await this.client.request('pane.write', { paneId: this.paneId, data, source: 'terminal', clientId: this.clientId });
+  }
+
+  /**
+   * この視点の画面が、デーモンの画面 (pane.screen) と一致するまで待つ。
+   * 時間内に一致しなければ、最後の不一致を付けて throw する。pane が静かなときに使う。
+   */
+  async waitForMatch(
+    client: MisaoClient,
+    { maxCols, maxRows, timeoutMs = 15_000 }: { maxCols?: number; maxRows?: number; timeoutMs?: number } = {},
+  ): Promise<ScreenComparison> {
+    let last: ScreenComparison | undefined;
+    await waitFor(
+      async () => {
+        const daemonText = (await client.request('pane.screen', { paneId: this.paneId })).text;
+        last = compareScreens(await this.text(), daemonText, maxCols, maxRows);
+        return last.matchRate === 1;
+      },
+      `client ${this.clientId} to converge with the daemon screen`,
+      { timeoutMs },
+    ).catch((error: unknown) => {
+      throw new Error(`${String(error)}: ${JSON.stringify(last?.mismatches)}`);
+    });
+    return last!;
   }
 
   async detach(): Promise<void> {

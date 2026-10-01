@@ -6,6 +6,8 @@ import { sleep, waitFor } from './wait.js';
 
 const FAKE_AGENT = new URL('../../src/fixtures/fake-agent.ts', import.meta.url).pathname;
 
+export const REPO_ROOT = new URL('../../../..', import.meta.url).pathname;
+
 export const MARKER_RE = /AZITO_DONE_[A-Za-z0-9]+_[A-Za-z0-9]+/g;
 
 /** fake-agent を pane で動かすための cmd。 */
