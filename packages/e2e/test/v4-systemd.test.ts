@@ -18,6 +18,7 @@ const CLI_MAIN = new URL('../../cli/src/main.ts', import.meta.url).pathname;
 const FAKE_HUB = new URL('../src/fixtures/fake-hub.ts', import.meta.url).pathname;
 const ROUNDS = scale(60, 400);
 const DELAY_MS = 300;
+const AGENT_ID = 'V4';
 const RESTART_GRACE_MS = 3000;
 const PLAN = scale<Array<'restart' | 'kill9'>>(['restart', 'kill9'], ['restart', 'restart', 'restart', 'restart', 'restart', 'kill9', 'kill9']);
 
@@ -54,7 +55,10 @@ test('v4: systemd ユーザー unit の hub を restart / kill -9 しても、�
   const stateFile = path.join(dir, 'hub-state.json');
   const logFile = path.join(dir, 'hub-log.ndjson');
   const summaryFile = path.join(dir, 'agent.summary');
-  installUnit(daemonUnit, deployUnitWithExecStart(nodeCmd(CLI_MAIN, 'serve', '--socket', socket, '--data', dir)));
+  // 開発者の ~/.misao/misao.json を読ませないよう、一時ディレクトリの設定を明示する
+  const configPath = path.join(dir, 'misao.json');
+  fs.writeFileSync(configPath, JSON.stringify({ logLevel: 'warn' }));
+  installUnit(daemonUnit, deployUnitWithExecStart(nodeCmd(CLI_MAIN, 'serve', '--config', configPath, '--socket', socket, '--data', dir)));
   installUnit(
     hubUnit,
     `[Unit]\nAfter=${daemonUnit}\n\n[Service]\nExecStart=${nodeCmd(FAKE_HUB, '--socket', socket, '--state', stateFile, '--log', logFile).join(' ')}\nRestart=always\nRestartSec=1\n`,
@@ -70,7 +74,7 @@ test('v4: systemd ユーザー unit の hub を restart / kill -9 しても、�
   await client.connect();
 
   const bash = await openPane(client, ['bash', '--norc']);
-  const agent = await openPane(client, fakeAgentCmd('markers', '--count', String(ROUNDS), '--id', 'V4', '--delay', String(DELAY_MS), '--out', summaryFile));
+  const agent = await openPane(client, fakeAgentCmd('markers', '--count', String(ROUNDS), '--id', AGENT_ID, '--delay', String(DELAY_MS), '--out', summaryFile));
   for (const paneId of [bash, agent]) panePids.push((await paneInfo(client, paneId)).pid!);
   await typeKeys(client, bash, 'echo BASH_ALIVE_V4\r');
   await waitFor(async () => (await screenText(client!, bash)).includes('BASH_ALIVE_V4'), 'bash to echo');
@@ -95,7 +99,7 @@ test('v4: systemd ユーザー unit の hub を restart / kill -9 しても、�
   }
 
   await waitForExit(client, agent, scale(120_000, 6 * 60_000));
-  await assertHubLogComplete(client, { logFile, agentPaneId: agent, summaryFile, killCount: PLAN.filter((how) => how === 'kill9').length });
+  await assertHubLogComplete(client, { logFile, agentPaneId: agent, agentId: AGENT_ID, summaryFile, killCount: PLAN.filter((how) => how === 'kill9').length });
 
   // 正常な stop は失敗ではないので、Restart=on-failure でも再起動されない (RestartSec=1 より長く待つ)
   systemctl('stop', hubUnit);

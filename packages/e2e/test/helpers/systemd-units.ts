@@ -6,9 +6,10 @@ import * as path from 'node:path';
 const UNIT_DIR = path.join(os.homedir(), '.config/systemd/user');
 const DEPLOY_UNIT = new URL('../../../../deploy/misao.service', import.meta.url).pathname;
 
-/** `systemctl --user` を実行して出力 (stdout + stderr) を返す。 */
+/** `systemctl --user` を実行して出力 (stdout + stderr) を返す。終了コードは見ない (is-active などは非 0 が正常)。起動できなければ throw する。 */
 export function systemctl(...args: string[]): string {
   const result = spawnSync('systemctl', ['--user', ...args], { encoding: 'utf8' });
+  if (result.error !== undefined) throw result.error;
   return (result.stdout + result.stderr).trim();
 }
 
