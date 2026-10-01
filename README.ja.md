@@ -19,6 +19,18 @@ TUI、SSH 端末はすべてクライアントです。
 - エージェントの稼働状態（working / blocked / idle / exited）をデーモン内で判定する
 - 制御側のアプリが落ちていても、SSH 端末から `misao ls / attach / new / kill / send` で操作できる
 
+## 開発
+
+Node.js 24 以上が必要です。`npm ci` → `npm run build` → `npm run typecheck` → `npm test` の順に実行します。
+
+`npm run test:e2e` は、一時ディレクトリでデーモン（`misao serve`）を実際に起動し、偽エージェント・偽 hub・
+vim・bash で通して確かめる e2e テストです（`packages/e2e`）。`npm test` には含まれません。外部ツールが要る
+ケースは環境変数で有効にします: `MISAO_E2E_CLAUDE=1`（Claude Code）、`MISAO_E2E_CODEX=1`（Codex）、
+`MISAO_E2E_SYSTEMD=1`（一時的な systemd ユーザー unit を作る）。`MISAO_E2E_FULL=1` で Phase 0 の検証と
+同じ規模に戻します。
+
+systemd のユーザー unit で常駐させる手順は [deploy/README.md](deploy/README.md) を参照してください。
+
 ## ライセンス
 
 [Apache License 2.0](LICENSE)。コントリビューションには [CLA](CLA.md) への同意が必要です。
