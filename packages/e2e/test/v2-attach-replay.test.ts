@@ -47,10 +47,13 @@ describe('v2: 途中参加の画面再構成', () => {
   test('bash の大量出力 (raw リング超過) の後に参加しても画面が一致する', { timeout: 120_000 }, async () => {
     const paneId = await openPane(client, ['bash', '--norc']);
     const monitor = await observe(paneId, 'monitor-a');
-    await typeKeys(client, paneId, BULK_COMMAND);
-    await waitFor(() => monitor.bytes > RAW_RING_BYTES + 256 * 1024, 'bulk output beyond the raw ring', { timeoutMs: 60_000 });
-    await assertJoinsConverge(paneId, 'a');
-    monitor.close();
+    try {
+      await typeKeys(client, paneId, BULK_COMMAND);
+      await waitFor(() => monitor.bytes > RAW_RING_BYTES + 256 * 1024, 'bulk output beyond the raw ring', { timeoutMs: 60_000 });
+      await assertJoinsConverge(paneId, 'a');
+    } finally {
+      monitor.close();
+    }
     await client.request('pane.close', { paneId });
   });
 
@@ -59,25 +62,28 @@ describe('v2: 途中参加の画面再構成', () => {
     fs.writeFileSync(big, Array.from({ length: 5000 }, (_, i) => `line ${i} ` + 'x'.repeat(50)).join('\n') + '\n');
     const paneId = await openPane(client, ['bash', '--norc']);
     const monitor = await observe(paneId, 'monitor-b');
-    await typeKeys(client, paneId, BULK_COMMAND);
-    await waitFor(() => monitor.bytes > RAW_RING_BYTES + 256 * 1024, 'bulk output beyond the raw ring', { timeoutMs: 60_000 });
-    await waitQuiet(client, paneId, { quietMs: 1000 });
-    const beforeVim = monitor.bytes;
-    await typeKeys(client, paneId, `vim -u NONE -N ${big}\r`);
-    await waitFor(async () => (await client.request('pane.screen', { paneId })).altScreen, 'vim to enter the alt screen');
-    await typeKeys(client, paneId, '10Gihello edit\x1b:set number\r5G');
-    await waitFor(async () => (await screenText(client, paneId)).includes('hello edit'), 'the edit to appear');
-    await assertJoinsConverge(paneId, 'b');
+    try {
+      await typeKeys(client, paneId, BULK_COMMAND);
+      await waitFor(() => monitor.bytes > RAW_RING_BYTES + 256 * 1024, 'bulk output beyond the raw ring', { timeoutMs: 60_000 });
+      await waitQuiet(client, paneId, { quietMs: 1000 });
+      const beforeVim = monitor.bytes;
+      await typeKeys(client, paneId, `vim -u NONE -N ${big}\r`);
+      await waitFor(async () => (await client.request('pane.screen', { paneId })).altScreen, 'vim to enter the alt screen');
+      await typeKeys(client, paneId, '10Gihello edit\x1b:set number\r5G');
+      await waitFor(async () => (await screenText(client, paneId)).includes('hello edit'), 'the edit to appear');
+      await assertJoinsConverge(paneId, 'b');
 
-    // vim の再描画だけで raw リングを超過させてから参加する (alt screen 内での切り詰め)
-    for (let i = 0; i < 60 && monitor.bytes - beforeVim < RAW_RING_BYTES + 300_000; i++) {
-      await typeKeys(client, paneId, '\x06'.repeat(30) + '\x02'.repeat(30));
-      await sleep(150);
+      // vim の再描画だけで raw リングを超過させてから参加する (alt screen 内での切り詰め)
+      for (let i = 0; i < 60 && monitor.bytes - beforeVim < RAW_RING_BYTES + 300_000; i++) {
+        await typeKeys(client, paneId, '\x06'.repeat(30) + '\x02'.repeat(30));
+        await sleep(150);
+      }
+      assert.ok(monitor.bytes - beforeVim > RAW_RING_BYTES, 'vim の出力だけで raw リングを超えた');
+      await typeKeys(client, paneId, '20G');
+      await assertJoinsConverge(paneId, 'b2');
+    } finally {
+      monitor.close();
     }
-    assert.ok(monitor.bytes - beforeVim > RAW_RING_BYTES, 'vim の出力だけで raw リングを超えた');
-    await typeKeys(client, paneId, '20G');
-    await assertJoinsConverge(paneId, 'b2');
-    monitor.close();
     await typeKeys(client, paneId, '\x1b:q!\r');
     await client.request('pane.close', { paneId });
   });

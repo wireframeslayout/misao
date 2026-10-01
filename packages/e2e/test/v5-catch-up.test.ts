@@ -37,9 +37,12 @@ test('v5: hub 停止中に CLI の attach で操作しても、再起動した h
 
   // hub を一度走らせて位置を保存させ、止める
   const firstHub = startHubProcess({ socket: daemon.socket, stateFile, logFile: firstLog });
-  await waitForHubSubscribed(firstLog, 1);
-  await waitFor(() => readHubLog(firstLog).some((e) => e.kind === 'line' && e.paneId === paneId), 'the first hub to see a line');
-  await firstHub.stop();
+  try {
+    await waitForHubSubscribed(firstLog, 1);
+    await waitFor(() => readHubLog(firstLog).some((e) => e.kind === 'line' && e.paneId === paneId), 'the first hub to see a line');
+  } finally {
+    await firstHub.stop();
+  }
   const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8')) as { events: { seq: number }; lines: Record<string, { seq: number }> };
 
   // hub 停止中に、疑似端末の CLI で pane へ入って回答し、detach で抜ける
