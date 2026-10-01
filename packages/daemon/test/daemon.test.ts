@@ -791,6 +791,42 @@ test('workspace.close の待機中は配下への window.create / pane.open / re
   });
 });
 
+test('window.close の待機中の workspace.close は、closing window を理由に WorkspaceNotFound で拒否する', async () => {
+  await withRestart(async (_restart, client) => {
+    await client.request('workspace.create', { name: 'proj' });
+    const win = await client.request<{ windowId: string }>('window.create', { workspace: 'proj', name: 'main' });
+    await openStubborn(client, win.windowId);
+    const closing = client.request('window.close', { windowId: win.windowId });
+    await expectRpcMessage(client.request('workspace.close', { name: 'proj' }), 1006, /closing window/);
+    await closing;
+  });
+});
+
+test('所有者の detach で継承したサイズは、shutdown 後の再起動で復元される', async () => {
+  await withTempDir(async (dir) => {
+    const first = await startDaemon(dir);
+    const c1 = await RpcClient.connect(first.socketPath);
+    const c2 = await RpcClient.connect(first.socketPath);
+    const { paneId } = await openPane(c1, ['sh', '-c', 'sleep 30']);
+    await c1.request('pane.attach', { paneId, clientId: 'A', replay: 'none', cols: 100, rows: 30 });
+    await c2.request('pane.attach', { paneId, clientId: 'B', replay: 'none', cols: 60, rows: 20 });
+    await c2.request('pane.detach', { paneId }); // 所有者 B が離脱し、A のサイズ (100x30) を継承する
+    c1.close();
+    c2.close();
+    await first.shutdown();
+
+    const second = await startDaemon(dir);
+    const client = await RpcClient.connect(second.socketPath);
+    try {
+      const info = await client.request<PaneInfo>('pane.info', { paneId });
+      assert.deepEqual([info.cols, info.rows], [100, 30]);
+    } finally {
+      client.close();
+      await second.shutdown();
+    }
+  });
+});
+
 test('window.close の待機中は、その window への pane.open を拒否する', async () => {
   await withRestart(async (restart, client) => {
     await client.request('workspace.create', { name: 'proj' });

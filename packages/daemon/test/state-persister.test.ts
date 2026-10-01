@@ -61,3 +61,13 @@ test('saveNow は遅らせていた保存を取り消す (同じ内容を含む�
   persister.flush();
   assert.equal(saved.length, 1);
 });
+
+test('保存に失敗した saveNow は、遅らせていた保存の予約を残す (flush で保存される)', () => {
+  const { persister, saved, fail } = setup(empty);
+  persister.saveSoon();
+  fail.on = true;
+  assert.throws(() => persister.saveNow(), /disk full/);
+  fail.on = false;
+  persister.flush();
+  assert.equal(saved.length, 1);
+});

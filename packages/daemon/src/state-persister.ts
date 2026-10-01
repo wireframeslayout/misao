@@ -23,11 +23,11 @@ export class StatePersister {
 
   /** 壊れた状態 (存在しない window を指す pane など) は書かずに例外にする。 */
   saveNow(): void {
-    this.cancelPending();
     const state = this.opts.snapshot();
     const issues = checkConsistency(state);
     if (issues.length > 0) throw new Error(`refusing to save inconsistent state: ${issues.join('; ')}`);
     this.opts.save(state);
+    this.cancelPending(); // 保存に成功したときだけ予約を取り消す (失敗時は予約を残して flush で再試行する)
   }
 
   saveSoon(): void {
