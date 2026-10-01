@@ -1,29 +1,34 @@
 import * as z from 'zod';
-import { parseKeySpec } from './keys.js';
+import { parseKeySpec, parsePrefixKeySpec } from './keys.js';
 
 const DEFAULT_SCROLLBACK = 5000;
 const DEFAULT_RAW_RING_BYTES = 1024 * 1024;
 const DEFAULT_LINES_RING_BYTES = 64 * 1024;
 const DEFAULT_EVENT_RING_CAP = 1000;
 
-const KeySpecSchema = z.string().transform((spec, ctx) => {
-  try {
-    return parseKeySpec(spec);
-  } catch (error) {
-    ctx.issues.push({
-      code: 'custom',
-      message: error instanceof Error ? error.message : String(error),
-      input: spec,
-    });
-    return z.NEVER;
-  }
-});
+function keySpecSchema(parse: (spec: string) => number) {
+  return z.string().transform((spec, ctx) => {
+    try {
+      return parse(spec);
+    } catch (error) {
+      ctx.issues.push({
+        code: 'custom',
+        message: error instanceof Error ? error.message : String(error),
+        input: spec,
+      });
+      return z.NEVER;
+    }
+  });
+}
+
+const KeySpecSchema = keySpecSchema(parseKeySpec);
+const PrefixKeySpecSchema = keySpecSchema(parsePrefixKeySpec);
 
 const ACTION_KEYS = ['detach', 'next', 'prev', 'list'] as const;
 
 const KeysSchema = z
   .strictObject({
-    prefix: KeySpecSchema.prefault('C-^'),
+    prefix: PrefixKeySpecSchema.prefault('C-^'),
     detach: KeySpecSchema.prefault('d'),
     next: KeySpecSchema.prefault('n'),
     prev: KeySpecSchema.prefault('p'),

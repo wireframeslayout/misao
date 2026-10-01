@@ -18,6 +18,17 @@ export function parseKeySpec(spec: string): number {
   );
 }
 
+/**
+ * prefix キー用。制御キー（`C-<char>`）のみを許す。
+ * 印字可能文字を prefix にすると、その文字を通常の入力として打てなくなるため拒否する。
+ */
+export function parsePrefixKeySpec(spec: string): number {
+  if (!spec.startsWith('C-')) {
+    throw new Error(`invalid prefix key "${spec}": prefix must be a control key "C-<char>"`);
+  }
+  return parseControlKey(spec);
+}
+
 function parseControlKey(spec: string): number {
   const target = spec.slice(2).toUpperCase();
   if (target === '[') {

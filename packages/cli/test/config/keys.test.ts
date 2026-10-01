@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseKeySpec } from '../../src/config/keys.js';
+import { parseKeySpec, parsePrefixKeySpec } from '../../src/config/keys.js';
 
 test('C-^ は 0x1e', () => {
   assert.equal(parseKeySpec('C-^'), 0x1e);
@@ -30,4 +30,13 @@ test('不正入力は理由付きエラー', () => {
   for (const bad of ['', 'ab', 'C-', 'C-1', 'C-ab', 'あ', '\x7f', '\n', 'c-a']) {
     assert.throws(() => parseKeySpec(bad), /invalid key spec/, JSON.stringify(bad));
   }
+});
+
+test('prefix は制御キーのみ', () => {
+  assert.equal(parsePrefixKeySpec('C-^'), 0x1e);
+  assert.equal(parsePrefixKeySpec('C-a'), 0x01);
+  for (const bad of ['a', ' ', 'd']) {
+    assert.throws(() => parsePrefixKeySpec(bad), /prefix must be a control key/, JSON.stringify(bad));
+  }
+  assert.throws(() => parsePrefixKeySpec('C-['), /ESC/);
 });
