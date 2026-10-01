@@ -21,6 +21,25 @@ test('since: seq > since のみ返す', () => {
   assert.deepEqual(r.since(99), []);
 });
 
+test('entry: 保持範囲の seq は O(1) で引け、範囲外は undefined', () => {
+  const r = new SeqRing<string>(3);
+  assert.equal(r.entry(1), undefined); // 空
+  for (const c of 'abcde') r.push(c, 1, TS); // 保持 seq 3..5
+  assert.equal(r.entry(2), undefined); // 追い出し済み
+  assert.deepEqual(r.entry(3), { seq: 3, ts: TS, size: 1, item: 'c' });
+  assert.equal(r.entry(5)?.item, 'e');
+  assert.equal(r.entry(6), undefined); // head より先
+  assert.equal(r.entry(0), undefined);
+});
+
+test('entry: コンパクション後も seq と一致する', () => {
+  const r = new SeqRing<number>(50);
+  for (let i = 0; i < 10000; i++) r.push(i, 1, TS);
+  assert.equal(r.entry(9950), undefined);
+  assert.equal(r.entry(9951)?.seq, 9951);
+  assert.equal(r.entry(10000)?.item, 9999);
+});
+
 test('容量超過で古いものを捨て、oldest が進む', () => {
   const r = new SeqRing<number>(3);
   for (let i = 0; i < 5; i++) r.push(i, 1, TS);

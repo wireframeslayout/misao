@@ -46,6 +46,12 @@ export class SeqRing<T> {
     return seq;
   }
 
+  /** seq のエントリ。保持範囲外 (追い出し済み・head より先) なら undefined。O(1)。 */
+  entry(seq: number): RingEntry<T> | undefined {
+    if (seq < this.oldest || seq > this.headSeq) return undefined;
+    return this.entries[this.start + (seq - this.oldest)];
+  }
+
   /** seq > since のエントリ。 */
   since(since: number): RingEntry<T>[] {
     // seq は連続なので添字を直接計算できる。
