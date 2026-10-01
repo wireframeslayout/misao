@@ -1042,6 +1042,8 @@ test('fgCommand: 前面プロセスに追従し、Ctrl-C でシェルへ戻る',
     await waitFor(async () => (await fg()) === 'sleep');
     await client.request('pane.write', { paneId, data: '\x03', source: 'terminal' });
     await waitFor(async () => (await fg()) === 'bash');
+    const listed = (await client.request<PaneInfo[]>('pane.list')).find((p) => p.paneId === paneId);
+    assert.equal(listed?.fgCommand, 'bash');
     await client.request('pane.close', { paneId });
   });
 });
@@ -1049,12 +1051,13 @@ test('fgCommand: 前面プロセスに追従し、Ctrl-C でシェルへ戻る',
 test('fgCommand: インタプリタで動くスクリプトはスクリプト名になる', onLinux, async () => {
   await withTempDir(async (dir) => {
     const script = path.join(dir, 'fg-probe.mjs');
-    fs.writeFileSync(script, 'setTimeout(() => {}, 60000);\n');
+    // テストを動かす node の実行ファイル名に依存しないよう、shebang で PATH の node から起動する
+    fs.writeFileSync(script, '#!/usr/bin/env node\nsetTimeout(() => {}, 60000);\n', { mode: 0o755 });
     await withDaemon(async (_daemon, client) => {
       const { paneId } = await openPane(client, ['bash', '--norc', '--noprofile']);
       const fg = async (): Promise<string | undefined> => (await client.request<PaneInfo>('pane.info', { paneId })).fgCommand;
       await waitFor(async () => (await fg()) === 'bash');
-      await client.request('pane.write', { paneId, data: `${process.execPath} ${script}\r`, source: 'terminal' });
+      await client.request('pane.write', { paneId, data: `${script}\r`, source: 'terminal' });
       await waitFor(async () => (await fg()) === 'fg-probe');
       await client.request('pane.close', { paneId });
     });
