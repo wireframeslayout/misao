@@ -155,14 +155,22 @@ describe('実デーモンに対するコマンド', () => {
     const paneId = await openTestPane(daemon.client, ['sh', '-c', 'read a; echo A:$a; read b; echo B:$b; sleep 60'], {
       labels: { name: 'send-keys' },
     });
+    const inputs: Array<{ paneId?: string; source?: unknown }> = [];
+    const sub = await daemon.client.subscribeEvents((ev) => {
+      if (ev.type === 'input') inputs.push({ paneId: ev.paneId, source: ev.data.source });
+    });
     const viaKeys = await misao(daemon, ['send', 'send-keys', 'one', '--keys', 'Enter']);
     assert.equal(viaKeys.code, 0);
+    await waitFor(() => inputs.some((i) => i.paneId === paneId));
+    sub.unsubscribe();
+    assert.deepEqual(inputs.filter((i) => i.paneId === paneId).map((i) => i.source), ['terminal']);
     await waitFor(async () => (await misao(daemon, ['screen', 'send-keys'])).out.includes('A:one'));
     const viaStdin = await misao(daemon, ['send', 'send-keys', '--stdin'], 'two\n');
     assert.equal(viaStdin.code, 0);
     await waitFor(async () => (await misao(daemon, ['screen', 'send-keys'])).out.includes('B:two'));
     assert.equal((await misao(daemon, ['send', 'send-keys', '--keys', 'NoSuchKey'])).code, 2);
     assert.equal((await misao(daemon, ['send', 'send-keys'])).code, 2, '送る内容が無い');
+    assert.equal((await misao(daemon, ['send', 'send-keys', 'x', '--', 'y'])).code, 2, 'text と -- の後ろは同時に指定できない');
     await daemon.client.request('pane.close', { paneId });
   });
 

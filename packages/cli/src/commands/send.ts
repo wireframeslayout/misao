@@ -21,6 +21,9 @@ export const sendCommand: Command = {
   options: { enter: { type: 'boolean' }, keys: { type: 'string' }, stdin: { type: 'boolean' } },
   async run({ args, io, isJson, config }) {
     const [target, positionalText] = expectPositionals(args, 1, 2, USAGE);
+    if (positionalText !== undefined && args.rest.length > 0) {
+      throw new CliError('usage', `text と -- の後ろの text は同時に指定できません。使い方: ${USAGE}`);
+    }
     const text = positionalText ?? (args.rest.length > 0 ? args.rest.join(' ') : undefined);
     const keys = args.string('keys');
     const isEnter = args.flag('enter');
@@ -36,7 +39,7 @@ export const sendCommand: Command = {
     ]);
     const paneId = await withDaemon(config.socket, async (client) => {
       const pane = await resolvePane(client, target!, io.homeDir);
-      await client.request('pane.write', { paneId: pane.paneId, dataB64: data.toString('base64') });
+      await client.request('pane.write', { paneId: pane.paneId, dataB64: data.toString('base64'), source: 'terminal' });
       return pane.paneId;
     });
     if (isJson) writeJson(io, { ok: true, paneId, bytes: data.length });
