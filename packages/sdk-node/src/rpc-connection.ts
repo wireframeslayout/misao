@@ -37,19 +37,25 @@ function isNotificationName(name: string): name is NotificationName {
 export class RpcConnection {
   private readonly splitter = new LineSplitter();
   private readonly pending = new Map<number, (outcome: Settled<unknown>) => void>();
-  private readonly closeListeners = new Listeners<MisaoConnectionError>();
-  private readonly notificationListeners = new Listeners<Notification>();
+  private readonly closeListeners: Listeners<MisaoConnectionError>;
+  private readonly notificationListeners: Listeners<Notification>;
   private nextId = 1;
   private closed = false;
   private failure: MisaoConnectionError | undefined;
 
-  private constructor(private readonly socket: net.Socket) {
+  private constructor(
+    private readonly socket: net.Socket,
+    report: (error: unknown) => void,
+  ) {
+    this.closeListeners = new Listeners(report);
+    this.notificationListeners = new Listeners(report);
     socket.on('data', (chunk: Buffer) => this.onData(chunk));
     socket.on('error', (cause) => this.fail(new MisaoConnectionError(cause.message, { cause })));
     socket.on('close', () => this.onSocketClose());
   }
 
-  static connect(socketPath: string): Promise<RpcConnection> {
+  /** report: リスナーが投げた例外の報告先。 */
+  static connect(socketPath: string, report: (error: unknown) => void): Promise<RpcConnection> {
     return new Promise((resolve, reject) => {
       const socket = net.connect(socketPath);
       const onError = (cause: Error): void =>
@@ -57,7 +63,7 @@ export class RpcConnection {
       socket.once('error', onError);
       socket.once('connect', () => {
         socket.off('error', onError);
-        resolve(new RpcConnection(socket));
+        resolve(new RpcConnection(socket, report));
       });
     });
   }

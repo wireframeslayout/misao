@@ -12,7 +12,7 @@ let conn: RpcConnection;
 beforeEach(async () => {
   daemon = new FakeDaemon();
   await daemon.start();
-  conn = await RpcConnection.connect(daemon.socketPath);
+  conn = await RpcConnection.connect(daemon.socketPath, () => undefined);
 });
 
 afterEach(async () => {
@@ -32,7 +32,7 @@ test('request returns the validated result', async () => {
 });
 
 test('connect rejects with MisaoConnectionError when nobody listens', async () => {
-  await assert.rejects(RpcConnection.connect(`${daemon.dir}/missing.sock`), MisaoConnectionError);
+  await assert.rejects(RpcConnection.connect(`${daemon.dir}/missing.sock`, () => undefined), MisaoConnectionError);
 });
 
 test('invalid params are rejected before anything is sent', async () => {

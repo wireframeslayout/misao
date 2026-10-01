@@ -53,8 +53,14 @@ function sendSubscribe(
 export class StreamSubscriber {
   private readonly cursor = new StreamCursor();
   private readonly pendingKeys = new Set<string>();
-  private readonly gapListeners = new Listeners<GapInfo>();
-  private readonly errorListeners = new Listeners<SubscriptionErrorInfo>();
+  private readonly gapListeners: Listeners<GapInfo>;
+  private readonly errorListeners: Listeners<SubscriptionErrorInfo>;
+
+  /** report: リスナーと購読ハンドラが投げた例外の報告先。配信は例外で止まらない。 */
+  constructor(private readonly report: (error: unknown) => void) {
+    this.gapListeners = new Listeners(report);
+    this.errorListeners = new Listeners(report);
+  }
 
   onGap(callback: (gap: GapInfo) => void): () => void {
     return this.gapListeners.add(callback);
@@ -79,6 +85,7 @@ export class StreamSubscriber {
 
   /** 接続ごとに呼ぶ。epoch が変わっていれば全ストリームを巻き戻して gap を通知し、全ストリームを再購読する。 */
   async restore(conn: RpcConnection, epoch: string): Promise<void> {
+    // epoch の状態は先に確定するが、emit はリスナーの例外を外に出さないので全ストリームへの通知は漏れない。
     const reset = this.cursor.resetForEpoch(epoch);
     for (const entry of reset) this.gapListeners.emit({ stream: toStreamId(entry), reason: 'epoch' });
     await Promise.all(this.cursor.list().map((entry) => this.resubscribe(conn, entry, reset.includes(entry))));
@@ -89,7 +96,7 @@ export class StreamSubscriber {
     if (notification.method === 'event') {
       const entry = this.cursor.get(EVENTS_KEY);
       if (entry?.kind === 'events' && this.cursor.accept(EVENTS_KEY, notification.params.seq)) {
-        entry.handler(notification.params);
+        this.deliver(() => entry.handler(notification.params));
       }
       return true;
     }
@@ -97,11 +104,20 @@ export class StreamSubscriber {
       const key = linesKey(notification.params.paneId);
       const entry = this.cursor.get(key);
       if (entry?.kind === 'lines' && this.cursor.accept(key, notification.params.seq)) {
-        entry.handler(notification.params);
+        this.deliver(() => entry.handler(notification.params));
       }
       return true;
     }
     return false;
+  }
+
+  /** ハンドラの例外は報告して続ける。同じチャンクの後続行の配信と lastSeq の進行を止めない。 */
+  private deliver(call: () => void): void {
+    try {
+      call();
+    } catch (error) {
+      this.report(error);
+    }
   }
 
   private async subscribe(conn: RpcConnection, entry: StreamEntry, options: SubscribeOptions): Promise<Subscription> {

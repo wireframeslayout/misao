@@ -2,6 +2,7 @@ import { PROTOCOL_VERSION, isCompatibleProtocolVersion } from '@misao/protocol';
 import type { MethodName, MethodParams, MethodResult } from '@misao/protocol';
 import { DEFAULT_BACKOFF, computeBackoffDelay } from './backoff.js';
 import type { BackoffOptions } from './backoff.js';
+import { ErrorChannel } from './error-channel.js';
 import { MisaoConnectionError, MisaoProtocolVersionError } from './errors.js';
 import { Listeners } from './listeners.js';
 import { RpcConnection } from './rpc-connection.js';
@@ -32,9 +33,10 @@ type Phase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
 export class MisaoClient {
   private readonly socketPath: string;
   private readonly backoff: BackoffOptions;
-  private readonly subscriber = new StreamSubscriber();
-  private readonly stateListeners = new Listeners<ConnectionState>();
-  private readonly notificationListeners = new Listeners<Notification>();
+  private readonly errors = new ErrorChannel();
+  private readonly subscriber = new StreamSubscriber(this.errors.report);
+  private readonly stateListeners = new Listeners<ConnectionState>(this.errors.report);
+  private readonly notificationListeners = new Listeners<Notification>(this.errors.report);
   private phase: Phase = 'idle';
   /** 要求・購読に使う接続。server.info の互換確認が済んだ時点で入る (ストリーム復元中も使える)。 */
   private conn: RpcConnection | undefined;
@@ -96,6 +98,16 @@ export class MisaoClient {
     return this.notificationListeners.add(callback);
   }
 
+  /**
+   * 利用側のコールバック (onStateChange / onGap / onNotification / 購読ハンドラなど) が投げた例外の報告先。
+   * コールバックの例外では再接続・配信・gap 通知を止めず、ここへ渡す。リスナーが 1 つも無いときは
+   * console.error に出す (握りつぶさず、再 throw もしない)。onError リスナーが throw した場合も
+   * console.error に落とす。
+   */
+  onError(callback: (error: unknown) => void): () => void {
+    return this.errors.add(callback);
+  }
+
   close(): void {
     this.shutdown({ status: 'closed' });
   }
@@ -125,7 +137,7 @@ export class MisaoClient {
    * 復元中に出る gap の通知から request() で再取得できる。失敗したら接続を閉じて throw する。
    */
   private async establish(): Promise<void> {
-    const conn = await RpcConnection.connect(this.socketPath);
+    const conn = await RpcConnection.connect(this.socketPath, this.errors.report);
     if (this.isClosed()) {
       conn.close();
       throw new MisaoConnectionError('client closed during connect');
@@ -158,7 +170,11 @@ export class MisaoClient {
     this.conn = undefined;
     if (this.phase !== 'connected') return;
     this.phase = 'reconnecting';
-    void this.reconnect(reason);
+    // reconnect は想定外の例外でも止まったまま残さない: 報告して closed にする (phase が reconnecting のまま固まらない)。
+    this.reconnect(reason).catch((error: unknown) => {
+      this.errors.report(error);
+      this.shutdown({ status: 'closed' });
+    });
   }
 
   private async reconnect(initialCause: Error): Promise<void> {
