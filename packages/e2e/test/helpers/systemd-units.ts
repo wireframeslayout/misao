@@ -17,11 +17,16 @@ export function mainPid(unit: string): number {
   return Number(systemctl('show', '-p', 'MainPID', '--value', unit));
 }
 
+/** ExecStart= の値。各引数を引用符で囲み、systemd が解釈する `%` / `\` / `"` をエスケープする (空白や % を含むパスでも分割・展開されない)。 */
+export function formatExecStart(argv: string[]): string {
+  return argv.map((arg) => `"${arg.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('%', '%%')}"`).join(' ');
+}
+
 /** deploy/misao.service の ExecStart だけを差し替えた unit 本文。ほかの設定 (KillMode / Restart) はそのまま使う。 */
 export function deployUnitWithExecStart(execStart: string[]): string {
   const template = fs.readFileSync(DEPLOY_UNIT, 'utf8');
   if (!/^ExecStart=.*$/m.test(template)) throw new Error('deploy/misao.service has no ExecStart');
-  return template.replace(/^ExecStart=.*$/m, () => `ExecStart=${execStart.join(' ')}`);
+  return template.replace(/^ExecStart=.*$/m, () => `ExecStart=${formatExecStart(execStart)}`);
 }
 
 /** 一意な unit 名 (他の unit・並行実行と衝突しない)。 */
@@ -41,4 +46,21 @@ export function removeUnit(name: string): void {
   fs.rmSync(path.join(UNIT_DIR, name), { force: true });
   systemctl('daemon-reload');
   systemctl('reset-failed', name);
+}
+
+/**
+ * 記録した PID に SIGKILL を送る。ただし /proc/<pid>/cgroup に unit 名があるときだけ (PID が再利用されて
+ * 別のプロセスになっていても落とさない)。終了済み (ENOENT) なら何もしない。送ったら true。
+ */
+export function killIfInUnit(pid: number, unit: string): boolean {
+  let cgroup: string;
+  try {
+    cgroup = fs.readFileSync(`/proc/${pid}/cgroup`, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  if (!cgroup.includes(unit)) return false;
+  process.kill(pid, 'SIGKILL');
+  return true;
 }

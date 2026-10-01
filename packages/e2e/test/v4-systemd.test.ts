@@ -10,7 +10,7 @@ import { waitForHubSubscribed } from './helpers/hub-process.js';
 import { nodeCmd } from './helpers/node-cmd.js';
 import { skipUnless } from './helpers/optin.js';
 import { scale } from './helpers/scale.js';
-import { deployUnitWithExecStart, installUnit, mainPid, removeUnit, systemctl, uniqueUnitName } from './helpers/systemd-units.js';
+import { deployUnitWithExecStart, formatExecStart, installUnit, killIfInUnit, mainPid, removeUnit, systemctl, uniqueUnitName } from './helpers/systemd-units.js';
 import { sleep, waitFor } from './helpers/wait.js';
 
 const OPTIONS = skipUnless('MISAO_E2E_SYSTEMD', 'systemd のユーザー unit を作る');
@@ -40,14 +40,9 @@ after(() => {
   client?.close();
   removeUnit(hubUnit);
   removeUnit(daemonUnit);
-  // KillMode=process なので、取り残された pane があれば記録した PID だけを止める
-  for (const pid of panePids) {
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {
-      // すでに終了している
-    }
-  }
+  // デーモンが SIGKILL で落ちるなどして pane が残った場合だけ、記録した PID を止める。
+  // 正常時はデーモンが停止時に pane を閉じるので、終了済みの PID (再利用されうる) には送らない。
+  for (const pid of panePids) killIfInUnit(pid, daemonUnit);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -61,7 +56,7 @@ test('v4: systemd ユーザー unit の hub を restart / kill -9 しても、�
   installUnit(daemonUnit, deployUnitWithExecStart(nodeCmd(CLI_MAIN, 'serve', '--config', configPath, '--socket', socket, '--data', dir)));
   installUnit(
     hubUnit,
-    `[Unit]\nAfter=${daemonUnit}\n\n[Service]\nExecStart=${nodeCmd(FAKE_HUB, '--socket', socket, '--state', stateFile, '--log', logFile).join(' ')}\nRestart=always\nRestartSec=1\n`,
+    `[Unit]\nAfter=${daemonUnit}\n\n[Service]\nExecStart=${formatExecStart(nodeCmd(FAKE_HUB, '--socket', socket, '--state', stateFile, '--log', logFile))}\nRestart=always\nRestartSec=1\n`,
   );
 
   systemctl('start', daemonUnit);
@@ -85,7 +80,7 @@ test('v4: systemd ユーザー unit の hub を restart / kill -9 しても、�
     const before = { bash: await snapshotPane(client, bash), agent: await snapshotPane(client, agent) };
     const hubBefore = mainPid(hubUnit);
     if (how === 'restart') systemctl('restart', hubUnit);
-    else process.kill(hubBefore, 'SIGKILL'); // 記録した hub の PID だけ
+    else killIfInUnit(hubBefore, hubUnit); // 記録した hub の PID で、その unit のプロセスのときだけ
     await waitFor(() => {
       const pid = mainPid(hubUnit);
       return pid > 0 && pid !== hubBefore;
