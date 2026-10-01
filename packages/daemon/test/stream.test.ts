@@ -249,3 +249,38 @@ test('stream: 応答より先に通知しない / 応答前に置き換えられ
   assert.deepEqual([replaced.seqs, current.seqs], [[], [1, 2, 3]]);
   await h.close();
 });
+
+test('stream: 同じ接続の先頭の購読に大量の溜まりがあっても、後ろの購読の要素が数回の drain のうちに届く', async () => {
+  const h = await harness();
+  const payload = 'x'.repeat(1024 * 1024);
+  const backlog = source<string>(64 * 1024 * 1024);
+  for (let i = 0; i < 24; i++) backlog.push(payload, payload.length);
+  const tail = source<string>(100);
+  tail.push('marker');
+  const common = { ctx: h.ctx, epoch: undefined, currentEpoch: EPOCH, since: 0 };
+  subscribeStream({ ...common, key: 'a', ring: backlog.ring, on: backlog.on, notify: (seq, item, ts) => h.conn.notify('a', seq, ts, { item }) });
+  subscribeStream({ ...common, key: 'b', ring: tail.ring, on: tail.on, notify: (seq, item, ts) => h.conn.notify('b', seq, ts, { item }) });
+  h.client.pause();
+  h.reply();
+  try {
+    let before = 0;
+    let buf = '';
+    await new Promise<void>((resolve, reject) => {
+      h.client.on('data', (chunk: Buffer) => {
+        buf += chunk.toString();
+        const lines = buf.split('\n');
+        buf = lines.pop()!;
+        for (const line of lines) {
+          if ((JSON.parse(line) as { method: string }).method === 'b') return resolve();
+          before++;
+        }
+      });
+      h.client.once('close', () => reject(new Error('closed before the tail subscription was served')));
+      setTimeout(() => reject(new Error(`後ろの購読に 3 秒届かない (先に ${before} 件)`)), 3000).unref();
+      h.client.resume();
+    });
+    assert.ok(before < 8, `後ろの購読が先頭の溜まり (24 件) に飢えている: 先に ${before} 件届いた`);
+  } finally {
+    await h.close();
+  }
+});

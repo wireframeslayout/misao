@@ -23,6 +23,7 @@ export class Connection {
   closed = false;
   /** 購読ストリームの drain 待ち。ソケットには emitDrain 1 つだけを登録する (購読数でリスナーを増やさない)。 */
   private readonly drainListeners = new Set<() => void>();
+  private drainRound = 0;
   private rejecting = false;
 
   constructor(
@@ -97,8 +98,11 @@ export class Connection {
     };
   }
 
+  /** drain のたびに先頭をずらし (ラウンドロビン)、先頭の購読が送信キューを埋めても後ろの購読が飢えないようにする。 */
   private readonly emitDrain = (): void => {
-    for (const fn of [...this.drainListeners]) fn();
+    const listeners = [...this.drainListeners];
+    const first = this.drainRound++ % listeners.length;
+    for (let i = 0; i < listeners.length; i++) listeners[(first + i) % listeners.length]!();
   };
 
   notify(method: string, seq: number, ts: string, params: Record<string, unknown>): void {
