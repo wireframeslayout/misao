@@ -12,12 +12,22 @@ interface Result {
   err: string;
 }
 
-async function misao(daemon: TestDaemon | undefined, argv: string[], stdin?: string): Promise<Result> {
+interface MisaoOptions {
+  stdin?: string;
+  isTTY?: boolean;
+  shell?: string | null;
+}
+
+async function misao(daemon: TestDaemon | undefined, argv: string[], stdinOrOptions?: string | MisaoOptions): Promise<Result> {
+  const options: MisaoOptions = typeof stdinOrOptions === 'string' ? { stdin: stdinOrOptions } : (stdinOrOptions ?? {});
   const io = createTestIo({
     env: daemon?.env ?? { MISAO_SOCKET: '/tmp/misao-test-no-such-daemon/misao.sock' },
     homeDir: daemon?.dir ?? '/tmp/misao-test-no-home',
+    cwd: daemon?.dir ?? '/tmp',
+    ...(options.isTTY === undefined ? {} : { isTTY: options.isTTY }),
+    ...(options.shell === undefined ? {} : { shell: options.shell }),
   });
-  if (stdin !== undefined) io.stdin.end(stdin);
+  if (options.stdin !== undefined) io.stdin.end(options.stdin);
   const code = await run(argv, io);
   return { code, out: io.out(), err: io.err() };
 }
@@ -36,7 +46,7 @@ describe('引数まわり (デーモン不要)', () => {
     assert.match(none.err, /コマンドを指定してください/);
     const help = await misao(undefined, ['--help']);
     assert.equal(help.code, 0);
-    for (const name of ['ls', 'send', 'screen', 'label', 'status', 'schema']) {
+    for (const name of ['ls', 'new', 'kill', 'send', 'screen', 'label', 'status', 'schema']) {
       assert.match(help.out, new RegExp(`^  ${name} `, 'm'), name);
     }
   });
@@ -170,5 +180,99 @@ describe('実デーモンに対するコマンド', () => {
     assert.match(missing.err, /当てはまるペインがありません/);
     await daemon.client.request('pane.close', { paneId: a });
     await daemon.client.request('pane.close', { paneId: b });
+  });
+
+  test('new: origin=terminal を必ず付け、案内を 3 行出し、案内の短縮 ID で入れる', async () => {
+    const r = await misao(daemon, ['new', '--label', 'origin=hub', '--label', 'owner=me', '--cwd', daemon.dir, '--', 'sh', '-c', 'echo $MISAO_T; sleep 60']);
+    assert.equal(r.code, 0);
+    const lines = r.out.trimEnd().split('\n');
+    assert.equal(lines.length, 3, r.out);
+    assert.match(lines[0]!, /^\[misao\] ペイン p_[0-9A-Z]{4}…[0-9A-Z]{2,} を作成しました（sh · /);
+    assert.match(lines[1]!, /AZITO の Objects に「未登録」として表示されます/);
+    const suffix = /入る: misao attach (\S+)$/.exec(lines[2]!)?.[1];
+    assert.ok(suffix, lines[2]);
+    const info = JSON.parse((await misao(daemon, ['label', suffix, 'x=1', '--json'])).out) as { labels: Record<string, string> };
+    assert.deepEqual(info.labels, { origin: 'terminal', owner: 'me', x: '1' });
+    await misao(daemon, ['kill', suffix, '--force']);
+  });
+
+  test('new --json: PaneInfo を返す。--env と --cwd が子に届く', async () => {
+    const r = await misao(daemon, ['new', '--json', '--env', 'MISAO_T=from-env', '--cwd', daemon.dir, '--', 'sh', '-c', 'echo env:$MISAO_T; pwd; sleep 60']);
+    assert.equal(r.code, 0);
+    const pane = JSON.parse(r.out) as PaneInfo;
+    assert.equal(pane.cwd, daemon.dir);
+    assert.equal(pane.labels.origin, 'terminal');
+    await waitFor(async () => {
+      const screen = (await misao(daemon, ['screen', pane.paneId])).out;
+      return screen.includes('env:from-env') && screen.includes(daemon.dir);
+    });
+    await misao(daemon, ['kill', pane.paneId, '--force']);
+  });
+
+  test('new: cmd 省略はログインシェル (-l)、シェルが取れなければ使い方の誤り', async () => {
+    const r = await misao(daemon, ['new', '--json'], { shell: '/bin/sh' });
+    const pane = JSON.parse(r.out) as PaneInfo;
+    assert.deepEqual(pane.cmd, ['/bin/sh', '-l']);
+    await misao(daemon, ['kill', pane.paneId, '--force']);
+    const none = await misao(daemon, ['new'], { shell: null });
+    assert.equal(none.code, 2);
+  });
+
+  test('new --workspace / --window: 無ければ作り、同じ指定なら同じ窓に置く', async () => {
+    const make = async (): Promise<PaneInfo> =>
+      JSON.parse((await misao(daemon, ['new', '--json', '--workspace', 'ws-a', '--window', 'win-a', '--', ...SLEEP])).out) as PaneInfo;
+    const first = await make();
+    const second = await make();
+    assert.equal(first.workspace, 'ws-a');
+    assert.equal(first.window.name, 'win-a');
+    assert.equal(second.window.id, first.window.id);
+    const onlyWindow = JSON.parse((await misao(daemon, ['new', '--json', '--window', 'solo', '--', ...SLEEP])).out) as PaneInfo;
+    assert.equal(onlyWindow.workspace, 'default');
+    const ls = JSON.parse((await misao(daemon, ['ls', '--json', '--workspace', 'ws-a'])).out) as PaneInfo[];
+    assert.equal(ls.length, 2);
+    await misao(daemon, ['kill', onlyWindow.paneId, '--force']);
+    await misao(daemon, ['kill', first.paneId, '--workspace', '--force']);
+    const left = JSON.parse((await misao(daemon, ['ls', '--json', '--workspace', 'ws-a'])).out) as PaneInfo[];
+    assert.deepEqual(left, []);
+  });
+
+  test('kill: 確認なしで非 TTY は 2、n は中止 (1)、y と --force は閉じる', async () => {
+    const paneId = await openTestPane(daemon.client, SLEEP, { labels: { name: 'kill-me' } });
+    const exists = async (): Promise<boolean> =>
+      ((await daemon.client.request('pane.list', {})).some((p) => p.paneId === paneId));
+
+    assert.equal((await misao(daemon, ['kill', 'kill-me'])).code, 2);
+    assert.equal(await exists(), true);
+
+    const no = await misao(daemon, ['kill', 'kill-me'], { isTTY: true, stdin: 'n\n' });
+    assert.equal(no.code, 1);
+    assert.match(no.err, /\[y\/N\]/);
+    assert.match(no.err, /中止しました/);
+    assert.equal(await exists(), true);
+    const eof = await misao(daemon, ['kill', 'kill-me'], { isTTY: true, stdin: '' });
+    assert.equal(eof.code, 1, '入力が閉じたら中止');
+
+    const yes = await misao(daemon, ['kill', 'kill-me'], { isTTY: true, stdin: 'y\n' });
+    assert.equal(yes.code, 0, yes.err);
+    assert.match(yes.err, /\(未登録\) kill-me/);
+    assert.equal(await exists(), false);
+
+    const forced = await openTestPane(daemon.client, SLEEP, { labels: { name: 'force-me' } });
+    const f = await misao(daemon, ['kill', 'force-me', '--force', '--json']);
+    assert.equal(f.code, 0);
+    assert.deepEqual(JSON.parse(f.out), { closed: 'pane', paneIds: [forced] });
+    assert.equal((await misao(daemon, ['kill', 'x', '--window', '--workspace', '--force'])).code, 2);
+  });
+
+  test('kill --window: 同じ窓のペインをまとめて閉じる', async () => {
+    const mk = async (): Promise<PaneInfo> =>
+      JSON.parse((await misao(daemon, ['new', '--json', '--window', 'doomed', '--workspace', 'ws-k', '--', ...SLEEP])).out) as PaneInfo;
+    const a = await mk();
+    const b = await mk();
+    const r = await misao(daemon, ['kill', a.paneId, '--window', '--force', '--json']);
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual((JSON.parse(r.out) as { paneIds: string[] }).paneIds.sort(), [a.paneId, b.paneId].sort());
+    const left = JSON.parse((await misao(daemon, ['ls', '--json', '--workspace', 'ws-k'])).out) as PaneInfo[];
+    assert.deepEqual(left, []);
   });
 });
