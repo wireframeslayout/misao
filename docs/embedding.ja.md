@@ -8,7 +8,7 @@ SDK（`@misao/sdk`）を使って自分の Node.js プログラムから misao �
 
 関連文書: [プロトコル](protocol.ja.md)、[設定](config.ja.md)、[CLI](cli.ja.md)。
 
-パッケージ（`@misao/sdk`、`@misao/protocol`、`@misao/daemon`）は現時点ではこのリポジトリのワークスペースパッケージであり、npm には公開していません。ESM で、Node.js 24 以降が必要です。
+パッケージ（`@misao/sdk`、`@misao/protocol`、`@misao/daemon`）は現時点ではこのリポジトリのワークスペースパッケージであり、npm には公開していません。ESM で、Node.js 24 以降が必要です（リポジトリのルートの `package.json` の `engines` で宣言しています）。
 
 ## 接続
 
@@ -76,7 +76,7 @@ lines.unsubscribe();
 - 接続中、SDK は各ストリームの最後の `seq` を保持して重複を捨て、再接続後は、その `since` と見ていた `epoch` ですべてのストリームを再購読します。手動で再購読する必要はありません。
 - デーモンの `epoch` が変わっていた場合（デーモンが再起動した場合）、SDK は位置を `0` にリセットします。デーモンは保持している最も古い項目から再送し、`onGap` が理由 `epoch` で発火します。
 - 位置がリングから外れた場合（またはリングに追い越されたために SDK が切断された場合。[pull 型](protocol.ja.md#購読-pull-型とバックプレッシャー) を参照）、デーモンは `gap: true` を返し、`onGap` が理由 `truncated` で発火します。
-- 購読は 1 ストリーム（events、または 1 つのペインの lines）につき 1 つしか作れません。2 つ目は例外を投げます。
+- 購読は 1 ストリーム（events、または 1 つのペインの lines）につき 1 つしか作れません。2 つ目は素の `Error`（`stream already registered: <key>`）で reject されます。
 - ハンドラーの例外は配信を止めません。`onError` に報告されます。
 
 ## コールバック

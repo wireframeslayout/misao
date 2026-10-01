@@ -86,7 +86,8 @@ or the attachment does not exist.
 | `pane.resize` | Resize the PTY | `paneId`, `cols`, `rows`, `clientId` | `ok` |
 | `pane.screen` | Current screen text | `paneId` | `text`, `cursor`, `altScreen`, `title`, `activity` |
 | `pane.set_label` | Set / unset labels | `paneId`, `set`, `unset` (at least one) | `{ labels }` after the change |
-| `pane.attach` / `pane.detach` | Stream raw output to this connection | `paneId`, `clientId`, `mode` (default `raw`), `replay` (`raw` / `snapshot` / `none`, default `none`), `cols`, `rows` | attach: `head`, `oldest`, `truncated` |
+| `pane.attach` | Stream raw output to this connection | `paneId`, `clientId`, `mode` (default `raw`), `replay` (`raw` / `snapshot` / `none`, default `none`), `cols`, `rows` | `head`, `oldest`, `truncated` |
+| `pane.detach` | Stop streaming raw output to this connection | `paneId` | `ok` |
 | `pane.subscribe_lines` | Subscribe to the line stream | `paneId`, `since`, `epoch` | `gap`, `head`, `epoch` |
 | `events.subscribe` | Subscribe to daemon-wide events | `since`, `epoch` | `gap`, `head`, `epoch` |
 | `pane.close` | Close a pane (SIGHUP, wait for exit) | `paneId` | `ok` |
@@ -230,7 +231,7 @@ the first rule that has an opinion decides:
 | 1 | exit (`exit`) | `exited` when the process ended. Terminal; nothing is evaluated afterwards. |
 | 2 | profile (the profile's `name`) | Agent-specific screen rules. The only rule that can say `blocked`. |
 | 3 | title (`title`) | OSC window title: a spinner title (braille, `◐◑◒◓`, `✻✶✽✢∗` followed by a space) is `working` while it keeps updating (stale after 3 s, then no opinion); once a spinner has been seen, a non-empty non-spinner title is `idle`. |
-| 4 | bytes (`bytes`) | Output volume: `working` after two consecutive 1-second ticks with at least 200 bytes in the last 3 s; `idle` after 5 s without activity. Output right after input (500 ms) or resize (800 ms) is not counted. |
+| 4 | bytes (`bytes`) | Output volume, checked on a 1-second tick. A tick is active when new output arrived since the previous tick and the last 3 s hold at least 200 bytes. Two active ticks in a row give `working`; 5 s after the last active tick gives `idle`. Output right after input (500 ms) or resize (800 ms) is not counted. |
 
 - The core produces only `working`, `idle`, and `exited`. `blocked` comes only from a profile.
 - The initial state is `agentState: "unknown"`, `decidedBy: "none"`. It stays until a rule has an opinion

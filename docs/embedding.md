@@ -10,7 +10,8 @@ defined once in [Protocol](protocol.md) and only linked from here.
 Related documents: [Protocol](protocol.md), [Configuration](config.md), [CLI](cli.md).
 
 The packages (`@misao/sdk`, `@misao/protocol`, `@misao/daemon`) are workspace packages of this
-repository for now and are not published to npm. They are ESM and need Node.js 24 or later.
+repository for now and are not published to npm. They are ESM and need Node.js 24 or later (declared in `engines` of the repository root
+`package.json`).
 
 ## Connecting
 
@@ -106,7 +107,7 @@ lines.unsubscribe();
   — see the [pull model](protocol.md#subscriptions-pull-model-and-back-pressure)), the daemon
   returns `gap: true` and `onGap` fires with reason `truncated`.
 - Only one subscription per stream (events, or lines of one pane) can exist; a second one
-  throws.
+  rejects with a plain `Error` (`stream already registered: <key>`).
 - Handler exceptions do not stop delivery; they are reported to `onError`.
 
 ## Callbacks

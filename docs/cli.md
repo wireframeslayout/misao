@@ -104,8 +104,8 @@ misao new [--cwd DIR] [--label k=v ...] [--env K=V ...] [--workspace W] [--windo
 ```
 
 Creates a pane. Without `cmd` it runs your login shell with `-l`. The shell comes from the OS
-user database, not from `$SHELL`; if it cannot be determined, the command fails with a usage
-error (exit `2`). `--label` and `--env` can be
+user database, not from `$SHELL`; if it cannot be determined (no shell entry, or the user
+database cannot be read), the command fails with a usage error (exit `2`). `--label` and `--env` can be
 repeated. The pane always gets `origin=terminal`, which marks it as unregistered. Without
 `--workspace` / `--window` the daemon's default window is used; with one of them the other
 defaults to `default`, and missing workspaces and windows are created. `--attach` enters the
@@ -138,7 +138,8 @@ misao send <target> [text] [--enter] [--keys Enter,Escape,C-c] [--stdin] [--json
 Writes bytes to the pane (`pane.write`). `text` is sent as typed; put a text that starts with
 `-` after `--`. `--keys` takes comma-separated names: `Enter`, `Escape`, `Tab`, `Space`,
 `Backspace`, `Delete`, `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`, `PageDown`, and
-`C-<char>` (control keys). `--enter` appends Enter. `--stdin` reads the text from stdin and cannot
+`C-<char>` (control keys). `Return` and `Esc` are aliases of `Enter` and `Escape`; names are
+case-insensitive. `--enter` appends Enter. `--stdin` reads the text from stdin and cannot
 be combined with `text`. Order: text, then `--keys`, then `--enter`. Something to send is required.
 
 ```bash
@@ -231,13 +232,14 @@ key that follows it. The keys are configurable in [`keys`](config.md#schema).
 | `Ctrl-^` `Ctrl-^` | Send one `Ctrl-^` byte to the pane |
 | `Ctrl-^` and any other key | The key is discarded |
 
-On entering, a banner on stderr shows the window, task, foreground command, state, and the
-key hints. The pane list takes a number to enter a pane, `n` for a new shell pane (not with
+On entering, a banner on stderr shows the display name (the NAME column of `misao ls`), task,
+foreground command, state, `READONLY` with `--readonly`, and the key hints. The pane list takes a number to enter a pane, `n` for a new shell pane (not with
 `--readonly`), and `q` to quit (exit `0`). Exited and stopped panes are not listed.
 When the pane you are in exits, the CLI reports the exit code and returns to the list; if no
 pane is left, it exits `0`. Entering a pane named on the command line that has already
-exited is an error. If the connection is lost or the CLI receives a termination signal, it
-restores the terminal and exits `1`. `attach` does not reconnect by itself.
+exited is an error. If the connection is lost, or the CLI receives a termination signal
+(`SIGTERM`, `SIGHUP`, `SIGINT`, `SIGQUIT`) inside a pane or at the pane list, it restores the
+terminal and exits `1`. `attach` does not reconnect by itself.
 
 ## Exit codes
 

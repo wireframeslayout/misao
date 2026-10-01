@@ -21,7 +21,7 @@ The first file that exists is used. Files are **not merged**. If none exists, de
 | 4 | `~/.misao/misao.json` | defaults |
 
 An explicitly given file (1 and 2) that does not exist is an error, so a typo is never silently
-ignored. `$MISAO_DIR` must be an absolute path or start with `~/`. A file that exists but cannot
+ignored. `$MISAO_DIR` must be an absolute path, `~`, or start with `~/`. A file that exists but cannot
 be read is always an error.
 
 ## Schema
@@ -49,7 +49,7 @@ Every key is optional.
 | `rings.rawBytes` | integer >= 1 | `1048576` (1 MiB) | Raw output ring per pane, for attach replay. |
 | `rings.linesBytes` | integer >= 1 | `4194304` (4 MiB) | Line ring per pane, for `pane.subscribe_lines`. Counted as characters + 64 per line. |
 | `rings.events` | integer >= 1 | `1000` | Number of events kept in the daemon-wide event ring. |
-| `socket` | string | see [Socket location](#socket-location) | Socket path (absolute, or starting with `~/`). |
+| `socket` | string | see [Socket location](#socket-location) | Socket path (absolute, `~`, or starting with `~/`). |
 | `logLevel` | `"error"` \| `"warn"` \| `"info"` \| `"debug"` | `"info"` | Daemon log threshold (written to stderr). |
 
 Details of `keys`:
@@ -65,7 +65,7 @@ Details of `keys`:
 
 | Problem | Result |
 |---|---|
-| Unknown key (at any level) | A warning on stderr (`unknown key "<path>" ignored`); the key is ignored and the command runs. |
+| Unknown key (at any level) | A warning on stderr (`[misao] 警告: <file>: unknown key "<path>" ignored`); the key is ignored and the command runs. |
 | Wrong type or out-of-range value (for example `"scrollback": "5000"`, `"rings": {"events": 0}`) | Error, exit code `1`. The daemon does not start and no command runs. |
 | Invalid JSON, unreadable file, or an explicit path that does not exist | Error, exit code `1`. |
 | Invalid `keys` (non-control prefix, duplicates, collision with the prefix) | Error, exit code `1`. |
@@ -96,8 +96,8 @@ Constraints:
 - **Length**: at most **107 bytes** (the `sun_path` limit on Linux, 108 including the NUL).
   A longer path is an error that names the path and its length. Prefer a short directory such
   as `~/.misao`.
-- **Absolute**: a value must be an absolute path or start with `~/` (expanded to the home
-  directory).
+- **Absolute**: a value must be an absolute path, `~`, or start with `~/` (expanded to
+  the home directory).
 - **Permissions**: the parent directory is created with mode `700`; an existing directory must
   be owned by the current user, must not be a symbolic link, and must have no group/other
   permission, otherwise the daemon refuses to start (it prints the `chmod 700` to run). The

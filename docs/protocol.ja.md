@@ -71,7 +71,8 @@ misao schema          # prints the result of server.schema as JSON
 | `pane.resize` | PTY をリサイズする | `paneId`, `cols`, `rows`, `clientId` | `ok` |
 | `pane.screen` | 現在の画面テキスト | `paneId` | `text`, `cursor`, `altScreen`, `title`, `activity` |
 | `pane.set_label` | ラベルを設定 / 解除する | `paneId`, `set`, `unset`（少なくとも 1 つ） | 変更後の `{ labels }` |
-| `pane.attach` / `pane.detach` | 生の出力をこの接続へストリームする | `paneId`, `clientId`, `mode`（既定は `raw`）, `replay`（`raw` / `snapshot` / `none`。既定は `none`）, `cols`, `rows` | attach: `head`, `oldest`, `truncated` |
+| `pane.attach` | 生の出力をこの接続へストリームする | `paneId`, `clientId`, `mode`（既定は `raw`）, `replay`（`raw` / `snapshot` / `none`。既定は `none`）, `cols`, `rows` | `head`, `oldest`, `truncated` |
+| `pane.detach` | この接続への生の出力のストリームを止める | `paneId` | `ok` |
 | `pane.subscribe_lines` | 行ストリームを購読する | `paneId`, `since`, `epoch` | `gap`, `head`, `epoch` |
 | `events.subscribe` | デーモン全体のイベントを購読する | `since`, `epoch` | `gap`, `head`, `epoch` |
 | `pane.close` | ペインを閉じる（SIGHUP、終了を待つ） | `paneId` | `ok` |
@@ -178,7 +179,7 @@ misao schema          # prints the result of server.schema as JSON
 | 1 | exit（`exit`） | プロセスが終了したとき `exited`。終端状態で、以降は何も評価されません。 |
 | 2 | profile（プロファイルの `name`） | エージェント固有の画面ルール。`blocked` と判断できる唯一のルールです。 |
 | 3 | title（`title`） | OSC ウィンドウタイトル: スピナーのタイトル（点字、`◐◑◒◓`、`✻✶✽✢∗` の後にスペース）は、更新され続けている間は `working`（3 秒で古くなり、その後は判断なし）。一度スピナーを見た後は、空でないスピナー以外のタイトルは `idle`。 |
-| 4 | bytes（`bytes`） | 出力量: 直近 3 秒に 200 バイト以上ある 1 秒ティックが 2 回連続したら `working`、5 秒間アクティビティがなければ `idle`。入力の直後（500 ms）やリサイズの直後（800 ms）の出力は数えません。 |
+| 4 | bytes（`bytes`） | 出力量。1 秒ごとのティックで判定します。前のティック以降に新しい出力があり、かつ直近 3 秒の出力が 200 バイト以上のティックをアクティブとします。アクティブなティックが 2 回続くと `working`、最後のアクティブなティックから 5 秒で `idle` です。入力の直後（500 ms）やリサイズの直後（800 ms）の出力は数えません。 |
 
 - コアが出すのは `working`、`idle`、`exited` だけです。`blocked` はプロファイルからのみ出ます。
 - 初期状態は `agentState: "unknown"`、`decidedBy: "none"` です。いずれかのルールが判断を持つまでこのままです（bytes ルールでは、早くてもオープンの 5 秒後か、アクティブなティック 2 回後です）。
