@@ -8,7 +8,26 @@ SDK（`@misao/sdk`）を使って自分の Node.js プログラムから misao �
 
 関連文書: [プロトコル](protocol.ja.md)、[設定](config.ja.md)、[CLI](cli.ja.md)。
 
-パッケージ（`@misao/sdk`、`@misao/protocol`、`@misao/daemon`）は現時点ではこのリポジトリのワークスペースパッケージであり、npm には公開していません。ESM で、Node.js 24 以降が必要です（リポジトリのルートの `package.json` の `engines` で宣言しています）。
+パッケージは ESM で、Node.js 24 以降が必要です（リポジトリのルートの `package.json` の `engines` で宣言しています）。
+
+## インストール
+
+`@misao/sdk` と `@misao/protocol` は npm には公開していません。リリースごとに、パッケージ別の tarball を [GitHub Releases](https://github.com/wireframeslayout/misao/releases) に添付しており、利用側は tarball の URL に依存します。SDK は `@misao/protocol` の型を参照するため、両方を書きます。利用側の `package.json` では次のようにします（`0.1.0` は使いたいリリースに置き換えます。タグとファイル名の両方です）。
+
+```json
+{
+  "dependencies": {
+    "@misao/sdk": "https://github.com/wireframeslayout/misao/releases/download/v0.1.0/misao-sdk-0.1.0.tgz",
+    "@misao/protocol": "https://github.com/wireframeslayout/misao/releases/download/v0.1.0/misao-protocol-0.1.0.tgz"
+  }
+}
+```
+
+- `@misao/sdk` の tarball は、`@misao/protocol` を同じリリースの protocol の tarball に向けています。SDK だけを書いてもインストールできます。両方を書くと 2 つの version が揃っていることが見え、まとめて更新できます。
+- tarball に含まれるのはコンパイル済み JavaScript（`dist`）と型定義だけです。型は Node.js の型を参照するため、TypeScript のプロジェクトでは `@types/node` を devDependencies に入れてください。
+- ハイフンを含むタグ（例: `v0.2.0-rc.1`）は pre-release です。
+- 公開済みのタグの tarball は差し替えません。修正は新しいタグで出します。
+- 同じ tarball を手元で作るには、`npm run build` のあと `node scripts/set-version.mjs <version>` と `npm run release:pack -- --tag v<version>`（出力は `release/`）を実行し、`node scripts/verify-release.mjs --tag v<version>` で確かめます。verify は SDK の tarball を一時プロジェクトにインストールし、実行時の import と型の解決を検証します。終わったら `git checkout package.json package-lock.json packages` で version の変更を戻してください。
 
 ## 接続
 

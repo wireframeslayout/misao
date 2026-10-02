@@ -31,6 +31,11 @@ apps, TUIs, and SSH terminals are all clients.
 | `@misao/sdk` | Node client with reconnect and `since` tracking |
 | `@misao/bridge`, `@misao/web`, `@misao/profile-*` | Later phases |
 
+`@misao/sdk` and `@misao/protocol` are not on npm. Depend on the tarballs attached to each
+[GitHub Release](https://github.com/wireframeslayout/misao/releases), for example
+`"@misao/sdk": "https://github.com/wireframeslayout/misao/releases/download/v0.1.0/misao-sdk-0.1.0.tgz"`.
+See [Installing](docs/embedding.md#installing).
+
 ## Development
 
 Requires Node.js >= 24.
@@ -40,6 +45,7 @@ npm ci          # install (builds node-pty natively)
 npm run build   # tsc -b across all packages
 npm run typecheck
 npm test        # node:test via tsx, per workspace (runs against src, no build needed)
+npm run test:scripts  # node:test for the release scripts under scripts/
 npm run smoke   # run the built CLI directly
 npm run test:e2e  # end-to-end tests against a real daemon process (see below)
 ```
