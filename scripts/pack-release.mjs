@@ -1,0 +1,59 @@
+// 使い方: node scripts/pack-release.mjs --tag v0.1.0 [--out release]
+// 事前に npm run build 済みで、全ワークスペースの version がタグと揃っている（scripts/set-version.mjs）こと。
+// 公開用 package.json と dist の .js / .d.ts のみをステージングして npm pack する。
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
+import { run } from './release/exec.mjs';
+import { RELEASE_PACKAGES, buildReleaseManifest, tarballName } from './release/manifest.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+const { values } = parseArgs({ options: { tag: { type: 'string' }, out: { type: 'string', default: 'release' } } });
+if (values.tag === undefined) throw new Error('usage: node scripts/pack-release.mjs --tag <vX.Y.Z> [--out <dir>]');
+const outDir = path.resolve(values.out);
+const { engines } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+
+// 型定義と実行コードだけを残す（ソースマップ・tsbuildinfo・.d.ts.map は含めない）。
+function isPublishedFile(fileName) {
+  return fileName.endsWith('.d.ts') || fileName.endsWith('.js');
+}
+
+function copyDist(from, to) {
+  mkdirSync(to, { recursive: true });
+  for (const entry of readdirSync(from, { withFileTypes: true })) {
+    if (entry.isDirectory()) copyDist(path.join(from, entry.name), path.join(to, entry.name));
+    else if (isPublishedFile(entry.name)) copyFileSync(path.join(from, entry.name), path.join(to, entry.name));
+  }
+}
+
+function packPackage({ name, dir }) {
+  const source = JSON.parse(readFileSync(path.join(root, dir, 'package.json'), 'utf8'));
+  const manifest = buildReleaseManifest({ source, tag: values.tag, engines });
+  const distDir = path.join(root, dir, 'dist');
+  for (const entry of [manifest.main, manifest.types]) {
+    if (!existsSync(path.join(root, dir, entry))) {
+      throw new Error(`${name}: ${dir}/${entry} not found (run npm run build)`);
+    }
+  }
+
+  const staging = mkdtempSync(path.join(os.tmpdir(), 'misao-pack-'));
+  try {
+    copyDist(distDir, path.join(staging, 'dist'));
+    copyFileSync(path.join(root, 'LICENSE'), path.join(staging, 'LICENSE'));
+    copyFileSync(path.join(root, 'NOTICE'), path.join(staging, 'NOTICE'));
+    writeFileSync(path.join(staging, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    run('npm', ['pack', '--pack-destination', outDir], { cwd: staging });
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+
+  const file = tarballName(name, manifest.version);
+  if (!existsSync(path.join(outDir, file))) throw new Error(`expected ${file} in ${outDir}`);
+  console.log(`packed ${path.join(values.out, file)}`);
+}
+
+mkdirSync(outDir, { recursive: true });
+for (const pkg of RELEASE_PACKAGES) packPackage(pkg);
