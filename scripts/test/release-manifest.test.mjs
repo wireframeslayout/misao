@@ -23,14 +23,16 @@ const sdkSource = {
 
 describe('parseReleaseTag', () => {
   it('parses a stable tag', () => {
-    assert.deepEqual(parseReleaseTag('v1.2.3'), { tag: 'v1.2.3', version: '1.2.3', isPrerelease: false });
+    assert.deepEqual(parseReleaseTag('v1.2.3'), { tag: 'v1.2.3', version: '1.2.3' });
   });
 
-  it('treats a hyphenated tag as pre-release', () => {
-    assert.deepEqual(parseReleaseTag('v1.2.3-rc.1'), { tag: 'v1.2.3-rc.1', version: '1.2.3-rc.1', isPrerelease: true });
-  });
+  for (const good of ['v1.2.3-rc.1', 'v0.0.0-ci', 'v1.2.3-x-y.0', 'v10.20.30-alpha.1.beta']) {
+    it(`accepts ${good}`, () => {
+      assert.deepEqual(parseReleaseTag(good), { tag: good, version: good.slice(1) });
+    });
+  }
 
-  for (const bad of ['1.2.3', 'v1.2', 'v1.2.3-', 'v1.2.3+build', 'vfoo', 'v1.2.3-rc..1']) {
+  for (const bad of ['1.2.3', 'v1.2', 'v1.2.3-', 'v1.2.3+build', 'vfoo', 'v1.2.3-rc..1', 'v01.2.3', 'v1.02.3', 'v1.2.3-01', 'v1.2.3-rc.01']) {
     it(`rejects ${bad}`, () => {
       assert.throws(() => parseReleaseTag(bad), /invalid/);
     });

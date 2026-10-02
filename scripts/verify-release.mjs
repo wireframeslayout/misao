@@ -54,16 +54,23 @@ const TSCONFIG = {
   include: ['check.ts'],
 };
 
-// tarball の中身を検査する: 公開 package.json の protocol 依存が正規 URL で、src / @misao/source を含まないこと。
-function assertTarballContents() {
-  const entries = run('tar', ['-tzf', sdkTarball], { capture: true }).split('\n').filter(Boolean);
+// tarball の中身を検査する: src / @misao/source を含まず、sdk の protocol 依存が正規 URL であること。
+function readPackedManifest(tarball) {
+  const entries = run('tar', ['-tzf', tarball], { capture: true }).split('\n').filter(Boolean);
   const leaked = entries.filter((entry) => entry.startsWith('package/src/'));
-  if (leaked.length > 0) throw new Error(`sdk tarball contains source files: ${leaked.join(', ')}`);
+  if (leaked.length > 0) throw new Error(`${path.basename(tarball)} contains source files: ${leaked.join(', ')}`);
 
-  const manifestText = run('tar', ['-xzOf', sdkTarball, 'package/package.json'], { capture: true });
-  if (manifestText.includes('@misao/source')) throw new Error('sdk tarball package.json still has the @misao/source condition');
+  const manifestText = run('tar', ['-xzOf', tarball, 'package/package.json'], { capture: true });
+  if (manifestText.includes('@misao/source')) {
+    throw new Error(`${path.basename(tarball)} package.json still has the @misao/source condition`);
+  }
+  return JSON.parse(manifestText);
+}
+
+function assertTarballContents() {
+  readPackedManifest(protocolTarball);
   const expectedUrl = releaseAssetUrl(values.tag, tarballName('@misao/protocol', version));
-  const actualUrl = JSON.parse(manifestText).dependencies['@misao/protocol'];
+  const actualUrl = readPackedManifest(sdkTarball).dependencies['@misao/protocol'];
   if (actualUrl !== expectedUrl) throw new Error(`@misao/protocol dependency is ${actualUrl}, expected ${expectedUrl}`);
 }
 

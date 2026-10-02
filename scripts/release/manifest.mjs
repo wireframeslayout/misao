@@ -9,13 +9,16 @@ export const RELEASE_PACKAGES = [
 ];
 
 const PROTOCOL_NAME = '@misao/protocol';
-const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/;
+// SemVer 2.0.0 の MAJOR.MINOR.PATCH[-prerelease]（数値に先頭ゼロ不可、build メタデータは扱わない）。
+const NUMERIC = '(?:0|[1-9]\\d*)';
+const PRERELEASE_ID = `(?:${NUMERIC}|\\d*[A-Za-z-][0-9A-Za-z-]*)`;
+const VERSION_PATTERN = new RegExp(`^${NUMERIC}\\.${NUMERIC}\\.${NUMERIC}(?:-${PRERELEASE_ID}(?:\\.${PRERELEASE_ID})*)?$`);
 
 export function parseReleaseVersion(version) {
   if (!VERSION_PATTERN.test(version)) {
     throw new Error(`invalid version "${version}": expected MAJOR.MINOR.PATCH[-prerelease]`);
   }
-  return { version, isPrerelease: version.includes('-') };
+  return { version };
 }
 
 export function parseReleaseTag(tag) {
