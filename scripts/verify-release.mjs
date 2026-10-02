@@ -54,11 +54,16 @@ const TSCONFIG = {
   include: ['check.ts'],
 };
 
-// tarball の中身を検査する: src / @misao/source を含まず、sdk の protocol 依存が正規 URL であること。
+// tarball の中身を検査する: src / @misao/source / sourceMappingURL を含まず、sdk の protocol 依存が正規 URL であること。
 function readPackedManifest(tarball) {
   const entries = run('tar', ['-tzf', tarball], { capture: true }).split('\n').filter(Boolean);
   const leaked = entries.filter((entry) => entry.startsWith('package/src/'));
   if (leaked.length > 0) throw new Error(`${path.basename(tarball)} contains source files: ${leaked.join(', ')}`);
+
+  const contents = run('tar', ['-xzOf', tarball], { capture: true });
+  if (contents.includes('//# sourceMappingURL=')) {
+    throw new Error(`${path.basename(tarball)} still refers to source maps that are not shipped`);
+  }
 
   const manifestText = run('tar', ['-xzOf', tarball, 'package/package.json'], { capture: true });
   if (manifestText.includes('@misao/source')) {

@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { isPublishedFile, stripSourceMapComment } from './release/dist-file.mjs';
 import { run } from './release/exec.mjs';
 import { RELEASE_PACKAGES, buildReleaseManifest, tarballName } from './release/manifest.mjs';
 
@@ -16,16 +17,14 @@ if (values.tag === undefined) throw new Error('usage: node scripts/pack-release.
 const outDir = path.resolve(values.out);
 const { engines } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
 
-// 型定義と実行コードだけを残す（ソースマップ・tsbuildinfo・.d.ts.map は含めない）。
-function isPublishedFile(fileName) {
-  return fileName.endsWith('.d.ts') || fileName.endsWith('.js');
-}
-
 function copyDist(from, to) {
   mkdirSync(to, { recursive: true });
   for (const entry of readdirSync(from, { withFileTypes: true })) {
     if (entry.isDirectory()) copyDist(path.join(from, entry.name), path.join(to, entry.name));
-    else if (isPublishedFile(entry.name)) copyFileSync(path.join(from, entry.name), path.join(to, entry.name));
+    else if (isPublishedFile(entry.name)) {
+      const text = readFileSync(path.join(from, entry.name), 'utf8');
+      writeFileSync(path.join(to, entry.name), stripSourceMapComment(text));
+    }
   }
 }
 
