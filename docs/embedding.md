@@ -35,7 +35,7 @@ depend on the tarball URLs. The SDK imports types from `@misao/protocol`, so lis
   to Node.js types, so TypeScript projects need `@types/node` as a dev dependency.
 - A tag that contains a hyphen (for example `v0.2.0-rc.1`) is a pre-release.
 - Tarballs of a published tag are never replaced. A fix ships as a new tag.
-- To build the same tarballs locally: `npm run build`, then
+- To build the same tarballs locally: `npm run clean && npm run build`, then
   `node scripts/set-version.mjs <version>` and `npm run release:pack -- --tag v<version>` (output
   in `release/`), then `node scripts/verify-release.mjs --tag v<version>`, which installs the SDK
   tarball into a temporary project and checks the runtime import and type resolution. Undo the
