@@ -9,9 +9,37 @@ defined once in [Protocol](protocol.md) and only linked from here.
 
 Related documents: [Protocol](protocol.md), [Configuration](config.md), [CLI](cli.md).
 
-The packages (`@misao/sdk`, `@misao/protocol`, `@misao/daemon`) are workspace packages of this
-repository for now and are not published to npm. They are ESM and need Node.js 24 or later (declared in `engines` of the repository root
+The packages are ESM and need Node.js 24 or later (declared in `engines` of the repository root
 `package.json`).
+
+## Installing
+
+`@misao/sdk` and `@misao/protocol` are not published to npm. Each release attaches one tarball
+per package to its [GitHub Release](https://github.com/wireframeslayout/misao/releases), and you
+depend on the tarball URLs. The SDK imports types from `@misao/protocol`, so list both. In your
+`package.json` (replace `0.1.0` with the release you want, in the tag and in the file names):
+
+```json
+{
+  "dependencies": {
+    "@misao/sdk": "https://github.com/wireframeslayout/misao/releases/download/v0.1.0/misao-sdk-0.1.0.tgz",
+    "@misao/protocol": "https://github.com/wireframeslayout/misao/releases/download/v0.1.0/misao-protocol-0.1.0.tgz"
+  }
+}
+```
+
+- The tarball of `@misao/sdk` already points `@misao/protocol` at the protocol tarball of the same
+  release, so listing only the SDK also installs. Listing both keeps the two versions visibly in
+  sync and lets you bump them together.
+- The tarballs contain only compiled JavaScript (`dist`) and type declarations. Their types refer
+  to Node.js types, so TypeScript projects need `@types/node` as a dev dependency.
+- A tag that contains a hyphen (for example `v0.2.0-rc.1`) is a pre-release.
+- Tarballs of a published tag are never replaced. A fix ships as a new tag.
+- To build the same tarballs locally: `npm run clean && npm run build`, then
+  `node scripts/set-version.mjs <version>` and `npm run release:pack -- --tag v<version>` (output
+  in `release/`), then `node scripts/verify-release.mjs --tag v<version>`, which installs the SDK
+  tarball into a temporary project and checks the runtime import and type resolution. Undo the
+  version change afterwards with `git checkout -- package.json package-lock.json packages/*/package.json`.
 
 ## Connecting
 

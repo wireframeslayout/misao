@@ -53,3 +53,19 @@ jobs:
       - run: sudo apt-get install -y --no-install-recommends vim
       - run: npm ci
       - run: npm run test:e2e
+
+  release-pack:
+    name: Release tarballs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:scripts
+      - run: node scripts/set-version.mjs 0.0.0-ci
+      - run: npm run build
+      - run: npm run release:pack -- --tag v0.0.0-ci
+      - run: node scripts/verify-release.mjs --tag v0.0.0-ci

@@ -29,6 +29,8 @@ TUI、SSH 端末はすべてクライアントです。
 | `@misao/sdk` | 再接続と `since` 追従を備えた Node クライアント |
 | `@misao/bridge`、`@misao/web`、`@misao/profile-*` | 後のフェーズ |
 
+`@misao/sdk` と `@misao/protocol` は npm にはありません。各 [GitHub Release](https://github.com/wireframeslayout/misao/releases) に添付した tarball に依存してください。例: `"@misao/sdk": "https://github.com/wireframeslayout/misao/releases/download/v0.1.0/misao-sdk-0.1.0.tgz"`。詳しくは [インストール](docs/embedding.ja.md#インストール) を参照してください。
+
 ## 開発
 
 Node.js 24 以上が必要です。
@@ -38,6 +40,7 @@ npm ci          # インストール（node-pty をネイティブビルドす�
 npm run build   # 全パッケージを tsc -b でビルド
 npm run typecheck
 npm test        # ワークスペースごとに tsx 経由の node:test（src に対して実行するのでビルド不要）
+npm run test:scripts  # scripts/ 配下のリリース用スクリプトの node:test
 npm run smoke   # ビルドした CLI を直接実行する
 npm run test:e2e  # 実際のデーモンプロセスに対する e2e テスト（後述）
 ```

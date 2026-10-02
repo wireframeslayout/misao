@@ -15,6 +15,8 @@
     "typecheck": "tsc -b && tsc -p packages/protocol/tsconfig.test.json && tsc -p packages/daemon/tsconfig.test.json && tsc -p packages/sdk-node/tsconfig.test.json && tsc -p packages/cli/tsconfig.test.json && tsc -p packages/e2e/tsconfig.test.json",
     "test": "npm test --workspaces --if-present",
     "test:e2e": "npm run test:e2e --workspaces --if-present",
+    "test:scripts": "node --test \"scripts/test/**/*.test.mjs\"",
+    "release:pack": "node scripts/pack-release.mjs",
     "smoke": "node packages/cli/dist/main.js --version",
     "clean": "tsc -b --clean"
   },
