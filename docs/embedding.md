@@ -39,7 +39,7 @@ depend on the tarball URLs. The SDK imports types from `@misao/protocol`, so lis
   `node scripts/set-version.mjs <version>` and `npm run release:pack -- --tag v<version>` (output
   in `release/`), then `node scripts/verify-release.mjs --tag v<version>`, which installs the SDK
   tarball into a temporary project and checks the runtime import and type resolution. Undo the
-  version change afterwards with `git checkout package.json package-lock.json packages`.
+  version change afterwards with `git checkout -- package.json package-lock.json packages/*/package.json`.
 
 ## Connecting
 

@@ -27,7 +27,7 @@ SDK（`@misao/sdk`）を使って自分の Node.js プログラムから misao �
 - tarball に含まれるのはコンパイル済み JavaScript（`dist`）と型定義だけです。型は Node.js の型を参照するため、TypeScript のプロジェクトでは `@types/node` を devDependencies に入れてください。
 - ハイフンを含むタグ（例: `v0.2.0-rc.1`）は pre-release です。
 - 公開済みのタグの tarball は差し替えません。修正は新しいタグで出します。
-- 同じ tarball を手元で作るには、`npm run build` のあと `node scripts/set-version.mjs <version>` と `npm run release:pack -- --tag v<version>`（出力は `release/`）を実行し、`node scripts/verify-release.mjs --tag v<version>` で確かめます。verify は SDK の tarball を一時プロジェクトにインストールし、実行時の import と型の解決を検証します。終わったら `git checkout package.json package-lock.json packages` で version の変更を戻してください。
+- 同じ tarball を手元で作るには、`npm run build` のあと `node scripts/set-version.mjs <version>` と `npm run release:pack -- --tag v<version>`（出力は `release/`）を実行し、`node scripts/verify-release.mjs --tag v<version>` で確かめます。verify は SDK の tarball を一時プロジェクトにインストールし、実行時の import と型の解決を検証します。終わったら `git checkout -- package.json package-lock.json packages/*/package.json` で version の変更を戻してください。
 
 ## 接続
 
