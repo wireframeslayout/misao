@@ -63,7 +63,7 @@ test('connect option: reconnects with backoff after a drop and calls connect() a
   assert.equal((await c.request('server.info', {})).epoch, daemon.epoch);
 });
 
-test('connect option: keeps retrying while connect() rejects, then recovers', async () => {
+test('connect option: a rejected first connect() leaves the client idle and a second connect() succeeds', async () => {
   let failures = 1;
   const c = new MisaoClient({
     connect: async () => {
@@ -186,9 +186,121 @@ test('connect option: works over an in-process duplex pair, including drop and r
   assert.equal((await c.request('server.info', {})).epoch, serverInfo.epoch);
 });
 
+test('connect option: a non-Error rejection reason still yields a readable MisaoConnectionError', async () => {
+  for (const reason of [undefined, null, 'plain string']) {
+    const c = new MisaoClient({ connect: () => Promise.reject(reason) });
+    await assert.rejects(c.connect(), (error: unknown) => {
+      assert.ok(error instanceof MisaoConnectionError);
+      assert.match(error.message, new RegExp(`cannot connect: ${String(reason)}`));
+      return true;
+    });
+  }
+});
+
+test('connect option: an already destroyed Duplex fails the attempt', async () => {
+  const c = new MisaoClient({
+    connect: async () => {
+      const [side] = duplexPair();
+      side.destroy();
+      return side;
+    },
+  });
+  await assert.rejects(c.connect(), /already destroyed/);
+});
+
+/** 解決を外から制御できる connect。signal と、解決した Duplex を記録する。 */
+function deferredConnect(): {
+  connect: (options: { signal: AbortSignal }) => Promise<Duplex>;
+  signals: AbortSignal[];
+  resolveLast: (stream: Duplex) => void;
+} {
+  const signals: AbortSignal[] = [];
+  const resolvers: Array<(stream: Duplex) => void> = [];
+  return {
+    signals,
+    resolveLast: (stream) => resolvers.at(-1)?.(stream),
+    connect: ({ signal }) => {
+      signals.push(signal);
+      return new Promise<Duplex>((resolve) => resolvers.push(resolve));
+    },
+  };
+}
+
+test('connect option: a hanging connect() times out, aborts its signal and the late Duplex is destroyed', async () => {
+  const d = deferredConnect();
+  const c = new MisaoClient({ connect: d.connect, connectTimeoutMs: 30 });
+  client = c;
+  await assert.rejects(c.connect(), /timed out after 30ms/);
+  assert.equal(d.signals[0]?.aborted, true);
+  const [late] = duplexPair();
+  d.resolveLast(late);
+  await waitFor(() => late.destroyed);
+});
+
+test('connect option: the reconnect loop continues after a connect() timeout', async () => {
+  let hang = false;
+  const signals: AbortSignal[] = [];
+  const c = new MisaoClient({
+    connect: ({ signal }) => {
+      signals.push(signal);
+      return hang ? new Promise<Duplex>(() => undefined) : Promise.resolve(net.connect(daemon.socketPath));
+    },
+    backoff: FAST_BACKOFF,
+    connectTimeoutMs: 30,
+  });
+  client = c;
+  c.onStateChange((s) => states.push(s));
+  await c.connect();
+  hang = true;
+  daemon.dropConnections();
+  await waitFor(() => states.filter((s) => s.status === 'reconnecting').length >= 2); // 1 回目が timeout して再試行
+  assert.ok(signals.slice(1).some((s) => s.aborted));
+  hang = false;
+  await waitFor(() => connectedCount() === 2);
+});
+
+test('connect option: close() during a pending first connect() aborts the signal and destroys the late Duplex', async () => {
+  const d = deferredConnect();
+  const c = new MisaoClient({ connect: d.connect });
+  client = c;
+  const pending = c.connect();
+  await waitFor(() => d.signals.length === 1);
+  c.close();
+  await assert.rejects(pending, MisaoConnectionError);
+  assert.equal(d.signals[0]?.aborted, true);
+  const [late] = duplexPair();
+  d.resolveLast(late);
+  await waitFor(() => late.destroyed);
+});
+
+test('connect option: close() during a pending reconnect connect() aborts it and stops reconnecting', async () => {
+  const signals: AbortSignal[] = [];
+  let hang = false;
+  const c = new MisaoClient({
+    connect: ({ signal }) => {
+      signals.push(signal);
+      return hang ? new Promise<Duplex>(() => undefined) : Promise.resolve(net.connect(daemon.socketPath));
+    },
+    backoff: FAST_BACKOFF,
+  });
+  client = c;
+  c.onStateChange((s) => states.push(s));
+  await c.connect();
+  hang = true;
+  daemon.dropConnections();
+  await waitFor(() => signals.length === 2);
+  c.close();
+  assert.equal(signals[1]?.aborted, true);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(signals.length, 2);
+  assert.equal(states.at(-1)?.status, 'closed');
+});
+
 test('constructor rejects when neither or both of socketPath and connect are given', () => {
   const connect = async (): Promise<Duplex> => net.connect(daemon.socketPath);
   assert.throws(() => new MisaoClient({} as never), TypeError);
+  assert.throws(() => new MisaoClient({ connect: 'x' } as never), TypeError);
+  assert.throws(() => new MisaoClient({ socketPath: 5 } as never), TypeError);
   assert.throws(() => new MisaoClient({ socketPath: daemon.socketPath, connect } as never), TypeError);
 });
 

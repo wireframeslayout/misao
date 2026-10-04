@@ -83,13 +83,16 @@ Node.js `Duplex`. The protocol is newline-delimited JSON-RPC, so a transport onl
 bytes unchanged in both directions.
 
 ```ts
-import { Duplex } from 'node:stream';
 import WebSocket, { createWebSocketStream } from 'ws';   // example; any WebSocket library works
 import { MisaoClient } from '@misao/sdk';
 
 const client = new MisaoClient({
-  connect: async () => {
-    const ws = new WebSocket('wss://hub.example/misao-relay', { headers: { authorization: `Bearer ${token}` } });
+  connect: async ({ signal }) => {
+    const ws = new WebSocket('wss://hub.example/misao-relay', {
+      headers: { authorization: `Bearer ${token}` },
+      handshakeTimeout: 5000,   // bound the upgrade yourself as well
+      signal,                   // aborted on timeout or close(); ws then closes the half-open socket
+    });
     await new Promise<void>((resolve, reject) => {
       ws.once('open', resolve);
       ws.once('error', reject);
@@ -100,6 +103,13 @@ const client = new MisaoClient({
 await client.connect();
 ```
 
+- `connect` is called with `{ signal: AbortSignal }` (a function that ignores the argument is fine).
+  Each attempt is bounded by `connectTimeoutMs`: when it expires, or when you call `close()` while
+  the attempt is pending, the SDK aborts the `signal`, the attempt fails with `MisaoConnectionError`
+  (a reconnect attempt is then retried with the usual backoff), and a `Duplex` that resolves late
+  is destroyed. Honour `signal` (and set your own handshake timeout, as above) so the underlying
+  connection attempt is actually cancelled. The timeout applies to the `connect` call and, separately,
+  to the setup after it.
 - `connect` runs for the first `connect()` and again for **every reconnect attempt**; return a new
   `Duplex` each time. A rejection is a failed attempt (`MisaoConnectionError`, with the original
   error as `cause`), and the usual backoff applies.
@@ -108,6 +118,10 @@ await client.connect();
 - The stream must be already connected when the promise resolves, and must emit `close` when the
   connection is lost (the SDK also destroys it when the peer ends it). The SDK writes to it and
   destroys it when it is done.
+- A rejection with a non-`Error` value is reported using `String(reason)`.
+- `MisaoClientOptions` is now a type alias (a union of the `socketPath` and `connect` forms) rather
+  than an interface, so it can no longer be `extends`-ed; use an intersection (`& { ... }`) instead.
+  `MisaoClientTarget` is exported for the two target forms.
 - `@misao/sdk` does not depend on any WebSocket library; the `ws` import above is only an example.
 
 ## Reconnect and backoff

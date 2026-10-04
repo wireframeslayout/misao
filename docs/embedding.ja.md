@@ -59,8 +59,12 @@ import WebSocket, { createWebSocketStream } from 'ws';   // 例。WebSocket ラ�
 import { MisaoClient } from '@misao/sdk';
 
 const client = new MisaoClient({
-  connect: async () => {
-    const ws = new WebSocket('wss://hub.example/misao-relay', { headers: { authorization: `Bearer ${token}` } });
+  connect: async ({ signal }) => {
+    const ws = new WebSocket('wss://hub.example/misao-relay', {
+      headers: { authorization: `Bearer ${token}` },
+      handshakeTimeout: 5000,   // upgrade の待ちは自分でも制限する
+      signal,                   // タイムアウトや close() で abort される。ws は接続途中のソケットを閉じる
+    });
     await new Promise<void>((resolve, reject) => {
       ws.once('open', resolve);
       ws.once('error', reject);
@@ -71,9 +75,12 @@ const client = new MisaoClient({
 await client.connect();
 ```
 
+- `connect` は `{ signal: AbortSignal }` を受け取って呼ばれます（引数を使わない関数でも構いません）。各試行は `connectTimeoutMs` で打ち切られます。期限を過ぎるか、試行中に `close()` すると、SDK は `signal` を abort し、その試行は `MisaoConnectionError` で失敗し（再接続中なら通常のバックオフで再試行）、あとから解決した `Duplex` は破棄されます。実際の接続試行が取り消されるよう、`signal` を尊重し、上のように独自のハンドシェイクタイムアウトも設定してください。タイムアウトは `connect` の呼び出しと、その後のセットアップにそれぞれ適用されます。
 - `connect` は最初の `connect()` と、**再接続の試行ごと**に呼ばれます。毎回新しい `Duplex` を返してください。reject は失敗した試行として扱われ（元のエラーを `cause` に持つ `MisaoConnectionError`）、通常のバックオフが適用されます。
 - それ以外は `socketPath` のときと同じ動作です。`server.info` の確認、`connectTimeoutMs`、再接続、ストリームの復元、`onGap`、`onStateChange` が同様に働きます。
 - Promise が解決した時点で接続済みであること、接続が切れたら `close` を発火することが必要です（相手が end した場合は SDK 側でも破棄します）。SDK はこのストリームへ書き込み、不要になったら破棄します。
+- `Error` でない値で reject した場合は `String(reason)` をメッセージに使います。
+- `MisaoClientOptions` は interface から型エイリアス（`socketPath` 形式と `connect` 形式のユニオン）になったため、`extends` できません。交差型（`& { ... }`）を使ってください。2 つの形式は `MisaoClientTarget` として export されます。
 - `@misao/sdk` は WebSocket ライブラリに依存しません。上の `ws` の import は例です。
 
 ## 再接続とバックオフ

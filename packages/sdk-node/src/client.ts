@@ -1,4 +1,3 @@
-import type { Duplex } from 'node:stream';
 import { PROTOCOL_VERSION, isCompatibleProtocolVersion } from '@misao/protocol';
 import type { MethodName, MethodParams, MethodResult } from '@misao/protocol';
 import { DEFAULT_BACKOFF, computeBackoffDelay } from './backoff.js';
@@ -7,18 +6,19 @@ import { ErrorChannel } from './error-channel.js';
 import { MisaoConnectionError, MisaoProtocolVersionError } from './errors.js';
 import { Listeners } from './listeners.js';
 import { RpcConnection } from './rpc-connection.js';
-import type { Notification } from './rpc-connection.js';
+import type { ConnectFunction, Notification } from './rpc-connection.js';
 import type { EventHandler, LineHandler } from './stream-cursor.js';
 import { StreamSubscriber } from './stream-subscriber.js';
 import type { GapInfo, SubscribeOptions, Subscription, SubscriptionErrorInfo } from './stream-subscriber.js';
 
 /**
- * 接続先。socketPath (Unix ソケット) か connect (接続済みの Duplex を作る関数。WebSocket 中継など) のどちらか一方を指定する。
+ * 接続先。socketPath (Unix ソケット) か connect (接続済みの Duplex を作る関数。WebSocket 中継など。{ signal } を受け取れる) のどちらか一方を指定する。
  * connect は初回接続と再接続のたびに呼ばれ、毎回新しい Duplex を返す。
+ * connectTimeoutMs を超えるか close() されると signal が abort され、あとから解決した Duplex は破棄される。
  */
 export type MisaoClientTarget =
   | { socketPath: string; connect?: never }
-  | { connect: () => Promise<Duplex>; socketPath?: never };
+  | { connect: ConnectFunction; socketPath?: never };
 
 export type MisaoClientOptions = MisaoClientTarget & MisaoClientOptionsBase;
 
@@ -45,7 +45,7 @@ type Phase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
  * pane.attach は since を持たないので自動復元しない。利用側が onStateChange の 'connected' を見て attach し直す。
  */
 export class MisaoClient {
-  private readonly target: string | (() => Promise<Duplex>);
+  private readonly target: string | ConnectFunction;
   private readonly backoff: BackoffOptions;
   private readonly connectTimeoutMs: number;
   private readonly errors = new ErrorChannel();
@@ -57,15 +57,18 @@ export class MisaoClient {
   private conn: RpcConnection | undefined;
   /** 確立途中の接続。close() で確実に閉じるために持つ。 */
   private establishing: RpcConnection | undefined;
+  /** 確立途中の接続試行。close() で abort する。 */
+  private attempt: AbortController | undefined;
   private cancelSleep: (() => void) | undefined;
 
   constructor({ socketPath, connect, backoff, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS }: MisaoClientOptions) {
     // 型でも排他にしているが、JS 呼び出しや型の絞り込み漏れでも黙って片方を無視しない。
-    const target = socketPath !== undefined && connect === undefined ? socketPath : connect;
-    if (target === undefined || (socketPath !== undefined && connect !== undefined)) {
-      throw new TypeError('MisaoClient requires exactly one of socketPath or connect');
+    const hasPath = typeof socketPath === 'string';
+    const hasConnect = typeof connect === 'function';
+    if (hasPath === hasConnect) {
+      throw new TypeError('MisaoClient requires exactly one of socketPath (string) or connect (function)');
     }
-    this.target = target;
+    this.target = hasPath ? socketPath : connect;
     this.connectTimeoutMs = connectTimeoutMs;
     this.backoff = { ...DEFAULT_BACKOFF, ...backoff };
   }
@@ -137,6 +140,7 @@ export class MisaoClient {
     if (this.phase === 'closed') return;
     this.phase = 'closed';
     this.cancelSleep?.();
+    this.attempt?.abort();
     this.establishing?.close();
     this.conn?.close();
     this.establishing = undefined;
@@ -156,10 +160,20 @@ export class MisaoClient {
   /**
    * 接続して server.info を確認し、ストリームを復元する。互換確認の後は this.conn に置くので、
    * 復元中に出る gap の通知から request() で再取得できる。失敗したら接続を閉じて throw する。
-   * 接続後の応答が connectTimeoutMs 内に揃わなければ (デーモンのハングなど) 接続を閉じて失敗にする。
+   * connect 関数の完了も connectTimeoutMs で打ち切る。接続後の応答が connectTimeoutMs 内に揃わなければ (デーモンのハングなど) 接続を閉じて失敗にする。
    */
   private async establish(): Promise<void> {
-    const conn = await RpcConnection.connect(this.target, this.errors.report);
+    const controller = new AbortController();
+    this.attempt = controller;
+    let conn: RpcConnection;
+    try {
+      conn = await RpcConnection.connect(this.target, this.errors.report, {
+        controller,
+        timeoutMs: this.connectTimeoutMs,
+      });
+    } finally {
+      if (this.attempt === controller) this.attempt = undefined;
+    }
     if (this.isClosed()) {
       conn.close();
       throw new MisaoConnectionError('client closed during connect');

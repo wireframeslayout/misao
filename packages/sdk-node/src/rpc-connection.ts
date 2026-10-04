@@ -26,6 +26,14 @@ export type Notification = {
   [N in NotificationName]: { method: N; params: NotificationParams<N> };
 }[NotificationName];
 
+/** connect オプションに渡す関数。signal は試行の打ち切り (タイムアウト・close()) で abort される。 */
+export type ConnectFunction = (options: { signal: AbortSignal }) => Promise<Duplex>;
+
+export interface ConnectAttempt {
+  controller: AbortController;
+  timeoutMs: number;
+}
+
 export type Settled<T> = { ok: true; value: T } | { ok: false; error: Error };
 
 function isNotificationName(name: string): name is NotificationName {
@@ -51,27 +59,80 @@ export class RpcConnection {
   ) {
     this.closeListeners = new Listeners(report);
     this.notificationListeners = new Listeners(report);
-    socket.on('data', (chunk: Buffer) => this.onData(chunk));
-    socket.on('error', (cause) => this.fail(new MisaoConnectionError(cause.message, { cause })));
+    socket.on('data', this.onSocketData);
+    socket.on('error', this.onSocketError);
     // net.Socket 以外の Duplex は相手の end で自動的に閉じるとは限らない。プロトコルは半閉じを使わないので閉じる。
-    socket.on('end', () => socket.destroy());
-    socket.on('close', () => this.onSocketClose());
+    socket.on('end', this.onSocketEnd);
+    socket.on('close', this.onSocketClose);
   }
+
+  private readonly onSocketData = (chunk: Buffer): void => this.onData(chunk);
+  private readonly onSocketError = (cause: Error): void =>
+    this.fail(new MisaoConnectionError(cause.message, { cause }));
+  private readonly onSocketEnd = (): void => {
+    this.socket.destroy();
+  };
 
   /**
    * target: Unix ソケットのパス、または接続済みの Duplex を返す関数 (WebSocket 中継など)。
+   * 関数の場合は attempt.timeoutMs で打ち切り、attempt.controller の abort でも中止する。
+   * どちらでも打ち切った時点で signal を abort し、あとから解決した Duplex は破棄する。
    * report: リスナーが投げた例外の報告先。
    */
-  static async connect(target: string | (() => Promise<Duplex>), report: (error: unknown) => void): Promise<RpcConnection> {
+  static connect(target: string, report: (error: unknown) => void): Promise<RpcConnection>;
+  static connect(target: string | ConnectFunction, report: (error: unknown) => void, attempt: ConnectAttempt): Promise<RpcConnection>;
+  static connect(target: string | ConnectFunction, report: (error: unknown) => void, attempt?: ConnectAttempt): Promise<RpcConnection> {
     if (typeof target === 'string') return RpcConnection.connectSocket(target, report);
-    let stream: Duplex;
-    try {
-      stream = await target();
-    } catch (cause) {
-      throw new MisaoConnectionError(`cannot connect: ${(cause as Error).message}`, { cause });
-    }
-    if (stream.destroyed) throw new MisaoConnectionError('cannot connect: the stream returned by connect() is already destroyed');
-    return new RpcConnection(stream, report);
+    if (!attempt) throw new TypeError('a connect function requires an attempt (controller and timeoutMs)');
+    return RpcConnection.connectCustom(target, report, attempt);
+  }
+
+  private static connectCustom(
+    target: ConnectFunction,
+    report: (error: unknown) => void,
+    { controller, timeoutMs }: ConnectAttempt,
+  ): Promise<RpcConnection> {
+    const { signal } = controller;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (): boolean => {
+        if (settled) return false;
+        settled = true;
+        clearTimeout(timer);
+        signal.removeEventListener('abort', onAbort);
+        return true;
+      };
+      const failWith = (message: string, cause?: unknown): void => {
+        if (settle()) reject(new MisaoConnectionError(`cannot connect: ${message}`, { cause }));
+      };
+      const onAbort = (): void => failWith('aborted');
+      const timer = setTimeout(() => {
+        failWith(`timed out after ${timeoutMs}ms`);
+        controller.abort();
+      }, timeoutMs);
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      Promise.resolve()
+        .then(() => target({ signal }))
+        .then(
+          (stream) => {
+            if (settled) {
+              stream.destroy(); // 打ち切り済み。あとから来た接続は誰も使わない。
+              return;
+            }
+            settle();
+            if (stream.destroyed) {
+              reject(new MisaoConnectionError('cannot connect: the stream returned by connect() is already destroyed'));
+              return;
+            }
+            resolve(new RpcConnection(stream, report));
+          },
+          (cause: unknown) => failWith(cause instanceof Error ? cause.message : String(cause), cause),
+        );
+    });
   }
 
   private static connectSocket(socketPath: string, report: (error: unknown) => void): Promise<RpcConnection> {
@@ -215,12 +276,18 @@ export class RpcConnection {
     this.socket.destroy();
   }
 
-  private onSocketClose(): void {
+  private readonly onSocketClose = (): void => {
     this.closed = true;
+    // 外から Duplex を持ち続けられても、この接続 (とクライアント) を参照させない。
+    this.socket.off('data', this.onSocketData);
+    this.socket.off('end', this.onSocketEnd);
+    this.socket.off('close', this.onSocketClose);
+    this.socket.off('error', this.onSocketError);
+    this.socket.on('error', () => undefined); // 閉じたあとの error で uncaught にしない
     const reason = this.failure ?? new MisaoConnectionError('connection closed by peer');
     const settles = [...this.pending.values()];
     this.pending.clear();
     for (const settle of settles) settle({ ok: false, error: reason });
     this.closeListeners.emit(reason);
-  }
+  };
 }
