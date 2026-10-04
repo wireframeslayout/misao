@@ -1,6 +1,7 @@
 // 使い方: node scripts/pack-release.mjs --tag v0.1.0 [--out release]
 // 事前に npm run build 済みで、全ワークスペースの version がタグと揃っている（scripts/set-version.mjs）こと。
 // 公開用 package.json と dist の .js / .d.ts のみをステージングして npm pack する。
+import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,7 +9,15 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { isPublishedFile, stripSourceMapComment } from './release/dist-file.mjs';
 import { run } from './release/exec.mjs';
-import { RELEASE_PACKAGES, buildReleaseManifest, tarballName } from './release/manifest.mjs';
+import {
+  CHECKSUMS_FILE,
+  RELEASE_PACKAGES,
+  buildReleaseManifest,
+  formatChecksums,
+  parseReleaseTag,
+  releaseFileNames,
+  tarballName,
+} from './release/manifest.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -56,3 +65,15 @@ function packPackage({ name, dir }) {
 
 mkdirSync(outDir, { recursive: true });
 for (const pkg of RELEASE_PACKAGES) packPackage(pkg);
+
+// CLI + デーモンのバンドル。node-pty は同梱せず、利用側の node_modules を使う。
+run('node', [path.join(root, 'scripts/bundle-cli.mjs'), '--version', parseReleaseTag(values.tag).version, '--out', outDir]);
+
+// tarball とバンドルの sha256 を SHA256SUMS にまとめる。
+const checksums = releaseFileNames(parseReleaseTag(values.tag).version).map((fileName) => {
+  const file = path.join(outDir, fileName);
+  if (!existsSync(file)) throw new Error(`expected ${fileName} in ${outDir}`);
+  return { fileName, sha256: createHash('sha256').update(readFileSync(file)).digest('hex') };
+});
+writeFileSync(path.join(outDir, CHECKSUMS_FILE), formatChecksums(checksums));
+console.log(`wrote ${path.join(values.out, CHECKSUMS_FILE)}`);

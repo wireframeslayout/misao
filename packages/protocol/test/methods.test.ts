@@ -20,7 +20,7 @@ const ws = { name: 'main', windows: [win] };
 
 test('全メソッドの代表的な params / result', () => {
   const cases: [MethodName, unknown, unknown][] = [
-    ['server.info', {}, { protocolVersion: '0.1.0', pid: 1, epoch: ULID, uptimeSec: 1.5, paneCount: 0, eventHead: 0 }],
+    ['server.info', {}, { protocolVersion: '0.1.0', version: '0.1.0', pid: 1, epoch: ULID, uptimeSec: 1.5, paneCount: 0, eventHead: 0 }],
     ['server.schema', {}, { protocolVersion: '0.1.0', methods: {} }],
     ['workspace.list', {}, [ws]],
     ['workspace.create', { name: 'main' }, ws],

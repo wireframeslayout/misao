@@ -1,14 +1,24 @@
 // 使い方: node scripts/verify-release.mjs --tag v0.1.0 [--dir release]
 // pack-release の成果物を別ディレクトリの一時プロジェクトに install し、
 // `import { MisaoClient } from '@misao/sdk'` が実行時・型の両方で解決できることを確かめる。
+// あわせて、CLI + デーモンのバンドルが SHA256SUMS と一致し、単体でスモークテストを通ることを確かめる。
 // sdk の tarball は protocol をリリース URL で参照するため、overrides でローカルの protocol tarball に差し替える。
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { run } from './release/exec.mjs';
-import { parseReleaseTag, releaseAssetUrl, tarballName } from './release/manifest.mjs';
+import {
+  CHECKSUMS_FILE,
+  bundleName,
+  parseReleaseTag,
+  releaseAssetUrl,
+  licensesName,
+  releaseFileNames,
+  tarballName,
+} from './release/manifest.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -114,7 +124,42 @@ function verifyInstall(project) {
   run('npx', ['tsc', '-p', 'tsconfig.json'], { cwd: project });
 }
 
+// SHA256SUMS が公開ファイルをすべて、過不足なく、正しいハッシュで列挙していること。
+function assertChecksums() {
+  const sums = readFileSync(path.join(releaseDir, CHECKSUMS_FILE), 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const match = /^([0-9a-f]{64}) {2}(\S+)$/.exec(line);
+      if (match === null) throw new Error(`malformed ${CHECKSUMS_FILE} line: ${line}`);
+      return [match[2], match[1]];
+    });
+  const expected = releaseFileNames(version);
+  const actualNames = sums.map(([name]) => name).sort();
+  if (JSON.stringify(actualNames) !== JSON.stringify([...expected].sort())) {
+    throw new Error(`${CHECKSUMS_FILE} lists [${actualNames}], expected [${[...expected].sort()}]`);
+  }
+  for (const [name, sha256] of sums) {
+    const actual = createHash('sha256').update(readFileSync(path.join(releaseDir, name))).digest('hex');
+    if (actual !== sha256) throw new Error(`${name} sha256 is ${actual}, ${CHECKSUMS_FILE} says ${sha256}`);
+  }
+}
+
+function assertBundle() {
+  const bundle = path.join(releaseDir, bundleName(version));
+  if (!existsSync(bundle)) throw new Error(`${bundle} not found (run scripts/pack-release.mjs first)`);
+  const licenses = path.join(releaseDir, licensesName(version));
+  if (!existsSync(licenses)) throw new Error(`${licenses} not found (run scripts/pack-release.mjs first)`);
+  const text = readFileSync(licenses, 'utf8');
+  for (const needle of ['misao (Apache-2.0)', 'zod@', '@xterm/headless@']) {
+    if (!text.includes(needle)) throw new Error(`${path.basename(licenses)} does not mention ${needle}`);
+  }
+  run('node', [path.join(root, 'scripts/smoke-bundle.mjs'), bundle]);
+}
+
 assertTarballContents();
+assertChecksums();
+assertBundle();
 const base = mkdtempSync(path.join(os.tmpdir(), 'misao-verify-'));
 try {
   const project = path.join(base, 'project');

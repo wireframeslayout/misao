@@ -7,6 +7,7 @@ import type { CliIo } from '../cli-io.js';
 import type { ResolvedConfig } from '../config/index.js';
 import { CliError } from '../errors.js';
 import { writeLine } from '../output.js';
+import { MISAO_VERSION } from '../version.js';
 import type { Command } from './command.js';
 import { expectPositionals } from './shared.js';
 
@@ -27,6 +28,7 @@ export function buildDaemonOptions(config: ResolvedConfig, overrides: ServeOverr
   const socketPath = overrides.socket ?? config.socket;
   const dataDir = overrides.dataDir ?? path.dirname(socketPath);
   return {
+    version: MISAO_VERSION,
     socketPath,
     pidPath: path.join(dataDir, PID_FILE_NAME),
     statePath: path.join(dataDir, STATE_FILE_NAME),

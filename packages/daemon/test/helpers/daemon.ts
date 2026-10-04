@@ -16,6 +16,7 @@ export async function waitFor(pred: () => boolean | Promise<boolean>, ms = 5000)
 /** dir にソケット・pid・persistence.json を置いて起動する。同じ dir で再起動すると状態を引き継ぐ。 */
 export async function startDaemon(dir: string, overrides: Partial<DaemonOptions> = {}): Promise<Daemon> {
   const daemon = new Daemon({
+    version: '0.0.0-test',
     socketPath: path.join(dir, 'misao.sock'),
     pidPath: path.join(dir, 'daemon.pid'),
     statePath: path.join(dir, 'persistence.json'),

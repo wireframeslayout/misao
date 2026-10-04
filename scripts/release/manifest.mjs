@@ -8,6 +8,14 @@ export const RELEASE_PACKAGES = [
   { name: '@misao/sdk', dir: 'packages/sdk-node' },
 ];
 
+// tarball 以外のリリースアセット。CLI + デーモンを 1 ファイルにまとめたバンドル（scripts/bundle-cli.mjs）。
+export const RELEASE_ASSETS = [
+  { kind: 'bundle', fileName: (version) => bundleName(version) },
+  { kind: 'licenses', fileName: (version) => licensesName(version) },
+];
+
+export const CHECKSUMS_FILE = 'SHA256SUMS';
+
 const PROTOCOL_NAME = '@misao/protocol';
 // SemVer 2.0.0 の MAJOR.MINOR.PATCH[-prerelease]（数値に先頭ゼロ不可、build メタデータは扱わない）。
 const NUMERIC = '(?:0|[1-9]\\d*)';
@@ -31,6 +39,29 @@ export function parseReleaseTag(tag) {
 // "@misao/protocol" -> "misao-protocol-<version>.tgz"（npm pack の出力名と同じ規則）
 export function tarballName(packageName, version) {
   return `${packageName.replace(/^@/, '').replace('/', '-')}-${version}.tgz`;
+}
+
+// CLI + デーモンのバンドルのファイル名
+export function bundleName(version) {
+  return `misao-${version}.mjs`;
+}
+
+// バンドルに同梱した依存と misao 本体のライセンス全文
+export function licensesName(version) {
+  return `misao-${version}.LICENSES.txt`;
+}
+
+// 公開する全ファイル名（tarball とバンドル）。SHA256SUMS 自身は含めない。
+export function releaseFileNames(version) {
+  return [
+    ...RELEASE_PACKAGES.map(({ name }) => tarballName(name, version)),
+    ...RELEASE_ASSETS.map((asset) => asset.fileName(version)),
+  ];
+}
+
+// sha256sum 互換の行（`<hex>  <file>\n`）。entries は { fileName, sha256 } の配列。
+export function formatChecksums(entries) {
+  return entries.map(({ fileName, sha256 }) => `${sha256}  ${fileName}\n`).join('');
 }
 
 export function releaseAssetUrl(tag, fileName) {

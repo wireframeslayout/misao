@@ -6,6 +6,7 @@ import { CliError, toCliError } from './errors.js';
 import { PACKAGE } from './index.js';
 import { renderError, writeLine } from './output.js';
 import { TARGET_HELP } from './target.js';
+import { MISAO_VERSION } from './version.js';
 
 const GLOBAL_HELP = [
   '--config PATH  設定ファイル (misao.json) を指定する',
@@ -41,7 +42,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   const { command: name, args, globals } = splitCommand(argv);
   const isJson = globals.flag('json');
   if (globals.flag('version')) {
-    writeLine(io.stdout, `${PACKAGE} 0.0.0`);
+    writeLine(io.stdout, `${PACKAGE} ${MISAO_VERSION}`);
     return 0;
   }
   const command = COMMANDS.find((c) => c.name === name);

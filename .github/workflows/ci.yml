@@ -68,4 +68,5 @@ jobs:
       - run: node scripts/set-version.mjs 0.0.0-ci
       - run: npm run build
       - run: npm run release:pack -- --tag v0.0.0-ci
+      # tarball の検証に加え、バンドルのスモークテスト (scripts/smoke-bundle.mjs) もここで走る
       - run: node scripts/verify-release.mjs --tag v0.0.0-ci

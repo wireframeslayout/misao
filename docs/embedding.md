@@ -41,6 +41,45 @@ depend on the tarball URLs. The SDK imports types from `@misao/protocol`, so lis
   tarball into a temporary project and checks the runtime import and type resolution. Undo the
   version change afterwards with `git checkout -- package.json package-lock.json packages/*/package.json`.
 
+## Bundling the daemon and CLI
+
+Each release also attaches `misao-<version>.mjs`: the CLI and the daemon bundled into one ESM
+file, for apps that ship misao themselves (for example AZITO). `SHA256SUMS` in the same release
+lists the sha256 of every asset (both tarballs and the bundle); check it with
+`sha256sum -c --ignore-missing SHA256SUMS`.
+
+```bash
+node misao-0.1.0.mjs --version
+node misao-0.1.0.mjs serve
+```
+
+- `misao-<version>.LICENSES.txt` (also in `SHA256SUMS`) holds the license text of misao
+  (Apache-2.0, with `NOTICE`) and of every third-party package inside the bundle (`zod`,
+  `@xterm/headless`, both MIT). Ship it with the bundle. The first lines of the bundle point to it.
+  `@xterm/headless` publishes no license file, so the upstream text kept in `scripts/release/third-party-licenses/` is used.
+- `node-pty` (a native module) is **not** inside the bundle. The bundle resolves it with the normal
+  Node.js lookup, so put it in a `node_modules/node-pty` next to the file (or in any parent
+  directory). An embedding app that already ships `node-pty ^1.1.0` shares its copy; misao does not
+  ship prebuilt binaries itself. `@xterm/headless` and `zod` are inside the bundle.
+- The bundle is ESM and needs Node.js 24 or later. The first line is a `#!/usr/bin/env node`
+  shebang, so it can also be made executable and run directly.
+- The CLI and the daemon are the same file, so `--version` and the `version` field of `server.info`
+  are the release version baked into that file (`misao 0.1.0` and `"version": "0.1.0"`). Unlike
+  `protocolVersion`, it tells apart two daemons that speak the same protocol but are different
+  builds. An older daemon that does not send `version` is reported as such by its absence. To run the
+  daemon as a service, see [deploy/README.md](../deploy/README.md) (systemd unit for Linux, launchd
+  plist for macOS).
+- Compatibility: the bundle's daemon reports `PROTOCOL_VERSION` in `server.info`, and a client
+  (`@misao/sdk`) is compatible when the **major** versions are equal (see
+  [Protocol](protocol.md#versioning-and-compatibility)). Ship an SDK and a bundle from the same
+  release, or at least with the same protocol major. A minor difference is allowed: unknown fields
+  and enum values are tolerated on the receiving side.
+- To build it locally: `node scripts/bundle-cli.mjs --out dist-release`, then
+  `node scripts/smoke-bundle.mjs dist-release/misao-<version>.mjs`. The smoke test copies the
+  bundle and `node-pty` to a temporary directory and checks `--version` and `server.info` against the file name's version, `serve` on a temporary
+  socket, `server.info` (its `version` must equal the file name's version), creating, reading, and
+  killing one pane (proves the external `node-pty` works), and a clean stop. It never touches a running daemon.
+
 ## Connecting
 
 ```ts
@@ -313,6 +352,7 @@ const daemon = new Daemon({
   socketPath,
   pidPath,
   statePath,          // persistence.json
+  version: '1.2.3',   // optional: reported as `version` by server.info (omitted when not set)
   profiles: [myAgent],
 });
 await daemon.start();
