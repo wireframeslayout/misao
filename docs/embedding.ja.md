@@ -250,6 +250,7 @@ const daemon = new Daemon({
   socketPath,
   pidPath,
   statePath,          // persistence.json
+  version: '1.2.3',   // 任意: server.info の version で報告する（省略時は返さない）
   profiles: [myAgent],
 });
 await daemon.start();

@@ -352,6 +352,7 @@ const daemon = new Daemon({
   socketPath,
   pidPath,
   statePath,          // persistence.json
+  version: '1.2.3',   // optional: reported as `version` by server.info (omitted when not set)
   profiles: [myAgent],
 });
 await daemon.start();

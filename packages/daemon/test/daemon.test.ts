@@ -262,6 +262,22 @@ test('server.info はデーモンのビルド版を version で返す', async ()
   });
 });
 
+test('version を指定しないデーモンは server.info に version を含めない', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-it-'));
+  const daemon = await startDaemon(dir, { version: undefined });
+  try {
+    const client = await RpcClient.connect(daemon.socketPath);
+    try {
+      assert.equal('version' in (await client.request<object>('server.info')), false);
+    } finally {
+      client.close();
+    }
+  } finally {
+    await daemon.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('epoch が現在と違う購読は gap: true で、保持している最古から再生する', async () => {
   await withDaemon(async (_daemon, client) => {
     const info = await client.request<{ epoch: string; eventHead: number }>('server.info');

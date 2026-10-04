@@ -56,8 +56,8 @@ type Handlers = {
 };
 
 export interface DaemonOptions extends DaemonLimitOptions {
-  /** デーモンのビルド版 (リリースの version)。server.info の version で報告する。 */
-  version: string;
+  /** デーモンのビルド版 (リリースの version)。指定すると server.info の version で報告する。省略時は version を返さない。 */
+  version?: string;
   socketPath: string;
   pidPath: string;
   /** persistence.json の場所。 */
@@ -73,7 +73,7 @@ export interface DaemonOptions extends DaemonLimitOptions {
 }
 
 export class Daemon {
-  private readonly version: string;
+  private readonly version: string | undefined;
   readonly socketPath: string;
   private readonly pidPath: string;
   private readonly statePath: string;
@@ -261,7 +261,7 @@ export class Daemon {
   private serverInfo(): unknown {
     return {
       protocolVersion: PROTOCOL_VERSION,
-      version: this.version,
+      ...(this.version === undefined ? {} : { version: this.version }),
       pid: process.pid,
       epoch: this.epoch,
       uptimeSec: Math.floor((Date.now() - this.startedAt) / 1000),
