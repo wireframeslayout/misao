@@ -59,20 +59,71 @@ client.close();
   (for example the `socket` of `misao.json`), then `$MISAO_DIR/misao.sock`, then
   `~/.misao/misao.sock`. A path longer than `MAX_SOCKET_PATH_BYTES` (107 bytes) throws
   `MisaoPathError`. See [Socket location](config.md#socket-location).
-- `MisaoClientOptions`: `socketPath` (required), `backoff` (partial, see below), and
-  `connectTimeoutMs` (default `5000`).
+- `MisaoClientOptions`: exactly one of `socketPath` or `connect` (see
+  [Custom transport](#custom-transport-connect)), `backoff` (partial, see below), and
+  `connectTimeoutMs` (default `5000`). Passing neither or both throws `TypeError` from the constructor.
 - `connect()` connects, calls `server.info`, checks that the protocol major versions match, and
   restores streams. It rejects when the daemon is unreachable (`MisaoConnectionError`) or
   incompatible (`MisaoProtocolVersionError`, see [Versioning](protocol.md#versioning-and-compatibility)).
   It can be called only while the client is idle: before the first attempt, or after a failed one.
-- `connectTimeoutMs` bounds the setup after the socket connects (the `server.info` check and
-  stream restore). On timeout the connection is closed and `connect()` (or the current reconnect
+- `connectTimeoutMs` bounds the setup after the connection is established (the `server.info` check and
+  stream restore). With a custom `connect` it also bounds the wait for the `connect` function itself,
+  separately (see [Custom transport](#custom-transport-connect)); with `socketPath` only the setup is bounded. On timeout the connection is closed and `connect()` (or the current reconnect
   attempt) fails with `MisaoConnectionError`. This protects against a hung daemon.
 - `request(method, params)` is typed by `@misao/protocol`. A daemon error rejects with
   `MisaoRpcError` (`code`, `message`; see [Errors](protocol.md#errors)). Calling it while not
   connected rejects with `MisaoConnectionError`. `params` are validated by the schema before
   sending; invalid params reject with a Zod `ZodError` and nothing is sent.
 - `close()` ends the client and stops reconnecting.
+
+## Custom transport (`connect`)
+
+To reach the daemon over something other than a Unix socket (for example a WebSocket relayed by
+another process), pass `connect` instead of `socketPath`: a function that returns a connected
+Node.js `Duplex`. The protocol is newline-delimited JSON-RPC, so a transport only has to carry
+bytes unchanged in both directions.
+
+```ts
+import WebSocket, { createWebSocketStream } from 'ws';   // example; any WebSocket library works
+import { MisaoClient } from '@misao/sdk';
+
+const client = new MisaoClient({
+  connect: async ({ signal }) => {
+    const ws = new WebSocket('wss://hub.example/misao-relay', {
+      headers: { authorization: `Bearer ${token}` },
+      handshakeTimeout: 5000,   // bound the upgrade yourself as well
+      signal,                   // aborted on timeout or close(); ws then closes the half-open socket
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+    return createWebSocketStream(ws);                    // a Duplex carrying the raw bytes
+  },
+});
+await client.connect();
+```
+
+- `connect` is called with `{ signal: AbortSignal }` (a function that ignores the argument is fine).
+  Each attempt is bounded by `connectTimeoutMs`: when it expires, or when you call `close()` while
+  the attempt is pending, the SDK aborts the `signal`, the attempt fails with `MisaoConnectionError`
+  (a reconnect attempt is then retried with the usual backoff), and a `Duplex` that resolves late
+  is destroyed. Honour `signal` (and set your own handshake timeout, as above) so the underlying
+  connection attempt is actually cancelled. The timeout applies to the `connect` call and, separately,
+  to the setup after it.
+- `connect` runs for the first `connect()` and again for **every reconnect attempt**; return a new
+  `Duplex` each time. A rejection is a failed attempt (`MisaoConnectionError`, with the original
+  error as `cause`), and the usual backoff applies.
+- Everything else behaves exactly as with `socketPath`: `server.info` check, `connectTimeoutMs`,
+  reconnect, stream restore, `onGap`, and `onStateChange`.
+- The stream must be already connected when the promise resolves, and must emit `close` when the
+  connection is lost (the SDK also destroys it when the peer ends it). The SDK writes to it and
+  destroys it when it is done.
+- A rejection with a non-`Error` value is reported using `String(reason)`.
+- `MisaoClientOptions` is now a type alias (a union of the `socketPath` and `connect` forms) rather
+  than an interface, so it can no longer be `extends`-ed; use an intersection (`& { ... }`) instead.
+  `MisaoClientTarget` is exported for the two target forms.
+- `@misao/sdk` does not depend on any WebSocket library; the `ws` import above is only an example.
 
 ## Reconnect and backoff
 
