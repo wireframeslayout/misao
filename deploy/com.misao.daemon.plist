@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  misao デーモンの launchd ユーザーエージェント (macOS)。インストール手順は deploy/README.md を参照。
+  __HOME__ / __NODE__ / __BUNDLE__ は、インストール時に絶対パスへ置き換える (launchd は ~ や %h を展開しない)。
+    __HOME__   ユーザーのホームディレクトリ
+    __NODE__   Node.js >= 24 の実行ファイル (launchd の PATH には nvm 等の Node は入らない)
+    __BUNDLE__ リリースアセットの misao-<version>.mjs (隣の node_modules/node-pty が必要)
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.misao.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__BUNDLE__</string>
+    <string>serve</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- クラッシュ時に再起動する。launchctl bootout / unload で止めたときは再起動しない。 -->
+  <key>KeepAlive</key>
+  <true/>
+  <!-- 再起動の間隔 (秒)。misao.service の RestartSec=1 に合わせる。 -->
+  <key>ThrottleInterval</key>
+  <integer>1</integer>
+  <!-- 停止時は、デーモンが自分で pane を閉じる。launchd が子プロセスを先に殺さない。 -->
+  <key>AbandonProcessGroup</key>
+  <true/>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.misao/misao.log</string>
+  <key>StandardOutPath</key>
+  <string>__HOME__/.misao/misao.log</string>
+</dict>
+</plist>

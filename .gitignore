@@ -6,3 +6,4 @@ dist/
 *.tsbuildinfo
 .worktrees/
 /release/
+/dist-release/

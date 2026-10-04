@@ -13,7 +13,7 @@ env:
 jobs:
   # 依存のインストール・ビルド・検証は読み取り権限だけで行い、書き込み権限のトークンに触れさせない。
   pack:
-    name: Build and verify tarballs
+    name: Build and verify release assets
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -41,13 +41,16 @@ jobs:
       - run: node scripts/verify-release.mjs --tag "$TAG"
       - uses: actions/upload-artifact@v4
         with:
-          name: release-tarballs
-          path: release/*.tgz
+          name: release-assets
+          path: |
+            release/*.tgz
+            release/*.mjs
+            release/SHA256SUMS
           if-no-files-found: error
 
   # 公開だけを行う。checkout も npm も使わず、トークンは gh のステップにだけ渡す。
   publish:
-    name: Publish tarballs to GitHub Releases
+    name: Publish release assets to GitHub Releases
     needs: pack
     runs-on: ubuntu-24.04
     permissions:
@@ -55,14 +58,14 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: release-tarballs
+          name: release-assets
           path: release
       - name: Fail if a release for this tag already exists
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "release $TAG already exists; published tarballs are never replaced" >&2
+            echo "release $TAG already exists; published assets are never replaced" >&2
             exit 1
           fi
       - name: Create the release
@@ -71,4 +74,4 @@ jobs:
         run: |
           args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes)
           if [[ "$TAG" == *-* ]]; then args+=(--prerelease); fi
-          gh release create "$TAG" release/*.tgz "${args[@]}"
+          gh release create "$TAG" release/*.tgz release/*.mjs release/SHA256SUMS "${args[@]}"

@@ -67,3 +67,29 @@ systemctl --user disable --now misao.service
 rm ~/.config/systemd/user/misao.service ~/.local/bin/misao
 systemctl --user daemon-reload
 ```
+
+## macOS (launchd) with the release bundle
+
+`com.misao.daemon.plist` is the launchd counterpart of `misao.service` (a separate unit that
+runs `misao serve`, with `KeepAlive` so it comes back after a crash). It runs the single-file
+release asset `misao-<version>.mjs`, which needs `node-pty` in a `node_modules` next to it
+(see [Embedding](../docs/embedding.md#bundling-the-daemon-and-cli)).
+
+launchd does not expand `~` and does not see nvm/Homebrew Node on its PATH, so the template has
+three placeholders to replace with absolute paths: `__HOME__`, `__NODE__` (Node.js >= 24) and
+`__BUNDLE__` (the `.mjs` file).
+
+```bash
+mkdir -p ~/.misao ~/Library/LaunchAgents
+sed -e "s|__HOME__|$HOME|g" -e "s|__NODE__|$(command -v node)|g" \
+    -e "s|__BUNDLE__|/absolute/path/to/misao-0.1.0.mjs|g" \
+    deploy/com.misao.daemon.plist > ~/Library/LaunchAgents/com.misao.daemon.plist
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.misao.daemon.plist
+
+# Check / stop / uninstall
+launchctl print "gui/$(id -u)/com.misao.daemon"
+launchctl bootout "gui/$(id -u)/com.misao.daemon"
+rm ~/Library/LaunchAgents/com.misao.daemon.plist
+```
+
+Logs go to `~/.misao/misao.log`. As with the systemd unit, agents do not survive a restart.

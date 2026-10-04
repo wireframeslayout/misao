@@ -3,8 +3,11 @@ import { describe, it } from 'node:test';
 import {
   applyWorkspaceVersion,
   buildReleaseManifest,
+  bundleName,
+  formatChecksums,
   parseReleaseTag,
   releaseAssetUrl,
+  releaseFileNames,
   tarballName,
 } from '../release/manifest.mjs';
 
@@ -108,5 +111,29 @@ describe('applyWorkspaceVersion', () => {
     const next = applyWorkspaceVersion({ manifest, version: '0.3.0', workspaceNames });
     assert.deepEqual(next, { name: 'misao-monorepo', version: '0.3.0' });
     assert.equal(manifest.version, '0.0.0');
+  });
+});
+
+describe('release assets', () => {
+  it('names the bundle after the version', () => {
+    assert.equal(bundleName('0.1.0'), 'misao-0.1.0.mjs');
+  });
+
+  it('lists tarballs and the bundle as release files', () => {
+    assert.deepEqual(releaseFileNames('0.1.0'), [
+      'misao-protocol-0.1.0.tgz',
+      'misao-sdk-0.1.0.tgz',
+      'misao-0.1.0.mjs',
+    ]);
+  });
+
+  it('formats sha256sum-compatible lines', () => {
+    assert.equal(
+      formatChecksums([
+        { fileName: 'a.tgz', sha256: 'aa' },
+        { fileName: 'b.mjs', sha256: 'bb' },
+      ]),
+      'aa  a.tgz\nbb  b.mjs\n',
+    );
   });
 });
