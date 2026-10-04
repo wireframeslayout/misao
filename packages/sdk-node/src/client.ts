@@ -1,3 +1,4 @@
+import type { Duplex } from 'node:stream';
 import { PROTOCOL_VERSION, isCompatibleProtocolVersion } from '@misao/protocol';
 import type { MethodName, MethodParams, MethodResult } from '@misao/protocol';
 import { DEFAULT_BACKOFF, computeBackoffDelay } from './backoff.js';
@@ -11,8 +12,17 @@ import type { EventHandler, LineHandler } from './stream-cursor.js';
 import { StreamSubscriber } from './stream-subscriber.js';
 import type { GapInfo, SubscribeOptions, Subscription, SubscriptionErrorInfo } from './stream-subscriber.js';
 
-export interface MisaoClientOptions {
-  socketPath: string;
+/**
+ * 接続先。socketPath (Unix ソケット) か connect (接続済みの Duplex を作る関数。WebSocket 中継など) のどちらか一方を指定する。
+ * connect は初回接続と再接続のたびに呼ばれ、毎回新しい Duplex を返す。
+ */
+export type MisaoClientTarget =
+  | { socketPath: string; connect?: never }
+  | { connect: () => Promise<Duplex>; socketPath?: never };
+
+export type MisaoClientOptions = MisaoClientTarget & MisaoClientOptionsBase;
+
+interface MisaoClientOptionsBase {
   backoff?: Partial<BackoffOptions>;
   /** 接続確立 (server.info の確認とストリーム復元) に待つ上限。超えたら接続を閉じて失敗として扱う。既定 5000。 */
   connectTimeoutMs?: number;
@@ -35,7 +45,7 @@ type Phase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
  * pane.attach は since を持たないので自動復元しない。利用側が onStateChange の 'connected' を見て attach し直す。
  */
 export class MisaoClient {
-  private readonly socketPath: string;
+  private readonly target: string | (() => Promise<Duplex>);
   private readonly backoff: BackoffOptions;
   private readonly connectTimeoutMs: number;
   private readonly errors = new ErrorChannel();
@@ -49,8 +59,13 @@ export class MisaoClient {
   private establishing: RpcConnection | undefined;
   private cancelSleep: (() => void) | undefined;
 
-  constructor({ socketPath, backoff, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS }: MisaoClientOptions) {
-    this.socketPath = socketPath;
+  constructor({ socketPath, connect, backoff, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS }: MisaoClientOptions) {
+    // 型でも排他にしているが、JS 呼び出しや型の絞り込み漏れでも黙って片方を無視しない。
+    const target = socketPath !== undefined && connect === undefined ? socketPath : connect;
+    if (target === undefined || (socketPath !== undefined && connect !== undefined)) {
+      throw new TypeError('MisaoClient requires exactly one of socketPath or connect');
+    }
+    this.target = target;
     this.connectTimeoutMs = connectTimeoutMs;
     this.backoff = { ...DEFAULT_BACKOFF, ...backoff };
   }
@@ -144,7 +159,7 @@ export class MisaoClient {
    * 接続後の応答が connectTimeoutMs 内に揃わなければ (デーモンのハングなど) 接続を閉じて失敗にする。
    */
   private async establish(): Promise<void> {
-    const conn = await RpcConnection.connect(this.socketPath, this.errors.report);
+    const conn = await RpcConnection.connect(this.target, this.errors.report);
     if (this.isClosed()) {
       conn.close();
       throw new MisaoConnectionError('client closed during connect');

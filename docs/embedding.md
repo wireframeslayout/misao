@@ -59,8 +59,9 @@ client.close();
   (for example the `socket` of `misao.json`), then `$MISAO_DIR/misao.sock`, then
   `~/.misao/misao.sock`. A path longer than `MAX_SOCKET_PATH_BYTES` (107 bytes) throws
   `MisaoPathError`. See [Socket location](config.md#socket-location).
-- `MisaoClientOptions`: `socketPath` (required), `backoff` (partial, see below), and
-  `connectTimeoutMs` (default `5000`).
+- `MisaoClientOptions`: exactly one of `socketPath` or `connect` (see
+  [Custom transport](#custom-transport-connect)), `backoff` (partial, see below), and
+  `connectTimeoutMs` (default `5000`). Passing neither or both throws `TypeError` from the constructor.
 - `connect()` connects, calls `server.info`, checks that the protocol major versions match, and
   restores streams. It rejects when the daemon is unreachable (`MisaoConnectionError`) or
   incompatible (`MisaoProtocolVersionError`, see [Versioning](protocol.md#versioning-and-compatibility)).
@@ -73,6 +74,41 @@ client.close();
   connected rejects with `MisaoConnectionError`. `params` are validated by the schema before
   sending; invalid params reject with a Zod `ZodError` and nothing is sent.
 - `close()` ends the client and stops reconnecting.
+
+## Custom transport (`connect`)
+
+To reach the daemon over something other than a Unix socket (for example a WebSocket relayed by
+another process), pass `connect` instead of `socketPath`: a function that returns a connected
+Node.js `Duplex`. The protocol is newline-delimited JSON-RPC, so a transport only has to carry
+bytes unchanged in both directions.
+
+```ts
+import { Duplex } from 'node:stream';
+import WebSocket, { createWebSocketStream } from 'ws';   // example; any WebSocket library works
+import { MisaoClient } from '@misao/sdk';
+
+const client = new MisaoClient({
+  connect: async () => {
+    const ws = new WebSocket('wss://hub.example/misao-relay', { headers: { authorization: `Bearer ${token}` } });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+    return createWebSocketStream(ws);                    // a Duplex carrying the raw bytes
+  },
+});
+await client.connect();
+```
+
+- `connect` runs for the first `connect()` and again for **every reconnect attempt**; return a new
+  `Duplex` each time. A rejection is a failed attempt (`MisaoConnectionError`, with the original
+  error as `cause`), and the usual backoff applies.
+- Everything else behaves exactly as with `socketPath`: `server.info` check, `connectTimeoutMs`,
+  reconnect, stream restore, `onGap`, and `onStateChange`.
+- The stream must be already connected when the promise resolves, and must emit `close` when the
+  connection is lost (the SDK also destroys it when the peer ends it). The SDK writes to it and
+  destroys it when it is done.
+- `@misao/sdk` does not depend on any WebSocket library; the `ws` import above is only an example.
 
 ## Reconnect and backoff
 
