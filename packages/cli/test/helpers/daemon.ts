@@ -28,6 +28,7 @@ export async function startTestDaemon(overrides: Partial<DaemonOptions> = {}): P
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-cli-'));
   const socketPath = path.join(dir, 'misao.sock');
   const daemon = new Daemon({
+    version: '0.0.0-test',
     socketPath,
     pidPath: path.join(dir, 'daemon.pid'),
     statePath: path.join(dir, 'persistence.json'),

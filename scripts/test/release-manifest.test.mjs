@@ -124,6 +124,7 @@ describe('release assets', () => {
       'misao-protocol-0.1.0.tgz',
       'misao-sdk-0.1.0.tgz',
       'misao-0.1.0.mjs',
+      'misao-0.1.0.LICENSES.txt',
     ]);
   });
 

@@ -45,6 +45,7 @@ jobs:
           path: |
             release/*.tgz
             release/*.mjs
+            release/*.LICENSES.txt
             release/SHA256SUMS
           if-no-files-found: error
 
@@ -74,4 +75,4 @@ jobs:
         run: |
           args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes)
           if [[ "$TAG" == *-* ]]; then args+=(--prerelease); fi
-          gh release create "$TAG" release/*.tgz release/*.mjs release/SHA256SUMS "${args[@]}"
+          gh release create "$TAG" release/*.tgz release/*.mjs release/*.LICENSES.txt release/SHA256SUMS "${args[@]}"

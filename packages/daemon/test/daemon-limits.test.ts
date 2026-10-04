@@ -113,7 +113,7 @@ test('logLevel=error では listening (info) が出ず、既定では出る', as
 });
 
 test('0・負数・小数の上限は constructor で RangeError', () => {
-  const base = { socketPath: '/tmp/x.sock', pidPath: '/tmp/x.pid', statePath: '/tmp/x.json' };
+  const base = { version: '0.0.0-test', socketPath: '/tmp/x.sock', pidPath: '/tmp/x.pid', statePath: '/tmp/x.json' };
   const bad: Array<Partial<DaemonOptions>> = [
     { scrollback: 0 },
     { rings: { rawBytes: 0 } },

@@ -256,6 +256,12 @@ test('オブジェクトでない JSON を受けても daemon は落ちず Inval
   });
 });
 
+test('server.info はデーモンのビルド版を version で返す', async () => {
+  await withDaemon(async (_daemon, client) => {
+    assert.equal((await client.request<{ version: string }>('server.info')).version, '0.0.0-test');
+  });
+});
+
 test('epoch が現在と違う購読は gap: true で、保持している最古から再生する', async () => {
   await withDaemon(async (_daemon, client) => {
     const info = await client.request<{ epoch: string; eventHead: number }>('server.info');
@@ -433,6 +439,7 @@ test('同じソケットと pid ファイルで 2 つ目のデーモンは起動
   await withDaemon(async (daemon, client) => {
     const dir = path.dirname(daemon.socketPath);
     const second = new Daemon({
+      version: '0.0.0-test',
       socketPath: daemon.socketPath,
       pidPath: path.join(dir, 'daemon.pid'),
       statePath: path.join(dir, 'persistence.json'),
@@ -451,7 +458,7 @@ test('起動に失敗したら pid ファイルを残さない', async () => {
     const socketPath = path.join(dir, 'misao.sock');
     const pidPath = path.join(dir, 'daemon.pid');
     fs.mkdirSync(socketPath); // ソケットの場所にディレクトリ: 古いソケットとは断定できない
-    const daemon = new Daemon({ socketPath, pidPath, statePath: path.join(dir, 'persistence.json'), log: () => undefined });
+    const daemon = new Daemon({ version: '0.0.0-test', socketPath, pidPath, statePath: path.join(dir, 'persistence.json'), log: () => undefined });
     await assert.rejects(daemon.start());
     assert.equal(fs.existsSync(pidPath), false);
     assert.ok(fs.statSync(socketPath).isDirectory());

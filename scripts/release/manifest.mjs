@@ -9,7 +9,10 @@ export const RELEASE_PACKAGES = [
 ];
 
 // tarball 以外のリリースアセット。CLI + デーモンを 1 ファイルにまとめたバンドル（scripts/bundle-cli.mjs）。
-export const RELEASE_ASSETS = [{ kind: 'bundle', fileName: (version) => bundleName(version) }];
+export const RELEASE_ASSETS = [
+  { kind: 'bundle', fileName: (version) => bundleName(version) },
+  { kind: 'licenses', fileName: (version) => licensesName(version) },
+];
 
 export const CHECKSUMS_FILE = 'SHA256SUMS';
 
@@ -41,6 +44,11 @@ export function tarballName(packageName, version) {
 // CLI + デーモンのバンドルのファイル名
 export function bundleName(version) {
   return `misao-${version}.mjs`;
+}
+
+// バンドルに同梱した依存と misao 本体のライセンス全文
+export function licensesName(version) {
+  return `misao-${version}.LICENSES.txt`;
 }
 
 // 公開する全ファイル名（tarball とバンドル）。SHA256SUMS 自身は含めない。

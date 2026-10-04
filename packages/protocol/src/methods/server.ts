@@ -6,6 +6,8 @@ export const serverMethods = {
     params: z.object({}),
     result: z.looseObject({
       protocolVersion: z.string(),
+      // デーモンのビルド版。version を返さない古いデーモンもあるので省略可。
+      version: z.string().optional(),
       pid: z.int(),
       epoch: EpochSchema,
       uptimeSec: z.number().min(0),

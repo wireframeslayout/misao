@@ -71,18 +71,26 @@ systemctl --user daemon-reload
 ## macOS (launchd) with the release bundle
 
 `com.misao.daemon.plist` is the launchd counterpart of `misao.service` (a separate unit that
-runs `misao serve`, with `KeepAlive` so it comes back after a crash). It runs the single-file
+runs `misao serve`, with `KeepAlive` with `SuccessfulExit` = false, so it comes back after a crash but not after a clean stop, like `Restart=on-failure`). It runs the single-file
 release asset `misao-<version>.mjs`, which needs `node-pty` in a `node_modules` next to it
 (see [Embedding](../docs/embedding.md#bundling-the-daemon-and-cli)).
 
 launchd does not expand `~` and does not see nvm/Homebrew Node on its PATH, so the template has
-three placeholders to replace with absolute paths: `__HOME__`, `__NODE__` (Node.js >= 24) and
-`__BUNDLE__` (the `.mjs` file).
+four placeholders to replace: `__HOME__`, `__NODE__` (Node.js >= 24), `__BUNDLE__` (the `.mjs`
+file) and `__PATH__`. launchd's default PATH has neither Homebrew nor nvm tools, so panes would not
+find them; set `__PATH__` to the PATH you want panes to have (below, your current `$PATH`). The
+template also sets `LANG=en_US.UTF-8`, because launchd's default locale is not UTF-8. Change it if
+you use another UTF-8 locale.
+
+`~/.misao` must have mode `700`: the daemon refuses a socket directory with looser permissions, and
+launchd would then restart it in a loop. `mkdir -p` creates it as `755` under the usual umask `022`,
+so use `install -d -m 700`.
 
 ```bash
-mkdir -p ~/.misao ~/Library/LaunchAgents
+mkdir -p ~/Library/LaunchAgents && install -d -m 700 ~/.misao
+chmod 700 ~/.misao   # also when the directory already existed
 sed -e "s|__HOME__|$HOME|g" -e "s|__NODE__|$(command -v node)|g" \
-    -e "s|__BUNDLE__|/absolute/path/to/misao-0.1.0.mjs|g" \
+    -e "s|__BUNDLE__|/absolute/path/to/misao-0.1.0.mjs|g" -e "s|__PATH__|$PATH|g" \
     deploy/com.misao.daemon.plist > ~/Library/LaunchAgents/com.misao.daemon.plist
 launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.misao.daemon.plist
 

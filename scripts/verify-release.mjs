@@ -15,6 +15,7 @@ import {
   bundleName,
   parseReleaseTag,
   releaseAssetUrl,
+  licensesName,
   releaseFileNames,
   tarballName,
 } from './release/manifest.mjs';
@@ -147,6 +148,12 @@ function assertChecksums() {
 function assertBundle() {
   const bundle = path.join(releaseDir, bundleName(version));
   if (!existsSync(bundle)) throw new Error(`${bundle} not found (run scripts/pack-release.mjs first)`);
+  const licenses = path.join(releaseDir, licensesName(version));
+  if (!existsSync(licenses)) throw new Error(`${licenses} not found (run scripts/pack-release.mjs first)`);
+  const text = readFileSync(licenses, 'utf8');
+  for (const needle of ['misao (Apache-2.0)', 'zod@', '@xterm/headless@']) {
+    if (!text.includes(needle)) throw new Error(`${path.basename(licenses)} does not mention ${needle}`);
+  }
   run('node', [path.join(root, 'scripts/smoke-bundle.mjs'), bundle]);
 }
 

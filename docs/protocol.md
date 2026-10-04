@@ -23,7 +23,7 @@ Related documents: [Configuration](config.md), [CLI](cli.md), [Embedding (Node S
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"server.info","params":{}}
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"0.2.0","pid":4242,"epoch":"01M3RCFVKNN4GWG2FBNS6BVTW2","uptimeSec":12,"paneCount":3,"eventHead":57}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"0.3.0","version":"0.1.0","pid":4242,"epoch":"01M3RCFVKNN4GWG2FBNS6BVTW2","uptimeSec":12,"paneCount":3,"eventHead":57}}
 ```
 
 The socket directory is created with mode `700` and the socket with mode `600`; access control
@@ -31,8 +31,11 @@ is the filesystem permission of the current user.
 
 ## Versioning and compatibility
 
-`PROTOCOL_VERSION` (currently `0.2.0`) is semver and is reported by `server.info` and the
-`daemon.started` event.
+`PROTOCOL_VERSION` (currently `0.3.0`) is semver and is reported by `server.info` and the
+`daemon.started` event. `server.info` also returns `version`, the daemon's own build (release)
+version, which is separate from the protocol version: two daemons with the same
+`protocolVersion` can differ in `version`. It is optional on the wire (daemons before `0.3.0`
+do not send it).
 
 - **Compatible** means the **major** versions are equal (`isCompatibleProtocolVersion`).
   The SDK checks this right after connecting and rejects with `MisaoProtocolVersionError` when
@@ -74,7 +77,7 @@ or the attachment does not exist.
 
 | Method | Purpose | Key params | Result |
 |---|---|---|---|
-| `server.info` | Daemon identity and stream heads | none | `protocolVersion`, `pid`, `epoch`, `uptimeSec`, `paneCount`, `eventHead` |
+| `server.info` | Daemon identity and stream heads | none | `protocolVersion`, `version`, `pid`, `epoch`, `uptimeSec`, `paneCount`, `eventHead` |
 | `server.schema` | JSON schema of the whole protocol | none | `{ protocolVersion, jsonrpc, methods, notifications, events, errors }` |
 | `workspace.list` / `workspace.create` / `workspace.close` / `workspace.rename` | Manage workspaces | `name` (`newName` for rename) | workspace info (`name`, `windows`) or `ok` |
 | `window.create` / `window.close` / `window.rename` | Manage windows inside a workspace | `workspace`, `name`, `windowId` | window info or `ok` |

@@ -18,14 +18,14 @@ misao デーモンは、ローカルの Unix ソケット上で JSON-RPC 2.0 API
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"server.info","params":{}}
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"0.2.0","pid":4242,"epoch":"01M3RCFVKNN4GWG2FBNS6BVTW2","uptimeSec":12,"paneCount":3,"eventHead":57}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"0.3.0","version":"0.1.0","pid":4242,"epoch":"01M3RCFVKNN4GWG2FBNS6BVTW2","uptimeSec":12,"paneCount":3,"eventHead":57}}
 ```
 
 ソケットのディレクトリはモード `700`、ソケットはモード `600` で作成されます。アクセス制御は、現在のユーザーのファイルシステム権限によります。
 
 ## バージョンと互換性
 
-`PROTOCOL_VERSION`（現在は `0.2.0`）は semver で、`server.info` と `daemon.started` イベントで報告されます。
+`PROTOCOL_VERSION`（現在は `0.3.0`）は semver で、`server.info` と `daemon.started` イベントで報告されます。`server.info` は、デーモン自身のビルド版（リリースの version）を `version` でも返します。プロトコルの版とは別で、`protocolVersion` が同じでも `version` が異なるデーモンがあり得ます。`version` はワイヤ上では省略可能です（`0.3.0` より前のデーモンは返しません）。
 
 - **互換**とは、**メジャー**バージョンが等しいことです（`isCompatibleProtocolVersion`）。SDK は接続の直後にこれを確認し、満たされない場合は `MisaoProtocolVersionError` で reject します。
 - フィールド、メソッド、イベント種別、enum 値の追加はマイナー変更で、後方互換です。削除や意味の変更はメジャー変更です。
@@ -59,7 +59,7 @@ misao schema          # prints the result of server.schema as JSON
 
 | メソッド | 目的 | 主なパラメータ | 結果 |
 |---|---|---|---|
-| `server.info` | デーモンの識別情報とストリームの head | なし | `protocolVersion`, `pid`, `epoch`, `uptimeSec`, `paneCount`, `eventHead` |
+| `server.info` | デーモンの識別情報とストリームの head | なし | `protocolVersion`, `version`, `pid`, `epoch`, `uptimeSec`, `paneCount`, `eventHead` |
 | `server.schema` | プロトコル全体の JSON スキーマ | なし | `{ protocolVersion, jsonrpc, methods, notifications, events, errors }` |
 | `workspace.list` / `workspace.create` / `workspace.close` / `workspace.rename` | ワークスペースを管理する | `name`（rename は `newName`） | ワークスペース情報（`name`, `windows`）または `ok` |
 | `window.create` / `window.close` / `window.rename` | ワークスペース内のウィンドウを管理する | `workspace`, `name`, `windowId` | ウィンドウ情報または `ok` |

@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { MisaoClient } from '@misao/sdk';
 import { buildDaemonOptions } from '../../src/commands/serve.js';
+import { MISAO_VERSION } from '../../src/version.js';
 import type { ResolvedConfig } from '../../src/config/index.js';
 import { run } from '../../src/run.js';
 import { createTestIo } from '../helpers/io.js';
@@ -21,6 +22,7 @@ const CONFIG: ResolvedConfig = {
 
 test('buildDaemonOptions: 設定の scrollback / rings / logLevel を DaemonOptions に渡す', () => {
   assert.deepEqual(buildDaemonOptions(CONFIG, {}), {
+    version: MISAO_VERSION,
     socketPath: '/run/misao/misao.sock',
     pidPath: '/run/misao/daemon.pid',
     statePath: '/run/misao/persistence.json',

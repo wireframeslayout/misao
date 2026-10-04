@@ -6,6 +6,9 @@
     __HOME__   ユーザーのホームディレクトリ
     __NODE__   Node.js >= 24 の実行ファイル (launchd の PATH には nvm 等の Node は入らない)
     __BUNDLE__ リリースアセットの misao-<version>.mjs (隣の node_modules/node-pty が必要)
+    __PATH__   pane のコマンドが使う PATH (launchd の既定には Homebrew や nvm のツールが入らない)
+  ~/.misao は mode 700 で作ること (デーモンは 755 などのソケットディレクトリを拒否し、起動失敗を繰り返す)。
+  mkdir -p は umask 022 だと 755 で作るので、install -d -m 700 ~/.misao を使う。
 -->
 <plist version="1.0">
 <dict>
@@ -19,15 +22,27 @@
   </array>
   <key>RunAtLoad</key>
   <true/>
-  <!-- クラッシュ時に再起動する。launchctl bootout / unload で止めたときは再起動しない。 -->
+  <!-- 異常終了 (クラッシュ・非ゼロ終了) のときだけ再起動する。systemd の Restart=on-failure と同じ。
+       SIGTERM などで正常に止まった (終了コード 0) ときは再起動しない。 -->
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
   <!-- 再起動の間隔 (秒)。misao.service の RestartSec=1 に合わせる。 -->
   <key>ThrottleInterval</key>
   <integer>1</integer>
   <!-- 停止時は、デーモンが自分で pane を閉じる。launchd が子プロセスを先に殺さない。 -->
   <key>AbandonProcessGroup</key>
   <true/>
+  <!-- pane の子プロセスが見るロケールと PATH。launchd の既定は UTF-8 でも Homebrew/nvm 入りでもない。 -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__PATH__</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
   <key>StandardErrorPath</key>
   <string>__HOME__/.misao/misao.log</string>
   <key>StandardOutPath</key>

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import type { PaneInfo } from '@misao/protocol';
 import { run } from '../src/run.js';
+import { MISAO_VERSION } from '../src/version.js';
 import { createTestIo } from './helpers/io.js';
 import { openTestPane, startTestDaemon, waitFor } from './helpers/daemon.js';
 import type { TestDaemon } from './helpers/daemon.js';
@@ -35,9 +36,9 @@ async function misao(daemon: TestDaemon | undefined, argv: string[], stdinOrOpti
 const SLEEP = ['sh', '-c', 'sleep 60'];
 
 describe('引数まわり (デーモン不要)', () => {
-  test('--version は misao 0.0.0 を出して 0', async () => {
+  test('--version は misao <package.json の version> を出して 0', async () => {
     const r = await misao(undefined, ['--version']);
-    assert.deepEqual([r.code, r.out], [0, 'misao 0.0.0\n']);
+    assert.deepEqual([r.code, r.out], [0, `misao ${MISAO_VERSION}\n`]);
   });
 
   test('コマンドなしは使い方の誤り (2)、--help は 0', async () => {
