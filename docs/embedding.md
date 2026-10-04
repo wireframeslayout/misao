@@ -56,7 +56,7 @@ node misao-0.1.0.mjs serve
 - `misao-<version>.LICENSES.txt` (also in `SHA256SUMS`) holds the license text of misao
   (Apache-2.0, with `NOTICE`) and of every third-party package inside the bundle (`zod`,
   `@xterm/headless`, both MIT). Ship it with the bundle. The first lines of the bundle point to it.
-  `@xterm/headless` publishes no license file, so only its declared license and repository are listed.
+  `@xterm/headless` publishes no license file, so the upstream text kept in `scripts/release/third-party-licenses/` is used.
 - `node-pty` (a native module) is **not** inside the bundle. The bundle resolves it with the normal
   Node.js lookup, so put it in a `node_modules/node-pty` next to the file (or in any parent
   directory). An embedding app that already ships `node-pty ^1.1.0` shares its copy; misao does not

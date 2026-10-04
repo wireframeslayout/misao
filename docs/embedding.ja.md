@@ -38,7 +38,7 @@ node misao-0.1.0.mjs --version
 node misao-0.1.0.mjs serve
 ```
 
-- `misao-<version>.LICENSES.txt`（`SHA256SUMS` にも載ります）には、misao 本体（Apache-2.0、`NOTICE` を含む）と、バンドルに入っているサードパーティパッケージ（`zod`、`@xterm/headless`。どちらも MIT）のライセンス全文が入っています。バンドルと一緒に配布してください。バンドルの先頭の行もこのファイルを指しています。`@xterm/headless` は公開物にライセンスファイルを含めていないため、宣言されているライセンスとリポジトリだけを記しています。
+- `misao-<version>.LICENSES.txt`（`SHA256SUMS` にも載ります）には、misao 本体（Apache-2.0、`NOTICE` を含む）と、バンドルに入っているサードパーティパッケージ（`zod`、`@xterm/headless`。どちらも MIT）のライセンス全文が入っています。バンドルと一緒に配布してください。バンドルの先頭の行もこのファイルを指しています。`@xterm/headless` は公開物にライセンスファイルを含めていないため、`scripts/release/third-party-licenses/` に置いた上流のライセンス全文を使っています。
 - ネイティブモジュールの `node-pty` はバンドルに**含まれません**。通常の Node.js の探索で解決されるので、ファイルの隣（または親ディレクトリ）の `node_modules/node-pty` に置いてください。すでに `node-pty ^1.1.0` を同梱しているアプリはそれを共有できます。misao 自身はプリビルドを配りません。`@xterm/headless` と `zod` はバンドルの中に入っています。
 - バンドルは ESM で、Node.js 24 以上が必要です。先頭は `#!/usr/bin/env node` の shebang なので、実行権限を付けて直接実行することもできます。
 - CLI とデーモンは同じファイルなので、`--version` と `server.info` の `version` は、そのファイルに埋め込まれたリリースの version（`misao 0.1.0` と `"version": "0.1.0"`）です。`protocolVersion` と違い、同じプロトコルを話す別ビルドのデーモンを見分けられます。`version` を返さない古いデーモンは、その欠落で区別できます。デーモンをサービスとして動かす手順は [deploy/README.md](../deploy/README.md)（Linux は systemd ユニット、macOS は launchd の plist）を参照してください。

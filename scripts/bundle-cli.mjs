@@ -46,22 +46,29 @@ console.log(`bundled ${path.relative(process.cwd(), outfile)}`);
 
 const LICENSE_FILE = /^(licen[sc]e|copying)(\.|$)/i;
 
-// LICENSE ファイルを持たないパッケージ（@xterm/headless など）は、package.json が宣言するライセンスと
-// リポジトリの場所だけを記す。全文は捏造せず、公開物にファイルが無いことを明記する。
+// 公開物に LICENSE ファイルを持たないパッケージ（@xterm/headless など）は、scripts/release/third-party-licenses/ の
+// 同梱ファイルを使う。同梱ファイルも無いときは、宣言されたライセンスとリポジトリだけを記して警告する（全文は捏造しない）。
+const BUNDLED_LICENSES_DIR = path.join(root, 'scripts/release/third-party-licenses');
+
+function bundledLicensePath(packageName) {
+  return path.join(BUNDLED_LICENSES_DIR, `${packageName.replace(/^@/, '').replace('/', '-')}.LICENSE`);
+}
+
+function readLicenseText(manifest, dir) {
+  const fileName = readdirSync(path.join(root, dir)).find((name) => LICENSE_FILE.test(name));
+  if (fileName !== undefined) return readFileSync(path.join(root, dir, fileName), 'utf8');
+  const bundled = bundledLicensePath(manifest.name);
+  if (existsSync(bundled)) return readFileSync(bundled, 'utf8');
+  const repository = typeof manifest.repository === 'string' ? manifest.repository : manifest.repository?.url;
+  if (typeof repository !== 'string') throw new Error(`${manifest.name}: no LICENSE file and no repository in ${dir}`);
+  console.warn(`warning: ${manifest.name} ships no LICENSE file; recorded its declared license only`);
+  return `License: ${manifest.license} (declared in package.json).\nThe published package contains no license file; see ${repository}.`;
+}
+
 function readPackageLicense(dir) {
   const manifest = JSON.parse(readFileSync(path.join(root, dir, 'package.json'), 'utf8'));
   if (typeof manifest.license !== 'string') throw new Error(`${manifest.name}: package.json has no license`);
-  const fileName = readdirSync(path.join(root, dir)).find((name) => LICENSE_FILE.test(name));
-  const repository = typeof manifest.repository === 'string' ? manifest.repository : manifest.repository?.url;
-  if (fileName === undefined && typeof repository !== 'string') {
-    throw new Error(`${manifest.name}: no LICENSE file and no repository in ${dir}`);
-  }
-  const text =
-    fileName === undefined
-      ? `License: ${manifest.license} (declared in package.json).\nThe published package contains no license file; see ${repository}.`
-      : readFileSync(path.join(root, dir, fileName), 'utf8');
-  if (fileName === undefined) console.warn(`warning: ${manifest.name} ships no LICENSE file; recorded its declared license only`);
-  return { name: manifest.name, version: manifest.version, license: manifest.license, text };
+  return { name: manifest.name, version: manifest.version, license: manifest.license, text: readLicenseText(manifest, dir) };
 }
 
 // metafile のパスは cwd 基準。root 基準に直してからパッケージを列挙する。
