@@ -34,6 +34,22 @@ export interface ConnectAttempt {
   timeoutMs: number;
 }
 
+/**
+ * 誰も使わない Duplex を破棄する。_destroy が返す error や destroy() の同期例外で落ちないよう、
+ * 一時的な error リスナーを付けて report に渡す (close で外す)。
+ */
+function destroyQuietly(stream: Duplex, report: (error: unknown) => void): void {
+  if (stream.destroyed) return;
+  const onError = (error: Error): void => report(error);
+  stream.on('error', onError);
+  stream.once('close', () => stream.off('error', onError));
+  try {
+    stream.destroy();
+  } catch (error) {
+    report(error);
+  }
+}
+
 export type Settled<T> = { ok: true; value: T } | { ok: false; error: Error };
 
 function isNotificationName(name: string): name is NotificationName {
@@ -120,7 +136,7 @@ export class RpcConnection {
         .then(
           (stream) => {
             if (settled) {
-              stream.destroy(); // 打ち切り済み。あとから来た接続は誰も使わない。
+              destroyQuietly(stream, report); // 打ち切り済み。あとから来た接続は誰も使わない。
               return;
             }
             settle();
@@ -131,7 +147,8 @@ export class RpcConnection {
             resolve(new RpcConnection(stream, report));
           },
           (cause: unknown) => failWith(cause instanceof Error ? cause.message : String(cause), cause),
-        );
+        )
+        .catch(report); // then のハンドラ自体が投げた場合 (unhandled rejection にしない)
     });
   }
 

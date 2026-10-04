@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import * as net from 'node:net';
 import { afterEach, beforeEach, test } from 'node:test';
-import { duplexPair } from 'node:stream';
-import type { Duplex } from 'node:stream';
+import { Duplex, duplexPair } from 'node:stream';
 import { LineSplitter, PROTOCOL_VERSION, encodeMessage } from '@misao/protocol';
 import { MisaoClient } from '../src/client.js';
 import type { ConnectionState } from '../src/client.js';
@@ -294,6 +293,29 @@ test('connect option: close() during a pending reconnect connect() aborts it and
   await new Promise((resolve) => setTimeout(resolve, 60));
   assert.equal(signals.length, 2);
   assert.equal(states.at(-1)?.status, 'closed');
+});
+
+test('connect option: a late Duplex whose destroy fails is reported, not thrown', async () => {
+  const reports: unknown[] = [];
+  const cases: Duplex[] = [
+    new Duplex({ read() {}, write(_c, _e, cb) { cb(); }, destroy(_e, cb) { cb(new Error('destroy failed')); } }),
+    new Duplex({ read() {}, write(_c, _e, cb) { cb(); } }),
+  ];
+  cases[1]!.destroy = (): Duplex => {
+    throw new Error('destroy threw');
+  };
+  for (const late of cases) {
+    const d = deferredConnect();
+    const c = new MisaoClient({ connect: d.connect, connectTimeoutMs: 20 });
+    c.onError((e) => reports.push(e));
+    await assert.rejects(c.connect(), /timed out/);
+    d.resolveLast(late);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.deepEqual(
+    reports.map((e) => (e as Error).message),
+    ['destroy failed', 'destroy threw'],
+  );
 });
 
 test('constructor rejects when neither or both of socketPath and connect are given', () => {

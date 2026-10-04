@@ -66,8 +66,9 @@ client.close();
   restores streams. It rejects when the daemon is unreachable (`MisaoConnectionError`) or
   incompatible (`MisaoProtocolVersionError`, see [Versioning](protocol.md#versioning-and-compatibility)).
   It can be called only while the client is idle: before the first attempt, or after a failed one.
-- `connectTimeoutMs` bounds the setup after the socket connects (the `server.info` check and
-  stream restore). On timeout the connection is closed and `connect()` (or the current reconnect
+- `connectTimeoutMs` bounds the setup after the connection is established (the `server.info` check and
+  stream restore). With a custom `connect` it also bounds the wait for the `connect` function itself,
+  separately (see [Custom transport](#custom-transport-connect)); with `socketPath` only the setup is bounded. On timeout the connection is closed and `connect()` (or the current reconnect
   attempt) fails with `MisaoConnectionError`. This protects against a hung daemon.
 - `request(method, params)` is typed by `@misao/protocol`. A daemon error rejects with
   `MisaoRpcError` (`code`, `message`; see [Errors](protocol.md#errors)). Calling it while not

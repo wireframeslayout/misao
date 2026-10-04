@@ -46,7 +46,7 @@ client.close();
 - `resolveSocketPath` は CLI と同じ順序で解決します。`$MISAO_SOCKET`、次に `explicitPath`（たとえば `misao.json` の `socket`）、次に `$MISAO_DIR/misao.sock`、次に `~/.misao/misao.sock` です。パスが `MAX_SOCKET_PATH_BYTES`（107 バイト）より長い場合は `MisaoPathError` を投げます。[ソケットの場所](config.ja.md#ソケットの場所) を参照してください。
 - `MisaoClientOptions`: `socketPath` と `connect` のどちらか一方（[接続方法の差し込み](#接続方法の差し込みconnect) を参照）、`backoff`（部分指定可、下記参照）、`connectTimeoutMs`（既定値 `5000`）。どちらも指定しない、または両方指定した場合は、コンストラクターが `TypeError` を投げます。
 - `connect()` は接続し、`server.info` を呼び、プロトコルのメジャーバージョンが一致することを確認し、ストリームを復元します。デーモンに到達できない場合（`MisaoConnectionError`）や互換性がない場合（`MisaoProtocolVersionError`、[バージョン](protocol.ja.md#バージョンと互換性) を参照）は reject されます。呼び出せるのはクライアントがアイドルのときだけで、最初の試行の前か、失敗した試行の後です。
-- `connectTimeoutMs` は、ソケット接続後のセットアップ（`server.info` の確認とストリームの復元）に時間制限を設けます。タイムアウトすると接続を閉じ、`connect()`（または現在の再接続の試行）は `MisaoConnectionError` で失敗します。これによりデーモンのハングから保護されます。
+- `connectTimeoutMs` は、接続確立後のセットアップ（`server.info` の確認とストリームの復元）に時間制限を設けます。タイムアウトすると接続を閉じ、`connect()`（または現在の再接続の試行）は `MisaoConnectionError` で失敗します。これによりデーモンのハングから保護されます。カスタム `connect` では、`connect` 関数の待機にも別枠で同じ時間制限が掛かります（[接続方法の差し込み](#接続方法の差し込みconnect) を参照）。`socketPath` ではセットアップだけが対象です。
 - `request(method, params)` は `@misao/protocol` によって型付けされています。デーモンのエラーは `MisaoRpcError`（`code`、`message`。[エラー](protocol.ja.md#エラー) を参照）で reject されます。未接続の間に呼び出すと `MisaoConnectionError` で reject されます。`params` は送信前にスキーマで検証され、不正な場合は Zod の `ZodError` で reject されます（何も送信されません）。
 - `close()` はクライアントを終了し、再接続を止めます。
 
