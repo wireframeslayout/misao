@@ -93,6 +93,8 @@ struct Inner {
     sizes: SizeArbiter,
     /// attach しているクライアント（`pane.info` の `clients`。attach の順）。
     clients: Vec<String>,
+    /// close が始まった。以後の attach は断る。
+    attach_closed: bool,
     /// 生の出力（pty から読んだままのバイト列）。attach の再生に使う（後続の段）。
     raw: SeqRing<Vec<u8>>,
     /// ANSI を除いた行。`pane.subscribe_lines` が読む。
@@ -236,6 +238,7 @@ impl Pane {
                 rows,
                 sizes: SizeArbiter::default(),
                 clients: Vec::new(),
+                attach_closed: false,
                 raw: SeqRing::new(opts.raw_ring_bytes),
                 lines: SeqRing::new(opts.lines_ring_bytes),
                 assembler: AnsiLineAssembler::default(),

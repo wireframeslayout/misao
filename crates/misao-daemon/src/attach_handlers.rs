@@ -31,13 +31,12 @@ impl Core {
         let client_id = p.client_id.as_str();
         let previous = conn.attachment(&pane.id);
         let replacing = previous.as_ref().is_some_and(|a| a.client_id == client_id);
-        match previous {
-            // 同じ接続・同じ clientId の再 attach: 出力の届け先だけを差し替える（クライアントとしては残し、client.detached も出さない）。
-            Some(old) if replacing => {
-                conn.take_attachment(&pane.id);
-                pane.remove_attachment(old.id);
-            }
-            _ => self.detach_from(&conn, &pane.id),
+        // 同じ接続・同じ clientId の再 attach: 出力の届け先だけを差し替える（クライアントとしては残し、client.detached も出さない）。
+        let old_id = previous.as_ref().filter(|_| replacing).map(|a| a.id);
+        if replacing {
+            conn.take_attachment(&pane.id);
+        } else {
+            self.detach_from(&conn, &pane.id);
         }
         if let (Some(cols), Some(rows)) = (p.cols, p.rows) {
             pane.resize(cols.get(), rows.get(), Some(client_id))
@@ -49,7 +48,9 @@ impl Core {
                 Some(&pane.id),
             );
         }
-        let attached = pane.attach(&conn, client_id, p.replay);
+        let attached = pane
+            .attach(&conn, client_id, p.replay, old_id)
+            .map_err(|_| RpcFailure::new(ErrorCode::PANE_EXITED, "pane is closing"))?;
         conn.set_attachment(&pane.id, Arc::clone(&attached.attachment));
         if !replacing {
             self.events
@@ -86,12 +87,8 @@ impl Core {
         };
         let pane = self.state().registry.live(pane_id).ok();
         if let Some(pane) = pane {
-            pane.remove_attachment(attachment.id);
-            // 同じ clientId が別の接続にも残っていれば clients から外さない
-            if !pane.has_attachment_for(&attachment.client_id) {
-                pane.remove_client(&attachment.client_id);
-                self.inherit_size(&pane, &attachment.client_id);
-            }
+            // 同じ clientId が別の接続にも残っていれば clients から外さない（pane の中で 1 つの操作として行う）
+            self.report_inherited_size(&pane, pane.detach(attachment.id, &attachment.client_id));
         }
         self.events.emit(
             "client.detached",
@@ -100,9 +97,9 @@ impl Core {
         );
     }
 
-    /// 抜けたクライアントがサイズの所有者だったとき、残ったクライアントのうち最後に操作したものにサイズを戻す。
-    fn inherit_size(&self, pane: &Pane, client_id: &str) {
-        match pane.forget_client(client_id) {
+    /// 抜けたクライアントがサイズの所有者だったとき、サイズを継いだクライアントを知らせる。
+    fn report_inherited_size(&self, pane: &Pane, inherited: Result<Option<String>, String>) {
+        match inherited {
             Ok(Some(owner)) => {
                 let (cols, rows) = pane.size();
                 self.events.emit(
@@ -113,9 +110,7 @@ impl Core {
                 self.persist_soon();
             }
             Ok(None) => {}
-            Err(e) => self
-                .log
-                .error(&format!("cannot restore the pane size after detach: {e}")),
+            Err(e) => self.log.error(&format!("cannot restore the pane size after detach: {e}")),
         }
     }
 
@@ -128,11 +123,10 @@ impl Core {
 
     /// pane の close で、全接続の attach を外す（閉じた Pane への参照を残さない）。
     pub(crate) fn release_attachments(&self, pane: &Pane) {
-        for attachment in pane.take_attachments() {
+        for attachment in pane.close_attachments() {
             if let Some(conn) = attachment.conn() {
                 conn.remove_attachment_if(&pane.id, attachment.id);
             }
-            pane.remove_client(&attachment.client_id);
             self.events.emit(
                 "client.detached",
                 json!({"clientId": attachment.client_id}),

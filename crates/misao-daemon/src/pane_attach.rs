@@ -11,11 +11,28 @@ pub struct Attached {
     pub truncated: bool,
 }
 
+/// close が始まった pane への attach。
+#[derive(Debug)]
+pub struct AttachRefused;
+
 impl Pane {
     /// 出力の届け先に加え、`clients` に載せる。届け先の登録と head の読み取りは、出力の取り込みと同じ lock（`order`）の中で
     /// 行うので、再生が覆う範囲（〜head）とライブで届く範囲（head〜）に隙間も重なりも出ない。
-    pub fn attach(&self, conn: &Arc<ConnHandle>, client_id: &str, replay: Replay) -> Attached {
+    /// close が始まっていれば Err。`replacing` は同じ接続・同じ clientId の attach で、置き換える古い attach の id。
+    pub fn attach(
+        &self,
+        conn: &Arc<ConnHandle>,
+        client_id: &str,
+        replay: Replay,
+        replacing: Option<u64>,
+    ) -> Result<Attached, AttachRefused> {
         let order = lock(&self.order);
+        if lock(&self.inner).attach_closed {
+            return Err(AttachRefused);
+        }
+        if let Some(old) = replacing {
+            lock(&self.attachments).retain(|a| a.id != old);
+        }
         let (head, oldest, truncated, entries) = {
             let inner = lock(&self.inner);
             let entries: Vec<(u64, String, Vec<u8>)> = match replay {
@@ -59,12 +76,12 @@ impl Pane {
             ));
         }
         attachment.set_replay(lines);
-        Attached {
+        Ok(Attached {
             attachment,
             head,
             oldest,
             truncated,
-        }
+        })
     }
 
     /// 全 attach へ出力を配る（`order` の lock の中で呼ぶ）。
@@ -79,33 +96,41 @@ impl Pane {
         }
     }
 
-    pub fn remove_attachment(&self, attachment_id: u64) {
-        lock(&self.attachments).retain(|a| a.id != attachment_id);
-    }
-
-    /// 全接続の attach を外して返す（close のとき、閉じた Pane への参照を残さない）。
-    pub fn take_attachments(&self) -> Vec<Arc<Attachment>> {
-        std::mem::take(&mut *lock(&self.attachments))
-    }
-
     /// 同じ clientId が別の接続にも attach しているか。
-    pub fn has_attachment_for(&self, client_id: &str) -> bool {
+    fn has_attachment_for(&self, client_id: &str) -> bool {
         lock(&self.attachments).iter().any(|a| a.client_id == client_id)
     }
 
-    pub fn remove_client(&self, client_id: &str) {
-        lock(&self.inner).clients.retain(|c| c != client_id);
-    }
-
-    /// クライアントの離脱。所有者だった場合は、残るクライアントのうち最後に操作したものの
-    /// サイズを適用し、適用した先の clientId を返す（なければ None）。
-    pub fn forget_client(&self, client_id: &str) -> Result<Option<String>, String> {
+    /// attach を外す。同じ clientId が別の接続に残っていなければ clients からも外し、サイズの所有者だったら
+    /// 残ったクライアントのうち最後に操作したもののサイズへ戻す（その clientId を返す）。
+    /// 外す・clients から消す・サイズを戻す、は `order` の下で 1 つの操作として行う（attach / close と交錯しない）。
+    pub fn detach(&self, attachment_id: u64, client_id: &str) -> Result<Option<String>, String> {
         let _order = lock(&self.order);
+        lock(&self.attachments).retain(|a| a.id != attachment_id);
+        if self.has_attachment_for(client_id) {
+            return Ok(None);
+        }
         let mut inner = lock(&self.inner);
+        inner.clients.retain(|c| c != client_id);
         let Some(decision) = inner.sizes.forget(client_id) else {
             return Ok(None);
         };
         self.apply(&mut inner, &decision)?;
         Ok(decision.owner)
+    }
+
+    /// close の開始。以後の attach は断る。
+    pub(super) fn refuse_attach(&self) {
+        let _order = lock(&self.order);
+        lock(&self.inner).attach_closed = true;
+    }
+
+    /// 全接続の attach を外して返す（close のとき、閉じた Pane への参照を残さない）。以後の attach は断る。
+    pub fn close_attachments(&self) -> Vec<Arc<Attachment>> {
+        let _order = lock(&self.order);
+        lock(&self.inner).clients.clear();
+        let taken = std::mem::take(&mut *lock(&self.attachments));
+        lock(&self.inner).attach_closed = true;
+        taken
     }
 }

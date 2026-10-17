@@ -339,3 +339,54 @@ async fn attach_rejects_cells_unknown_panes_and_bad_params() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn a_detach_and_an_attach_of_the_same_client_id_from_other_connections_keep_the_client() {
+    let core = core();
+    let mut owner = connect(&core);
+    let pane_id = open(&mut owner, "sleep 30").await;
+    for round in 0..40 {
+        let (mut a, mut b) = (connect(&core), connect(&core));
+        a.ok("pane.attach", json!({"paneId": pane_id, "clientId": "C", "cols": 100, "rows": 30})).await;
+        let detach = a.ok("pane.detach", json!({"paneId": pane_id}));
+        let attach = b.ok("pane.attach", json!({"paneId": pane_id, "clientId": "C", "cols": 90, "rows": 20}));
+        tokio::join!(detach, attach);
+        let i = info(&mut owner, &pane_id).await;
+        assert_eq!(i["clients"], json!(["C"]), "round {round}: b is still attached");
+        assert_eq!(i["sizeOwner"], "C", "round {round}");
+        drop((a, b));
+        for _ in 0..500 {
+            if info(&mut owner, &pane_id).await["clients"] == json!([]) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_attach_racing_a_close_is_either_refused_or_detached_before_pane_closed() {
+    for round in 0..20 {
+        let core = core();
+        let mut owner = connect(&core);
+        let pane_id = open(&mut owner, "sleep 30").await;
+        let mut events = connect(&core);
+        events.ok("events.subscribe", json!({"since": 0})).await;
+        let mut view = connect(&core);
+        let attach = view.call("pane.attach", json!({"paneId": pane_id, "clientId": "A"}));
+        let close = owner.ok("pane.close", json!({"paneId": pane_id}));
+        let (attached, _) = tokio::join!(attach, close);
+        let attached_ok = attached.get("error").is_none();
+        if !attached_ok {
+            let code = attached["error"]["code"].as_i64().unwrap();
+            assert!(code == 1001 || code == 1002, "round {round}: {attached}");
+        }
+        let mut kinds = Vec::new();
+        while !kinds.contains(&"pane.closed".to_string()) {
+            kinds.push(events.next_notification().await["params"]["type"].as_str().unwrap().to_string());
+        }
+        let attached_events = kinds.iter().filter(|k| *k == "client.attached").count();
+        let detached_events = kinds.iter().filter(|k| *k == "client.detached").count();
+        assert_eq!(attached_events, detached_events, "round {round}: every attach is released before pane.closed: {kinds:?}");
+    }
+}
