@@ -170,7 +170,11 @@ Windows は ConPTY に前面プロセスグループが無く、誤った名前�
 
 `persistence.json`（`--data` または socket の親ディレクトリ）は **Node 版と同じ形式で、相互に読めます**（`packages/e2e/test/persistence.test.ts` が
 Node で保存 -> Rust で復元、Rust で保存 -> Node で復元を確かめる）。保存するのは workspace / window の定義と pane のメタ（`paneId`・`windowId`・`cmd`・`cwd`・`env`・`labels`・`cols`・`rows`）で、
-`env` は `pane.open` の `env` だけです（`ephemeralEnv` は保存しない）。一時ファイル（mode 600）に書いて fsync してから rename します。
+`env` は `pane.open` の `env` だけです（`ephemeralEnv` は保存しない）。書き方は、同じディレクトリにランダムな名前の一時ファイルを `O_EXCL`・`O_NOFOLLOW`・mode 600 で作り、書く -> ファイルを fsync -> rename -> 親ディレクトリを fsync、です
+（Node 版は固定名の一時ファイルに書いて fsync と rename だけで、ディレクトリの fsync と O_EXCL / O_NOFOLLOW はありません）。
+データディレクトリは、ソケットのディレクトリと同じ検証（シンボリックリンクでない・ディレクトリ・所有者が自分・group / other に権限が無い）を起動時に行い、違反は起動エラーにします（Node 版は検証しない）。
+読み込みは `O_NOFOLLOW` で開き、通常のファイルであること・32 MiB 以下であることを確かめてから読みます。workspace・window・pane は各 1 万まで、`cmd` / `env` / `labels` は各 4096 要素まで、文字列は 1 MiB までで、
+超えるファイルは起動エラーです。保存するときも同じ上限で断る（読めないファイルを作らない）ので、上限に達した `pane.open` は保存の失敗として元に戻ります（Node 版にこれらの上限は無い）。
 
 - **再起動**: 保存してある pane は `stopped` で復元されます（`pid` は `null`、`agentState` は `unknown`）。ラベルの編集と `pane.close` はでき、
   `pane.write` / `resize` / `screen` / `attach` / `subscribe_lines` は `PaneExited`（`pane is stopped`）です。`paneCount` と `pane.list` に含まれます。
@@ -178,7 +182,7 @@ Node で保存 -> Rust で復元、Rust で保存 -> Node で復元を確かめ�
   必須項目の欠落・余計な項目、`cols` / `rows` が正の整数でない、ID の形式違反、workspace 名・window ID・pane ID の重複、存在しない window への所属が対象です。詳細の文言は serde のもので Zod とは違います。
 - **保存の時機**: `pane.open` / `pane.close` / `pane.set_label` / workspace・window の作成・rename・close は保存してからイベントを出します。
   作成・rename・ラベルは保存に失敗したら元に戻します。`pane.open` が保存に失敗したら、作った layout も登録も戻し、起動した子はイベントを出さずに止めます。
-  `close` は子を止めてしまっているので戻さず、メモリは実態のまま `pane.closed` を出してから失敗を返します。サイズ（`cols` / `rows`）は 1 秒遅らせて保存し、失敗はログだけで、デーモンの終了時に残りを保存します。
+  `close` は子を止めてしまっているので戻さず、メモリは実態のまま `pane.closed` を出してから失敗を返します。サイズ（`cols` / `rows`）は 1 秒遅らせて保存し、失敗はログだけで、デーモンの終了時に残りを保存します。保存の最中に入ったサイズの予約は世代番号で見分け、取りこぼさず次の保存に回します。
 - **排他（Node 版との違い）**: Node 版は単一スレッドなので「変更 -> 保存 -> 失敗なら戻す」が割り込まれません。Rust 版は保存する状態を変える操作を `gate`（非同期の mutex）で 1 つずつ行い、
   fsync は全体の状態の lock の外で行います（読み取り・入出力は待たない）。書き込みの順序づけの lock を取ってからスナップショットを作るので、古い状態が新しい状態を上書きしません。lock の順序は gate -> 書き込み -> 全体の状態です。
 
@@ -188,7 +192,10 @@ Node で保存 -> Rust で復元、Rust で保存 -> Node で復元を確かめ�
 （出力の取り込みと同じ lock の中で届け先の登録と `head` の読み取りを行うので、再生とライブの間に隙間も重なりも出ません）。
 `raw` は生出力リングの全体（`truncated` はリングが欠けているか）、`snapshot` は見えている行だけを描き直す 1 通知（`replay: "snapshot"`）で、`mode: cells` は `Unsupported` です。
 pane のサイズは最後に操作した（`pane.write` の `clientId`、`pane.attach` / `pane.resize` のサイズ）クライアントのもので、所有者が抜けると、残ったクライアントのうち最後に操作したもののサイズに戻ります。
-接続が切れたときも同じ後始末をします。送信キューが 16 MiB を超えた接続は切ります。同じ接続・同じ `clientId` の再 attach は届け先だけを差し替え、`client.detached` を出しません。
+接続が切れたときも同じ後始末をします。attach・detach・close の後始末（届け先・clients・サイズの所有者・「close が始まった」印）は pane の `order` の下で 1 つの操作として行い、close が始まった後の attach は `PaneExited`（`pane is closing`）で断ります。
+送信キューは、メッセージを足したときの合計が 16 MiB を超えるなら、投入せずに接続を切ります（1 通で上限を飛び越えない）。応答前の attach が溜める出力も 16 MiB までで、超えたら attach を諦めて接続を切ります。
+snapshot は 1 通の通知です。画面は最大 1024 x 1024 セルで、文字だけなら約 1 MiB（base64 で約 1.4 MiB）ですが、ほぼ全セルで色や飾りが変わる最悪の画面（1 セルあたり最大 60 バイト程度の SGR）では 16 MiB を超ええます。
+その場合は上の規則で接続が切れ、クライアントは `replay: none` か `raw` で入り直します。現実の画面（数百 x 数十セル）では 1 MiB を大きく下回ります。同じ接続・同じ `clientId` の再 attach は届け先だけを差し替え、`client.detached` を出しません。
 
 Node 版と違う点: pane を `close` したとき、attach していたクライアントには `client.detached` を出しますが、所有者の交代による `pane.resized` は出しません（閉じる pane のサイズを変えても意味が無いため）。
 

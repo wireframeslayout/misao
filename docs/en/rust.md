@@ -187,7 +187,11 @@ reporting nothing beats reporting a wrong name, so it is absent (as in the Node 
 `persistence.json` (in `--data`, or the socket's directory) has **the same format as the Node build and each can read the other's file**
 (`packages/e2e/test/persistence.test.ts` checks Node-saved -> Rust-restored and Rust-saved -> Node-restored). It holds the workspace / window
 definitions and the pane metadata (`paneId`, `windowId`, `cmd`, `cwd`, `env`, `labels`, `cols`, `rows`); `env` is only the `env` of `pane.open`
-(`ephemeralEnv` is never saved). It is written to a temporary file (mode 600), fsynced and renamed.
+(`ephemeralEnv` is never saved). It is written as: a randomly named temporary file in the same directory created with `O_EXCL`, `O_NOFOLLOW` and mode 600, then write -> fsync the file -> rename -> fsync the parent directory
+(the Node build writes a fixed-name temporary file and only fsyncs and renames; it has no directory fsync, `O_EXCL` or `O_NOFOLLOW`).
+At startup the data directory gets the same checks as the socket directory (not a symlink, is a directory, owned by the current user, no group / other permissions); a violation stops startup (the Node build does not check).
+Loading opens with `O_NOFOLLOW`, requires a regular file of at most 32 MiB, and then reads it. At most 10,000 workspaces, windows and panes each, 4096 entries in each of `cmd` / `env` / `labels`, and 1 MiB per string are accepted;
+a larger file stops startup. Saving refuses the same limits (it never writes a file it could not load), so a `pane.open` that hits a limit is undone like any save failure (the Node build has none of these limits).
 
 - **Restart**: saved panes come back as `stopped` (`pid` is `null`, `agentState` is `unknown`). Labels can be edited and `pane.close` works;
   `pane.write` / `resize` / `screen` / `attach` / `subscribe_lines` return `PaneExited` (`pane is stopped`). They count in `paneCount` and `pane.list`.
@@ -195,7 +199,7 @@ definitions and the pane metadata (`paneId`, `windowId`, `cmd`, `cwd`, `env`, `l
   malformed ids, duplicate workspace names / window ids / pane ids, a pane in an unknown window. The detail text comes from serde, not Zod.
 - **When it saves**: `pane.open` / `pane.close` / `pane.set_label` and workspace / window create, rename, close save first and then emit events.
   Create, rename and labels are undone if saving fails. A `pane.open` whose save fails undoes the layout and the registration and stops the started child without emitting events.
-  `close` has already stopped the child, so it is not undone: memory keeps the real state, `pane.closed` is emitted, and then the failure is returned. Sizes (`cols` / `rows`) are saved after a 1 s delay, failures are only logged, and the rest is saved when the daemon stops.
+  `close` has already stopped the child, so it is not undone: memory keeps the real state, `pane.closed` is emitted, and then the failure is returned. Sizes (`cols` / `rows`) are saved after a 1 s delay, failures are only logged, and the rest is saved when the daemon stops. A reservation made while a save is in flight is detected with a generation number and saved by the next save instead of being dropped.
 - **Exclusion (difference from the Node build)**: the Node build is single-threaded, so "change -> save -> undo on failure" cannot be interleaved. The Rust build runs operations that change saved state one at a time under a `gate` (an async mutex)
   and fsyncs outside the global state lock (reads and I/O do not wait). The snapshot is taken after the write-ordering lock is held, so an old state never overwrites a newer one. Lock order: gate -> write -> global state.
 
@@ -205,7 +209,10 @@ definitions and the pane metadata (`paneId`, `windowId`, `cmd`, `cwd`, `env`, `l
 (the destination is registered and `head` is read under the same lock that ingests output, so there is neither a gap nor an overlap between the replay and live output).
 `raw` replays the whole raw ring (`truncated` says whether the ring has a gap); `snapshot` is one notification (`replay: "snapshot"`) that repaints the visible rows; `mode: cells` is `Unsupported`.
 The pane size is the last acting client's (`clientId` of `pane.write`, the size of `pane.attach` / `pane.resize`); when the owner leaves, it returns to the last acting remaining client.
-A closed connection is cleaned up the same way. A connection whose send queue exceeds 16 MiB is dropped. Re-attaching with the same connection and `clientId` only swaps the destination, with no `client.detached`.
+A closed connection is cleaned up the same way. Attach, detach and close update the destination, `clients`, the size owner and the "closing" mark together under the pane's `order` lock, and an attach after a close has started is refused with `PaneExited` (`pane is closing`).
+A message that would take the send queue past 16 MiB is not queued and the connection is dropped (one message cannot jump over the limit). Output buffered for an attach before its reply is also capped at 16 MiB; beyond that the attach is abandoned and the connection dropped.
+A snapshot is a single notification. The screen is at most 1024 x 1024 cells: text only is about 1 MiB (about 1.4 MiB in base64), but a worst-case screen where nearly every cell changes colour or decoration (up to about 60 bytes of SGR per cell) can exceed 16 MiB.
+Then the rule above drops the connection and the client re-attaches with `replay: none` or `raw`. Real screens (hundreds by tens of cells) are far below 1 MiB. Re-attaching with the same connection and `clientId` only swaps the destination, with no `client.detached`.
 
 Difference from the Node build: closing a pane emits `client.detached` for its clients, but no `pane.resized` for a size hand-over (resizing a pane that is being closed is pointless).
 
