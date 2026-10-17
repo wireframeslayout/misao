@@ -39,7 +39,7 @@ Node の `net.Server.listen` が名前付きパイプに対して渡せるのは
 
 | 案 | 内容 | 追加の依存 | 保護の強さ | 工数 | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| A. 既定の DACL に任せる（現状の試作） | `NULL` の SECURITY_ATTRIBUTES で作られる DACL（Microsoft のドキュメントでは SYSTEM / 管理者 / 作成者に full、Everyone と匿名に read） | なし | 弱い。read だけでも接続時の挙動次第で漏れる可能性 | S | 実機で ACL を確認するまでは「保護済み」と言わない |
+| A. 既定の DACL に任せる（現状の試作） | `NULL` の SECURITY_ATTRIBUTES で作られる DACL（Microsoft のドキュメントでは SYSTEM / 管理者 / 作成者に full、Everyone と匿名に read） | なし | 弱い。**不十分の見込みが高い**（Everyone への read で、読み取りだけの接続から出力が漏れる可能性） | S | 実機で ACL を確認するまでは「保護済み」と言わない |
 | B. ネイティブアドオンでパイプを自前で作る | `CreateNamedPipeW` に SDDL `D:P(A;;GA;;;<ユーザー SID>)` を渡し、Duplex として Node に橋渡し | **要承認**（N-API アドオン、または ffi 系。prebuild の配布も要る） | 強い（`FILE_FLAG_FIRST_PIPE_INSTANCE` と合わせて先取りにも強い） | L | libuv の pipe handle に既存のハンドルを渡せないため、サーバー全体をアドオンで実装する必要がある |
 | C. listen 後に DACL を書き換える | `SetNamedSecurityInfo` 相当を外部から | PowerShell / .NET では他プロセスが作ったパイプの DACL を変更する手段が見当たらない。`icacls` はパイプを扱えない（要実機確認） | - | - | 現実的ではない |
 | D. アプリ層で認証する | `%LOCALAPPDATA%\misao` の token ファイル（プロファイルの ACL で本人のみ）を接続直後に送らせる | なし（プロトコルに認証の交換を足す） | 中。接続はできるが何も操作できない。同一ユーザー内は Unix と同じく境界にならない | M | プロトコル 0.x のうちに入れるなら後方互換の問題が小さい |
@@ -51,7 +51,7 @@ Node の `net.Server.listen` が名前付きパイプに対して渡せるのは
 そのほかに必要な対策:
 
 - **クライアント側の先取り対策**: 他ユーザーが同じ名前のパイプを先に作る（squatting）と、SDK はそちらに接続してしまう。接続先サーバーのプロセス ID（`GetNamedPipeServerProcessId`）を確かめる手段が Node に無い。D の token はこれにも効く（token を持たないサーバーは応答できない）。サーバー側は libuv が `FILE_FLAG_FIRST_PIPE_INSTANCE` を付ける見込みで、二重起動は `EADDRINUSE` になる（要実機確認）。
-- **リモートからの接続**: libuv は `PIPE_REJECT_REMOTE_CLIENTS` を付ける見込み（要実機確認）。
+- **リモートからの接続**: libuv は `CreateNamedPipeW` に `PIPE_REJECT_REMOTE_CLIENTS` を付けない（付くのは `FILE_FLAG_FIRST_PIPE_INSTANCE` だけ）。**リモートからの接続が拒否されることを期待しない**。別ホストからの接続可否は V2 で確かめ、必要なら ACL（B）か認証（D）で防ぐ。
 - **dataDir**: `%USERPROFILE%` 配下はプロファイルの既定 ACL（本人 / SYSTEM / 管理者）を継承する。Unix の 700 + uid 確認に当たる検証は、ACL を読む手段が Node に無いため未実装（シンボリックリンクとディレクトリであることだけ確認）。
 
 ## 3. 前面プロセス
@@ -89,13 +89,13 @@ Node の `net.Server.listen` が名前付きパイプに対して渡せるのは
 
 node-pty 1.1.0（`packages/daemon` の依存）を同梱物から確認した結果:
 
-- **ConPTY か winpty か**: `WindowsPtyAgent` は `useConpty` が未指定なら Windows のビルド番号が 18309 以上で ConPTY、それ未満で winpty（`winpty-agent.exe`）を使う。misao は指定していないので自動選択。Windows 10 1809 以降なら ConPTY。
+- **ConPTY か winpty か**: `WindowsPtyAgent` は `useConpty` が未指定なら Windows のビルド番号が 18309 以上で ConPTY、それ未満で winpty（`winpty-agent.exe`）を使う。misao は指定していないので自動選択。Windows 10 1903（ビルド 18362）以降は ConPTY、1809（ビルド 17763）は winpty になる。
 - **ビルド**: `install` は `node scripts/prebuild.js || node-gyp rebuild`。`prebuilds/` には `win32-x64`・`win32-arm64`・`darwin-arm64`・`darwin-x64` があり（`conpty.node`、`conpty_console_list.node`、`pty.node`（winpty）、`winpty-agent.exe`、`winpty.dll`）、Windows では prebuild が使われてコンパイラは要らない見込み。Linux 向けの prebuild は無く、Linux では `node-gyp rebuild` で作られる。CI で確かめる（V6）。
 - **spawn-helper**: Unix 専用（`UnixTerminal` が `fork` 時に使う補助バイナリで、macOS の prebuild に入っている）。Windows では使われず、何も要らない。
 - **conpty.dll**: `useConptyDll`（既定 false）で同梱の OpenConsole 系 DLL（`third_party/conpty/1.23.251008001`）を使える。既定は OS 標準の ConPTY。OS が古い場合や挙動差（後述の再描画）が問題になれば切り替え候補。
 - **API の差**（`lib/windowsTerminal.js` を読んで確認）:
   - `kill(signal)` は `signal` を渡すと `Signals not supported on windows.` を投げる。`Pane.close()` は `process.kill(-pid, 'SIGHUP')` → 失敗で `process.kill(pid)`（Windows では強制終了、ツリーは対象外）の経路になる。Windows では `proc.kill()`（ConPTY のコンソールにつながるプロセスを終了）を使う分岐が要る。**この PR では未実装**で、確認項目 V4 で挙動を見る。
-  - `encoding: null` は `opt.encoding` が偽なので警告は出ない。データが Buffer で来るか文字列で来るかは要実機確認（misao は Buffer 前提）。
+  - `encoding: null` は `opt.encoding` が偽なので警告は出ない。node-pty は Windows で出力ソケットに `setEncoding('utf8')` する（`windowsPtyAgent.js`）ので、出力は**常に文字列**で届く。`pane.ts` はその文字列を `Buffer.from(d)` で Buffer に変換して扱う。実機で確かめるのは、無効な UTF-8 や VT の再合成でバイト情報が失われないか（V11 で採取した生バイトと比べる）だけ。
   - 終了後の `resize` は例外になる（`Cannot resize a pty that has already exited`）。`pane.resize` が exit 競合で投げないか確認する。
   - `proc.process` は端末名（§3）。
 - 工数: 導入 S、挙動の吸収 M。
@@ -132,8 +132,8 @@ ConPTY は、子プロセスの出力をそのまま通すのではなく、自�
 
 | ID | 目的 | 手順 | 期待 / 判断 |
 | --- | --- | --- | --- |
-| V1 | 既定の DACL | `node packages/cli/dist/main.js serve` を起動し、別のシェルで `$p=[IO.Pipes.NamedPipeClientStream]::new('.','misao-<解決された名前>','InOut'); $p.Connect(); $p.GetAccessControl().Access` | Everyone / Users に許可があれば §2.2 の A は不十分。許可が本人・SYSTEM・管理者だけなら A で足りる |
-| V2 | 別ユーザーからの接続 | 標準ユーザーを別に作り、`runas` で同じ手順の接続を試す | 拒否されること |
+| V1 | 既定の DACL に Everyone の read が付くか、および read だけで接続したときに何が読めるか（`server.info` やイベントが流れるか） | `node packages/cli/dist/main.js serve` を起動し、別のシェルで `$p=[IO.Pipes.NamedPipeClientStream]::new('.','misao-<解決された名前>','InOut'); $p.Connect(); $p.GetAccessControl().Access` | Everyone に read が付けば A は不十分（その場合、read だけで開いた接続で `server.info` の応答やイベントが読めるかも確かめる）。許可が本人・SYSTEM・管理者だけなら A で足りる |
+| V2 | 別ユーザー・別ホストからの接続 | 標準ユーザーを別に作り、`runas` で同じ手順の接続を試す。別ホストからは `\\<ホスト名>\pipe\<パイプ名>` を開く（ファイアウォールと SMB の設定が要る） | 別ユーザーは拒否されること。別ホストからの接続は、拒否されることを期待せず結果を記録する |
 | V3 | 二重起動と stale | `serve` を 2 つ起動し、片方を `Stop-Process -Force` して再起動 | 二重起動は失敗し、強制終了後は再起動できる |
 | V4 | ConPTY のペイン | `misao new -- cmd.exe`、`misao send`、`misao screen`、`misao attach`、resize、`exit` | 入力・出力・resize・終了検知（`pane.state` が exited）が動く。`pane.close` で子が残らない |
 | V5 | `server.info` / `pane.state` | `misao status`、`misao events` で idle/working の遷移を観察 | 何もしない間に working にならない（再描画の誤判定が無い） |

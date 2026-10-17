@@ -58,7 +58,7 @@ function resolveDataDir(io: CliIo, dir: string | undefined): string | undefined 
 }
 
 /** 名前付きパイプ (Windows) には親ディレクトリが無いので、pid と状態の置き場所は misao のディレクトリにする。 */
-function pipeDataDir(io: CliIo, socketPath: string): string | undefined {
+export function pipeDataDir(io: CliIo, socketPath: string): string | undefined {
   if (!isNamedPipePath(socketPath)) return undefined;
   return resolveMisaoDirs({ env: io.env, homeDir: io.homeDir })[0].path;
 }

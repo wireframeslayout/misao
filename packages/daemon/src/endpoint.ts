@@ -18,6 +18,12 @@ export type EndpointProtection =
   /** プロセスの既定の DACL 任せ。「起動したユーザーのみ」への制限は未実装で、実機での確認が要る（docs/ja/windows.md）。 */
   | 'default-dacl';
 
+/** 保護が既定の DACL 任せのときだけ警告を出す。 */
+export function warnIfDefaultDacl(protection: EndpointProtection, warn: (message: string) => void): void {
+  if (protection !== 'default-dacl') return;
+  warn('endpoint is protected by the default DACL only; restricting it to the current user is not implemented yet');
+}
+
 export function endpointKind(platform: NodeJS.Platform = process.platform): EndpointKind {
   return platform === 'win32' ? 'pipe' : 'unix';
 }

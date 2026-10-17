@@ -98,6 +98,13 @@ function requirePipeName(source: string, value: string): string {
       `${source} must be a named pipe (${NAMED_PIPE_PREFIX}<name>) on Windows: ${value}`,
     );
   }
+  // 接頭辞のあとが名前として成り立つこと: 空でない、NUL や制御文字を含まない、区切り (\ /) を含まない
+  const name = value.slice(NAMED_PIPE_PREFIX.length);
+  if (name === '' || /[\u0000-\u001f\\/]/.test(name)) {
+    throw new MisaoPathError(
+      `${source} has an invalid pipe name (must be non-empty, without control characters or path separators): ${JSON.stringify(value)}`,
+    );
+  }
   return value;
 }
 

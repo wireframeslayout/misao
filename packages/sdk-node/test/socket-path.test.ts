@@ -176,3 +176,11 @@ test('非 win32 の platform ではパイプ名を受け付けない（相対パ
     MisaoPathError,
   );
 });
+
+test('win32: 接頭辞だけ・NUL や制御文字・区切りを含むパイプ名は MisaoPathError', () => {
+  const prefix = '\\\\.\\pipe\\';
+  for (const bad of [prefix, `${prefix}a\0b`, `${prefix}a\nb`, `${prefix}a\\b`, `${prefix}a/b`]) {
+    assert.throws(() => resolveSocketPath({ env: { MISAO_SOCKET: bad }, ...win }), MisaoPathError, JSON.stringify(bad));
+    assert.throws(() => resolveSocketPath({ env: {}, explicitPath: bad, ...win }), MisaoPathError, JSON.stringify(bad));
+  }
+});

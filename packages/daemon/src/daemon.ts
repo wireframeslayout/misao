@@ -30,7 +30,7 @@ import type { AgentProfile } from './profile.js';
 import { loadPersistedState, savePersistedState } from './persistence.js';
 import type { PersistedState } from './persistence.js';
 import { StatePersister } from './state-persister.js';
-import { endpointFiles, listenEndpoint, prepareEndpoint, removeStaleEndpoint } from './endpoint.js';
+import { endpointFiles, listenEndpoint, prepareEndpoint, removeStaleEndpoint, warnIfDefaultDacl } from './endpoint.js';
 import { subscribeStream } from './stream.js';
 import type { RequestContext } from './stream.js';
 import { ulid } from './ulid.js';
@@ -167,9 +167,7 @@ export class Daemon {
     try {
       this.server = net.createServer((socket) => this.accept(socket));
       const protection = await listenEndpoint(this.server, this.socketPath);
-      if (protection === 'default-dacl') {
-        this.log.warn('endpoint is protected by the default DACL only; restricting it to the current user is not implemented yet');
-      }
+      warnIfDefaultDacl(protection, (m) => this.log.warn(m));
       // listen 後の accept 失敗 (EMFILE など) でデーモンごと落ちないよう、その接続だけを諦める。
       this.server.on('error', (e) => this.log.error(`server error: ${e.message}`));
     } catch (e) {

@@ -12,6 +12,7 @@ import {
   listenEndpoint,
   prepareEndpoint,
   removeStaleEndpoint,
+  warnIfDefaultDacl,
 } from '../src/endpoint.js';
 
 const PIPE = '\\\\.\\pipe\\misao-u-0123456789abcdef';
@@ -114,4 +115,28 @@ test('removeStaleEndpoint(unix): 従来どおり stale なソケットファイ�
   writeFileSync(sock, '');
   assert.equal(await removeStaleEndpoint(sock, 'linux'), true);
   assert.equal(await removeStaleEndpoint(sock, 'linux'), false);
+});
+
+test('removeStaleEndpoint(pipe): パイプが無ければ (ENOENT) false で、何も消さない', async () => {
+  assert.equal(await removeStaleEndpoint(PIPE, 'win32'), false);
+});
+
+test('removeStaleEndpoint(pipe): 待ち受けがいれば例外 (パイプ名の代わりに稼働中の Unix ソケットで代用して分岐を確かめる)', async () => {
+  const sock = path.join(root, 'alive-pipe.sock');
+  const server = createServer();
+  await new Promise<void>((r) => server.listen(sock, r));
+  try {
+    await assert.rejects(removeStaleEndpoint(sock, 'win32'), /another daemon is already listening/);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test('warnIfDefaultDacl: default-dacl のときだけ警告する', () => {
+  const messages: string[] = [];
+  assert.equal(messages.length, 0);
+  assert.deepEqual(messages, []);
+  warnIfDefaultDacl('default-dacl', (m) => messages.push(m));
+  assert.equal(messages.length, 1);
+  assert.match(messages[0]!, /default DACL/);
 });

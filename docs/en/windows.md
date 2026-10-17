@@ -39,7 +39,7 @@ The only options `net.Server.listen` passes for a named pipe are `readableAll` /
 
 | Option | What | Extra dependency | Strength | Effort | Notes |
 | --- | --- | --- | --- | --- | --- |
-| A. Rely on the default DACL (current prototype) | The DACL from a `NULL` SECURITY_ATTRIBUTES (Microsoft documents full control for SYSTEM / administrators / creator owner and read for Everyone and anonymous) | None | Weak; read access may leak depending on connection behavior | S | Do not call it "protected" before checking the ACL on a host |
+| A. Rely on the default DACL (current prototype) | The DACL from a `NULL` SECURITY_ATTRIBUTES (Microsoft documents full control for SYSTEM / administrators / creator owner and read for Everyone and anonymous) | None | Weak; **likely insufficient** (Everyone's read access may let a read-only connection leak output) | S | Do not call it "protected" before checking the ACL on a host |
 | B. Create the pipe in a native addon | `CreateNamedPipeW` with SDDL `D:P(A;;GA;;;<user SID>)`, bridged to Node as a Duplex | **Needs approval** (N-API addon or an ffi library, plus prebuild distribution) | Strong (with `FILE_FLAG_FIRST_PIPE_INSTANCE` also resists squatting) | L | An existing handle cannot be given to a libuv pipe handle, so the whole server has to live in the addon |
 | C. Rewrite the DACL after listen | `SetNamedSecurityInfo`-style call from outside | No way found in PowerShell / .NET to change the DACL of a pipe another process created; `icacls` cannot address pipes (verify on host) | - | - | Not realistic |
 | D. Authenticate at the application layer | A token file in `%LOCALAPPDATA%\misao` (user-only via the profile ACL) sent right after connecting | None (add an auth exchange to the protocol) | Medium: anyone can connect but cannot do anything. Within one user there is no boundary, as on Unix | M | Cheap to add while the protocol is 0.x |
@@ -51,7 +51,7 @@ The only options `net.Server.listen` passes for a named pipe are `readableAll` /
 Other measures:
 
 - **Client-side squatting**: if another user creates a pipe with the same name first, the SDK connects to it. Node cannot check the server process ID (`GetNamedPipeServerProcessId`). The token in D also covers this (a server without the token cannot answer). On the server side libuv is expected to set `FILE_FLAG_FIRST_PIPE_INSTANCE`, so a second daemon gets `EADDRINUSE` (verify on host).
-- **Remote clients**: libuv is expected to set `PIPE_REJECT_REMOTE_CLIENTS` (verify on host).
+- **Remote clients**: libuv does not pass `PIPE_REJECT_REMOTE_CLIENTS` to `CreateNamedPipeW` (only `FILE_FLAG_FIRST_PIPE_INSTANCE` is set). **Do not expect remote connections to be refused.** V2 checks connecting from another host; if needed, block it with an ACL (B) or authentication (D).
 - **dataDir**: under `%USERPROFILE%` it inherits the profile's default ACL (user / SYSTEM / administrators). The equivalent of the Unix "700 + uid" check is not implemented because Node cannot read ACLs; only symlink and directory checks are done.
 
 ## 3. Foreground process
@@ -89,13 +89,13 @@ Other measures:
 
 Checked from the bundled files of node-pty 1.1.0 (a dependency of `packages/daemon`):
 
-- **ConPTY or winpty**: when `useConpty` is unset, `WindowsPtyAgent` uses ConPTY on Windows build 18309 or later and winpty (`winpty-agent.exe`) below that. misao does not set it, so it is auto-selected: ConPTY on Windows 10 1809+.
+- **ConPTY or winpty**: when `useConpty` is unset, `WindowsPtyAgent` uses ConPTY on Windows build 18309 or later and winpty (`winpty-agent.exe`) below that. misao does not set it, so it is auto-selected: ConPTY on Windows 10 1903 (build 18362) and later, winpty on 1809 (build 17763).
 - **Build**: `install` runs `node scripts/prebuild.js || node-gyp rebuild`. `prebuilds/` contains `win32-x64`, `win32-arm64`, `darwin-arm64` and `darwin-x64` (`conpty.node`, `conpty_console_list.node`, `pty.node` (winpty), `winpty-agent.exe`, `winpty.dll`), so Windows is expected to use a prebuild without a compiler. There is no Linux prebuild; on Linux it is built with `node-gyp rebuild`. CI verifies this (V6).
 - **spawn-helper**: Unix only (a helper binary used by `UnixTerminal` at `fork`, shipped in the macOS prebuilds). It is not used on Windows and needs nothing.
 - **conpty.dll**: `useConptyDll` (default false) can switch to the bundled OpenConsole-based DLL (`third_party/conpty/1.23.251008001`). The default is the OS ConPTY. A candidate if old OS versions or the redraw differences below become a problem.
 - **API differences** (read from `lib/windowsTerminal.js`):
   - `kill(signal)` throws `Signals not supported on windows.` when a signal is given. `Pane.close()` goes `process.kill(-pid, 'SIGHUP')` then, on failure, `process.kill(pid)` (a forced kill of that process only, not the tree). A win32 branch using `proc.kill()` (which ends the processes attached to the ConPTY console) is needed. **Not implemented in this PR**; item V4 observes the behavior.
-  - `encoding: null` is falsy, so no warning is printed. Whether data arrives as Buffer or string needs checking (misao assumes Buffer).
+  - `encoding: null` is falsy, so no warning is printed. node-pty calls `setEncoding('utf8')` on the output socket on Windows (`windowsPtyAgent.js`), so output **always arrives as a string**; `pane.ts` converts it with `Buffer.from(d)`. The only thing to verify on a host is whether invalid UTF-8 or VT re-synthesis loses byte information (compare with the raw bytes captured in V11).
   - `resize` after exit throws (`Cannot resize a pty that has already exited`). Check that `pane.resize` does not throw on an exit race.
   - `proc.process` is the terminal name (section 3).
 - Effort: install S, absorbing behavior M.
@@ -132,8 +132,8 @@ Prerequisite: Node.js 24+ (with user approval if a portable build is used). Use 
 
 | ID | Purpose | Steps | Expected / decision |
 | --- | --- | --- | --- |
-| V1 | Default DACL | Start `node packages/cli/dist/main.js serve`; in another shell run `$p=[IO.Pipes.NamedPipeClientStream]::new('.','misao-<resolved name>','InOut'); $p.Connect(); $p.GetAccessControl().Access` | If Everyone / Users have an allow entry, option A is insufficient; if only the user, SYSTEM and administrators do, A is enough |
-| V2 | Connection from another user | Create a standard user and try the same connection via `runas` | Must be refused |
+| V1 | Whether the default DACL gives Everyone read access, and what a read-only connection can read (do `server.info` responses or events flow?) | Start `node packages/cli/dist/main.js serve`; in another shell run `$p=[IO.Pipes.NamedPipeClientStream]::new('.','misao-<resolved name>','InOut'); $p.Connect(); $p.GetAccessControl().Access` | If Everyone has read access, A is insufficient (then also check whether a connection opened read-only receives `server.info` responses or events). If only the user, SYSTEM and administrators have access, A is enough |
+| V2 | Connection from another user and another host | Create a standard user and try the same connection via `runas`. From another host, open `\\<hostname>\pipe\<pipe name>` (needs firewall and SMB settings) | Another user must be refused. Do not expect another host to be refused; record the result |
 | V3 | Double start and stale | Start two `serve` instances; `Stop-Process -Force` one and restart | The second start fails; restart works after a forced kill |
 | V4 | ConPTY pane | `misao new -- cmd.exe`, `misao send`, `misao screen`, `misao attach`, resize, `exit` | Input, output, resize and exit detection (`pane.state` becomes exited) work; `pane.close` leaves no child |
 | V5 | `server.info` / `pane.state` | Watch idle/working transitions with `misao status` and `misao events` | No "working" while idle (no redraw misdetection) |
