@@ -17,7 +17,7 @@ crates/
   misao-protocol/       ワイヤの型: JSON-RPC、ErrorCode、ServerInfo、NDJSON の行分割
     schema/protocol.json  Zod から書き出した JSON Schema（生成物。コミットする）
     tests/schema_conformance.rs
-  misao-daemon/         デーモンの本体: ソケット、pid ファイル、ログ、accept ループ、ディスパッチ
+  misao-daemon/         デーモンの本体: ソケット、pid ファイル、ログ、接続、RPC、作業場所 / 窓 / ペイン、PTY、リング、イベント
   misao/                バイナリ: clap の CLI（`serve`、`--version`）、設定、ソケットパス
 ```
 
@@ -45,21 +45,55 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
 
 ## Node 版との対応
 
-| Node（`packages/`） | Rust（`crates/`） | 第 1 段の状況 |
+| Node（`packages/`） | Rust（`crates/`） | 状況（第 2 段まで） |
 |---|---|---|
 | `protocol`（Zod スキーマ、`ErrorCode`、framing） | `misao-protocol` | `server.info`・JSON-RPC・エラー・NDJSON の型。スキーマと照合済み |
 | `daemon/src/socket.ts` | `misao-daemon/src/socket.rs` | 完了（dir 700 / socket 600、所有者とシンボリックリンクの確認、古いソケット） |
 | `daemon/src/pid-file.ts` | `misao-daemon/src/pid_file.rs` | 完了 |
-| `daemon/src/daemon.ts`（`start` / `shutdown` / ディスパッチ） | `misao-daemon/src/daemon.rs` | `server.info` と `server.schema` のみ。他の既知メソッドは `NotImplemented` |
+| `daemon/src/daemon.ts`（`start` / `shutdown`） | `misao-daemon/src/daemon.rs` | 完了。起動の lock を終了まで保持する（下記） |
+| `daemon/src/daemon.ts`（ディスパッチ）、`rpc-error.ts`、`params.ts` | `core.rs`、`rpc.rs`、`rpc_error.rs`、`params.rs` | 完了（`pane.screen` / `pane.attach` / `pane.detach` / `pane.send_keys` / `window.focus` / `pane.respawn` は `NotImplemented`） |
+| `daemon/src/connection.ts`、`stream.ts` | `connection.rs`、`stream.rs` | 完了（送信キューの高水位、pull 型の購読、追い越された購読者の切断） |
+| `daemon/src/layout.ts`、`layout-handlers.ts` | `layout.rs`、`layout_handlers.rs` | 完了（保存は第 4 段） |
+| `daemon/src/pane-registry.ts`、`pane-lifecycle.ts`、`pane-io.ts` | `registry.rs`、`pane_handlers.rs` | 完了（attach・screen・保存を除く） |
+| `daemon/src/pane.ts` | `pane.rs`、`pty.rs` | PTY（portable-pty）、入力、resize、終了検知、close。画面・タイトル・稼働判定は第 3 段 |
+| `daemon/src/size-arbiter.ts`、`ring.ts`、`ansi.ts`、`child-env.ts`、`event-log.ts`、`limits.ts`、`ulid.ts` | `size_arbiter.rs`、`ring.rs`、`ansi.rs`、`child_env.rs`、`event_log.rs`、`limits.rs`、`ids.rs` | 完了 |
 | `daemon/src/log.ts` | `misao-daemon/src/log.rs` | 完了（stderr に `[misao <ISO 時刻>] msg`） |
 | `sdk-node/src/socket-path.ts` | `misao/src/socket_path.rs` | 完了（優先順位も 107 バイト制限も同じ） |
-| `cli/src/config/*` | `misao/src/config.rs` | `socket` と `logLevel` を使用。`keys` / `scrollback` / `rings` は型の検証のみ |
+| `cli/src/config/*` | `misao/src/config.rs` | `socket` / `logLevel` / `scrollback` / `rings` を使用。`keys` は型の検証のみ |
 | `cli` の `serve`、`--version` | `misao/src/{cli,serve}.rs` | 完了。他のコマンドは後続の段 |
-| ペイン・画面・稼働判定・永続化 | - | 未着手（第 2〜4 段） |
+| 画面（`screen.ts`）・稼働判定（`state-tracker.ts` ほか）・永続化・attach | - | 未着手（第 3〜4 段） |
 
 第 1 段で意図的に違う点: `--help` は clap の生成（説明は日本語、フラグ名は英語）。`--version` は `misao <Cargo のバージョン>` で、
 リリーススクリプトが設定するようになる（第 6 段）まで `0.0.0`。Windows では接続口が後続の段のため、
 `misao serve` はエラーで終わる（`docs/*/windows.md` を参照）。
+
+## 第 2 段の振る舞い（Node 版と違う点）
+
+エラーコードと番号、序数の振り直し、`ephemeralEnv`（保存しない）、子の env の継承（デーモンの env から `TMUX*` / `STY` / `ZELLIJ*`
+を除き、`MISAO_SOCKET` / `MISAO_PANE_ID` / `TERM` / `COLORTERM` を足す）、リングの既定値、gap / epoch / since の意味、
+1 接続 1 events ストリーム、`daemon.started` が 1 件目、は Node 版と同じです。違うのは次の点です。
+
+- **起動に失敗した pane は作らない**: コマンドが無い・`cwd` がディレクトリでないとき、Node 版（node-pty）は pane を作って
+  終了コード 1 で終わらせますが、Rust 版は `pane.open` が `InvalidParams`（`spawn failed: ...`）で失敗し、作業場所も pane も残しません
+  （Node 版も `Pane` の生成が例外を投げれば同じ扱いにする設計）。
+- **動いている行の購読者を待つ**: Rust 版は出力の処理が速く、読んではいるが子より遅い購読者（SDK など）が、4 MiB のリングに追い越されて
+  切断されます。購読者の遅れがリング容量の半分を超えている間は、pty を読まずに子の書き込みを詰まらせます。1 秒以上カーソルが進まない
+  購読者は待たず、従来どおりリングに追い越されたら切断して gap で知らせます。閉じている途中と子の終了後は待ちません。
+- **入力の待ち行列に上限がある**: `pane.write` の入力は専用スレッドで pty へ書くため、子が読まないと溜まります。Rust 版は溜まったバイト数が 4 MiB を超えると、待たずに `-32603`（`pane input queue is full ...`）で断ります（待ち行列が空のときの 1 回の入力は、これより大きくても受けます）。Node 版（node-pty）は無制限に溜め、対応するエラーはありません。
+- **`pane.close` は子を残さない**: Unix ではプロセスグループへ SIGHUP → 3 秒 → SIGKILL を送ります（Node 版と同じ）。さらに、
+  リーダーが SIGHUP で終わっても、グループに残ったプロセス（SIGHUP を無視する子など）がいれば、猶予の後に SIGKILL してから戻ります。
+  終了済みの pane でも、グループに残ったプロセスがいれば（`pane.close` とデーモンの終了で）同じ手順で止めます。
+  **pgid の再利用対策**: Linux ではリーダーの終了を `waitid(WNOWAIT)` で「回収せずに」検知し、終了コードとシグナルをそこで記録します。
+  リーダーはゾンビのまま残り、`pane.close` / 終了でグループを片付けた後に初めて回収するので、その pid（= pgid）は close まで再利用されず、
+  close の時点で `/proc` を走査してグループの生存（ゾンビのリーダーは数えない）をその場で判定できます。終了済みの pane は close まで
+  ゾンビを 1 つ残します。他の Unix（macOS）は `waitid` の `WNOWAIT` を使えないため終了時に回収し、終了時にグループに残りがいた pane
+  だけを close で扱います（残りが後で終わって pgid が再利用された場合の誤送信は、この環境では防げません）。
+  Windows は `taskkill /T /F` でツリーごと止めます（`spawn_blocking` で実行。SIGHUP 相当の猶予は無く、最初から強制終了で、終了済みの pane の残りは追いません。Job Object による封じ込めは第 5 段）。
+- **`pane.write` の `dataB64`**: 不正な base64 は `InvalidParams` にします（Node の `Buffer.from` は黙って読み捨てる）。
+- **サイズ**: cols / rows は Zod と同じ範囲（安全な整数）をそのまま保持し、`pane.info` とイベントには元の値を返します。pty へ渡すときだけ 65535 に丸めます。
+- **未対応（後続の段）**: `pane.info` の `fgCommand`、稼働判定（`agentState` は走行中は `unknown`、終了後は `exited` / `exit` だけ）、
+  タイトル、状態の保存（再起動後の `stopped` の復元）、`preplace`（Node 版も未実装）。
+- 子に `SHELL` が付く場合がある（portable-pty が `SHELL` を補う）。
 
 ## プロトコル適合
 
@@ -75,9 +109,12 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
 
 ## 起動の排他（Node 版との違い）
 
-Rust 版デーモンは、古いソケットの判定から `bind` が終わるまで、ソケットの隣の `<socket>.lock`（`--data` に依存しない）を
-`flock` で排他します。同時に起動した 2 つが互いのソケットを消すことはありません。`bind` に失敗してもパスは消さず、
-自分の `bind` の後に `chmod` が失敗したソケットだけを消します。lock ファイルは意図的に残します。
+Rust 版デーモンは、古いソケットの判定から終了時のソケット削除まで、ソケットの隣の `<socket>.lock`（`--data` に依存しない）を
+`flock` で排他します。同時に起動した 2 つが互いのソケットを消すことも、終了中の旧デーモンが、後から（`--data` が違うために
+pid ファイルでは排他できない形で）起動した新デーモンのソケットを消すこともありません。lock は `Daemon` が保持し、
+ソケットと pid ファイルを消した後に解放します。稼働中のデーモンがいる間は他の起動が lock を取れないので、待ち受けていれば
+「another daemon is already listening」、そうでなければ（起動中・終了中）「another daemon is starting」で失敗します。
+`bind` に失敗してもパスは消さず、自分の `bind` の後に `chmod` が失敗したソケットだけを消します。lock ファイルは意図的に残します。
 Node 版にはこの lock が無く、pid ファイルの場所が違う 2 つのデーモンを同時に起動すると、判定・削除・listen の間で競合する
 可能性があります。Node 版は直さず（置き換え予定のため）、ここに記録するだけにします。
 
@@ -87,21 +124,27 @@ Node 版にはこの lock が無く、pid ファイルの場所が違う 2 つ�
 `MISAO_DAEMON_BIN` を指定すると、Node の CLI の代わりにその実行ファイルを使います。
 
 ```bash
-cargo build -p misao
-MISAO_DAEMON_BIN=$PWD/target/debug/misao npm run test:e2e -w @misao/e2e   # 全体
-npm run test:e2e:rust -w @misao/e2e                                       # 通る範囲（CI）
+cargo build --release -p misao
+MISAO_DAEMON_BIN=$PWD/target/release/misao npm run test:e2e -w @misao/e2e   # 全体
+MISAO_DAEMON_BIN=$PWD/target/release/misao npm run test:e2e:rust -w @misao/e2e   # 通る範囲（CI）
 ```
 
-変数を指定しなければ何も変わりません。第 1 段の状況:
+変数を指定しなければ何も変わりません。大量出力のテスト（`v3-line-markers`）は処理速度に左右されるので、`release` ビルドで動かしてください
+（debug ビルドでも通りますが、通常出力のテストに約 70 秒かかります）。第 2 段の状況:
 
-| テストファイル | Rust 版 |
-|---|---|
-| `server-info.test.ts` | 通る |
-| `v2-attach-replay`、`v2-size-conflict`、`v3-line-markers`、`v4-hub-restart`、`v5-catch-up`、`v5-key-collisions` | `not implemented: pane.open` で失敗（ペインは第 2 段） |
-| `v2-claude`、`v4-systemd` | オプトイン。スキップ |
+| テストファイル | Rust 版 | 理由 |
+|---|---|---|
+| `server-info.test.ts` | 通る | |
+| `core-rpc.test.ts`（第 2 段で追加。Node 版でも通る） | 通る | 作業場所 / 窓、ペインの起動・env・入力・resize・close、行の記録、イベントと再接続 |
+| `v3-line-markers.test.ts` | 通る | 行ストリームのマーカー、遅い購読者、再購読 |
+| `v2-attach-replay`、`v2-size-conflict` | 通らない | `pane.attach`（第 4 段）と `pane.screen`（第 3 段）が `not implemented` |
+| `v4-hub-restart` | 通らない | `pane.screen`（第 3 段）が `not implemented`。hub の再開そのもの（SDK の自動再接続と購読の復元）は `core-rpc` と `v3` で確かめている |
+| `v5-catch-up` | 通らない | CLI の attach（第 4 段）が必要 |
+| `v5-key-collisions` | 通らない | `pane.screen`（第 3 段）が `not implemented` |
+| `v2-claude`、`v4-systemd` | オプトイン。スキップ | |
 
 ## 移行計画
 
-issue で管理しています。#39（この段: workspace・プロトコル適合・最小デーモン・CI）、#40 中核（RPC・作業場所/窓/ペイン・PTY・出力の記録・イベント）、
+issue で管理しています。#39（workspace・プロトコル適合・最小デーモン・CI）、#40 中核（RPC・作業場所/窓/ペイン・PTY・出力の記録・イベント。この段）、
 #41 画面と稼働判定、#42 状態の保存・attach・CLI 全体（既存 e2e を全部通す）、#43 macOS と Windows、#44 バイナリ配布と AZITO の切り替え。
 背景は #32（部品の検討）と #37（Windows）。

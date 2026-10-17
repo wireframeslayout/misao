@@ -98,7 +98,10 @@ fn serves_server_info_with_secure_modes_and_cleans_up_on_sigterm() {
         unknown["error"]["code"],
         misao_protocol::ErrorCode::METHOD_NOT_FOUND
     );
-    let unimplemented = request(&sock, &json!({"jsonrpc": "2.0", "id": 2, "method": "pane.list"}));
+    let unimplemented = request(
+        &sock,
+        &json!({"jsonrpc": "2.0", "id": 2, "method": "pane.attach"}),
+    );
     assert_eq!(
         unimplemented["error"]["code"],
         misao_protocol::ErrorCode::NOT_IMPLEMENTED

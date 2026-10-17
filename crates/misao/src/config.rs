@@ -1,11 +1,11 @@
-//! 設定ファイル `misao.json` の探索と検証。第 1 段では `socket` と `logLevel` だけを使い、
-//! `keys` / `scrollback` / `rings` は値の型だけを検証して読み捨てる（使うのはペインを持つ第 2 段以降）。
+//! 設定ファイル `misao.json` の探索と検証。`socket` / `logLevel` / `scrollback` / `rings` をデーモンが使う。
+//! `keys` は値の型だけを検証して読み捨てる（使うのは CLI の attach を持つ後続の段）。
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use misao_daemon::LogLevel;
+use misao_daemon::{Limits, LogLevel};
 use serde_json::{Map, Value};
 
 use crate::socket_path::{DirOrigin, PathEnv, config_candidates_in_dirs};
@@ -31,6 +31,9 @@ pub struct Config {
     /// デーモンのログ閾値。`serve`（unix のみ）が使う。
     #[cfg_attr(not(unix), allow(dead_code))]
     pub log_level: LogLevel,
+    /// スクロールバックとリングの上限。`serve`（unix のみ）が使う。
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub limits: Limits,
 }
 
 #[derive(Debug)]
@@ -117,6 +120,7 @@ pub fn load_config(input: &LoadInput<'_>) -> Result<LoadedConfig, ConfigError> {
         config: Config {
             socket: None,
             log_level: LogLevel::DEFAULT,
+            limits: Limits::default(),
         },
         warnings: Vec::new(),
     })
@@ -145,9 +149,35 @@ fn parse_config(path: &Path, text: &str) -> Result<LoadedConfig, ConfigError> {
         .and_then(LogLevel::parse)
         .unwrap_or(LogLevel::DEFAULT);
     Ok(LoadedConfig {
-        config: Config { socket, log_level },
+        config: Config {
+            socket,
+            log_level,
+            limits: read_limits(&obj),
+        },
         warnings,
     })
+}
+
+/// 検証済みの設定（`validate` を通っている）から上限を読む。値が無い項目は既定。
+fn read_limits(obj: &Map<String, Value>) -> Limits {
+    let defaults = Limits::default();
+    let ring = |key: &str, default: usize| {
+        obj.get("rings")
+            .and_then(|r| r.get(key))
+            .and_then(Value::as_u64)
+            .and_then(|n| usize::try_from(n).ok())
+            .unwrap_or(default)
+    };
+    Limits {
+        scrollback: obj
+            .get("scrollback")
+            .and_then(Value::as_u64)
+            .and_then(|n| usize::try_from(n).ok())
+            .unwrap_or(defaults.scrollback),
+        raw_ring_bytes: ring("rawBytes", defaults.raw_ring_bytes),
+        lines_ring_bytes: ring("linesBytes", defaults.lines_ring_bytes),
+        events: ring("events", defaults.events),
+    }
 }
 
 /// 項目名・違反時のメッセージ・値が正しいかの判定。
@@ -169,10 +199,32 @@ fn validate(obj: &Map<String, Value>) -> Vec<String> {
         ("keys", "expected an object", Value::is_object),
         ("rings", "expected an object", Value::is_object),
     ];
-    checks
+    let mut issues: Vec<String> = checks
         .iter()
         .filter(|(key, _, valid)| obj.get(*key).is_some_and(|v| !valid(v)))
         .map(|(key, message, _)| format!("  {key}: {message}"))
+        .collect();
+    if let Some(Value::Object(rings)) = obj.get("rings") {
+        issues.extend(validate_rings(rings));
+    }
+    issues
+}
+
+const RING_KEYS: [&str; 3] = ["rawBytes", "linesBytes", "events"];
+
+/// `rings` の中身。未知のキーは拒否し（Node 版の strictObject）、値は 1 以上の整数。
+fn validate_rings(rings: &Map<String, Value>) -> Vec<String> {
+    rings
+        .iter()
+        .filter_map(|(key, value)| {
+            if !RING_KEYS.contains(&key.as_str()) {
+                Some(format!("  rings: unrecognized key \"{key}\""))
+            } else if !value.as_u64().is_some_and(|n| n >= 1) {
+                Some(format!("  rings.{key}: expected an integer >= 1"))
+            } else {
+                None
+            }
+        })
         .collect()
 }
 
@@ -225,6 +277,54 @@ mod tests {
                 .starts_with("config file from --config not found: "),
             "{err}"
         );
+    }
+
+    #[test]
+    fn limits_default_to_the_node_daemon_values() {
+        let dir = TempDir::new().unwrap();
+        let limits = load(&dir, None, Some("{}")).unwrap().config.limits;
+        assert_eq!(limits, Limits::default());
+        assert_eq!(
+            (
+                limits.scrollback,
+                limits.raw_ring_bytes,
+                limits.lines_ring_bytes,
+                limits.events
+            ),
+            (5000, 1024 * 1024, 4 * 1024 * 1024, 1000)
+        );
+    }
+
+    #[test]
+    fn limits_are_read_from_scrollback_and_rings() {
+        let dir = TempDir::new().unwrap();
+        let json = r#"{"scrollback":10,"rings":{"rawBytes":20,"linesBytes":30,"events":40}}"#;
+        let limits = load(&dir, None, Some(json)).unwrap().config.limits;
+        assert_eq!(
+            (
+                limits.scrollback,
+                limits.raw_ring_bytes,
+                limits.lines_ring_bytes,
+                limits.events
+            ),
+            (10, 20, 30, 40)
+        );
+        let partial = load(&dir, None, Some(r#"{"rings":{"linesBytes":5}}"#))
+            .unwrap()
+            .config
+            .limits;
+        assert_eq!(partial.lines_ring_bytes, 5);
+        assert_eq!(partial.raw_ring_bytes, Limits::default().raw_ring_bytes);
+    }
+
+    #[test]
+    fn invalid_rings_are_rejected() {
+        let dir = TempDir::new().unwrap();
+        let err = load(&dir, None, Some(r#"{"rings":{"rawBytes":0,"bogus":1}}"#))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("rings.rawBytes: expected an integer >= 1"), "{err}");
+        assert!(err.contains("rings: unrecognized key \"bogus\""), "{err}");
     }
 
     #[test]

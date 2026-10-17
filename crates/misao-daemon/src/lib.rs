@@ -1,7 +1,30 @@
-//! misao デーモンの本体。第 1 段は接続口（Unix ソケット）と `server.info` / `server.schema` だけを持つ。
+//! misao デーモンの本体。接続口（Unix ソケット）、作業場所 / 窓 / ペイン、PTY、出力の記録、イベントを持つ。
+//! 画面・タイトル・稼働判定・状態の保存・attach は後続の段。
 
+mod ansi;
+mod child_env;
+mod connection;
+mod core;
+mod event_log;
+mod ids;
+mod layout;
+mod layout_handlers;
+mod limits;
 mod log;
+mod pane;
+mod pane_handlers;
+mod params;
+mod pty;
+mod registry;
+mod ring;
+mod rpc;
+mod rpc_error;
+mod size_arbiter;
+mod stream;
 
+pub use connection::serve_connection;
+pub use core::{Core, CoreOptions};
+pub use limits::Limits;
 pub use log::{LogLevel, Logger};
 
 #[cfg(unix)]

@@ -110,10 +110,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
 
-  # 既存の e2e のうち Rust 版デーモンで通る範囲 (server.info まわり)。通らない範囲は docs/*/rust.md の一覧を参照。
+  # 既存の e2e のうち Rust 版デーモンで通る範囲 (server.info、作業場所 / 窓 / ペイン、行ストリーム、イベント)。
+  # 通らない範囲は docs/*/rust.md の一覧を参照。大量出力のテスト (v3) は処理速度に左右されるので release ビルドで動かす。
   rust-e2e:
     name: Rust (e2e subset)
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -123,8 +125,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: npm ci
-      - run: cargo build --locked -p misao
+      - run: cargo build --release --locked -p misao
       - run: npm run test:e2e:rust -w @misao/e2e
+        env:
+          MISAO_DAEMON_BIN: ${{ github.workspace }}/target/release/misao
 
   # 試験的 (Issue #37): Windows ネイティブで型検査と単体テストが通るか、node-pty のネイティブ導入が通るかを見る。
   # 結果は必須チェックにしない（continue-on-error）。POSIX 前提のテストが落ちるうちは赤のままで構わない。
