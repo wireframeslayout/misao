@@ -8,6 +8,7 @@ mod connection;
 mod core;
 mod event_log;
 mod foreground;
+mod foreground_sampler;
 mod ids;
 mod layout;
 mod layout_handlers;

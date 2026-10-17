@@ -141,6 +141,7 @@ impl Core {
             }
         };
         pane.start();
+        self.sampler.register(&pane);
         Ok(json!({"paneId": pane.id}))
     }
 

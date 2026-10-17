@@ -9,6 +9,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::event_log::{EventLog, EventsSource};
+use crate::foreground_sampler::ForegroundSampler;
 use crate::layout::Layout;
 use crate::limits::Limits;
 use crate::log::Logger;
@@ -47,6 +48,8 @@ pub struct Core {
     pub(crate) socket_path: PathBuf,
     pub(crate) limits: Limits,
     pub(crate) profiles: Vec<Arc<Profile>>,
+    /// 前面のプログラムの定期調査（profile の選び直し）。デーモンに 1 つ。
+    pub(crate) sampler: ForegroundSampler,
 }
 
 pub(crate) fn to_value<T: Serialize>(value: &T) -> RpcResult<Value> {
@@ -79,6 +82,7 @@ impl Core {
             socket_path,
             limits,
             profiles,
+            sampler: ForegroundSampler::start(),
             events: Arc::new(EventLog::new(limits.events)),
             state: Mutex::new(State {
                 layout: Layout::default(),

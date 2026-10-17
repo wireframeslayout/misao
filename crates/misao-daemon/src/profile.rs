@@ -283,6 +283,16 @@ pub fn builtin_profiles() -> Result<Vec<Arc<Profile>>, String> {
         .collect()
 }
 
+/// 前面のプログラムを見ても選択が変わりうるか。起動コマンドがシェル以外で、起動コマンドだけで profile が決まるなら、
+/// 前面を調べ続ける必要はない（調べない）。profile が無ければ、そもそも選ぶものがない。
+pub fn selection_can_change(profiles: &[Arc<Profile>], cmd: &[String]) -> bool {
+    if profiles.is_empty() {
+        return false;
+    }
+    let is_shell = SHELLS.contains(&program_name(cmd).as_str());
+    is_shell || select_profile(profiles, cmd).is_none()
+}
+
 /// 起動コマンドだけで選ぶ（前面プロセスが分かる前の最初の選択）。
 pub fn select_profile(profiles: &[Arc<Profile>], cmd: &[String]) -> Option<Arc<Profile>> {
     select_profile_for(profiles, cmd, None)
@@ -357,6 +367,18 @@ mod tests {
         assert_eq!(pick(&["zsh", "-i"], Some("zsh")), None);
         assert_eq!(pick(&["claude"], Some("node")), Some("claude".into()));
         assert_eq!(pick(&["python3", "-c", "claude"], None), None);
+    }
+
+    #[test]
+    fn only_panes_whose_profile_can_change_are_probed() {
+        let profiles = builtin_profiles().unwrap();
+        let probed = |c: &[&str]| selection_can_change(&profiles, &cmd(c));
+        assert!(probed(&["zsh", "-i"]));
+        assert!(probed(&["zsh", "-lc", "claude"]));
+        assert!(probed(&["node", "tool.js"]));
+        assert!(!probed(&["claude", "--x"]));
+        assert!(!probed(&["env", "A=1", "codex"]));
+        assert!(!selection_can_change(&[], &cmd(&["zsh"])));
     }
 
     #[test]

@@ -15,7 +15,7 @@ use tokio::sync::watch;
 use crate::ansi::AnsiLineAssembler;
 use crate::child_env::build_child_env;
 use crate::event_log::EventLog;
-use crate::foreground::{ForegroundQuery, read_foreground_commands};
+use crate::foreground::ForegroundQuery;
 use crate::ids::new_pane_id;
 use crate::limits::{INPUT_QUEUE_BYTES, LINE_ENTRY_OVERHEAD};
 use crate::log::now_iso;
@@ -281,11 +281,6 @@ impl Pane {
             // （portable-pty は drop のときに改行と EOF を pty へ書くが、子が居ない pty なので害はない）。
         });
         let observer = Arc::clone(&self.observer);
-        let weak = Arc::downgrade(self);
-        observer.set_probe(Box::new(move || {
-            let query = weak.upgrade()?.foreground_query()?;
-            read_foreground_commands(&[query]).pop().flatten()
-        }));
         std::thread::spawn(move || observer.run());
         let (drained_tx, drained_rx) = mpsc::channel::<()>();
         // reader はブロッキングの read の間 Pane を強参照しない。孫が pty を握って EOF が来なくても、
@@ -441,6 +436,16 @@ impl Pane {
     }
 
     /// `pane.info` の本体（所属の workspace / window とラベルは Daemon が渡す。Pane は親もラベルも知らない）。
+    /// 前面のプログラムで profile を選び直す必要があるか（走行中で、起動コマンドだけでは決まらない pane）。
+    pub fn needs_foreground_probe(&self) -> bool {
+        self.state() == RunState::Running && self.observer.needs_foreground_probe()
+    }
+
+    /// 調べた前面のプログラムで、profile を選び直す。
+    pub fn apply_foreground(&self, foreground: Option<&str>) {
+        self.observer.apply_foreground(foreground);
+    }
+
     /// 前面プロセスの問い合わせ（走行中の pane だけ）。
     pub fn foreground_query(&self) -> Option<ForegroundQuery> {
         (self.state() == RunState::Running).then(|| ForegroundQuery {
