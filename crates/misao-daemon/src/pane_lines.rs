@@ -14,8 +14,8 @@ use crate::stream::{Next, Progress, StreamSource};
 /// 行ストリームの購読者の遅れがリング容量のこの割合を超えたら、追いつくまで pty を読まない（子の書き込みを止める）。
 /// 超えるまでは読み続け、リングが遅い購読者を吸収する。
 const LAG_LIMIT_DIVISOR: u64 = 2;
-/// 購読者を待っている間に、遅れを見直す間隔。
-const THROTTLE_POLL: Duration = Duration::from_millis(1);
+/// 購読者を待っている間、通知が無くても遅れ（と、止まっているかどうか）を見直す間隔。
+const THROTTLE_RECHECK: Duration = Duration::from_millis(100);
 
 impl Pane {
     /// 行ストリームの購読者が、リングに追い越されそうなほど遅れている間は pty を読まない。
@@ -23,8 +23,13 @@ impl Pane {
     /// 止まっている購読者（読んでいない）は待たず、リングに追い越されたら切断する。
     /// 閉じている途中・子の終了後は待たない（出力を読み切って終わらせる）。
     pub(super) fn wait_for_subscribers(&self) {
-        while self.is_lagging() {
-            std::thread::sleep(THROTTLE_POLL);
+        loop {
+            let seen = self.wakeup.begin();
+            if !self.is_lagging() {
+                self.wakeup.end();
+                return;
+            }
+            self.wakeup.wait(seen, THROTTLE_RECHECK);
         }
     }
 
@@ -94,6 +99,50 @@ impl StreamSource for LinesSource {
     }
 
     fn track(&self, progress: &Arc<Progress>) {
-        lock(&self.0.line_subscribers).push(Arc::downgrade(progress));
+        progress.set_waker(Arc::clone(&self.0.wakeup));
+        let mut subscribers = lock(&self.0.line_subscribers);
+        // 終わった購読（失効した Weak）を残さない。
+        subscribers.retain(|p| p.strong_count() > 0);
+        subscribers.push(Arc::downgrade(progress));
+    }
+}
+
+#[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::path::Path;
+
+    use super::super::{Pane, PaneOpenOptions};
+    use super::*;
+
+    fn pane() -> Arc<Pane> {
+        Pane::spawn(PaneOpenOptions {
+            cmd: vec!["sleep".into(), "30".into()],
+            cwd: None,
+            env: BTreeMap::new(),
+            ephemeral_env: BTreeMap::new(),
+            cols: None,
+            rows: None,
+            socket_path: Path::new("/tmp/unused.sock"),
+            raw_ring_bytes: 1024,
+            lines_ring_bytes: 1024,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn tracking_a_new_subscriber_drops_the_finished_ones() {
+        let pane = pane();
+        let source = LinesSource(Arc::clone(&pane));
+        for _ in 0..100 {
+            let progress = Arc::new(Progress::new(0));
+            source.track(&progress);
+            // 購読のタスクが終わった（progress が落ちた）。
+        }
+        let live = Arc::new(Progress::new(0));
+        source.track(&live);
+        assert_eq!(lock(&pane.line_subscribers).len(), 1);
+        crate::pty::kill_tree(pane.pid);
     }
 }

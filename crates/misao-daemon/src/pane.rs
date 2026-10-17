@@ -21,7 +21,7 @@ use crate::log::now_iso;
 use crate::pty::{self, ExitInfo, PtyProcess, SpawnRequest};
 use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
-use crate::stream::Progress;
+use crate::stream::{Progress, Wakeup};
 
 #[path = "pane_lines.rs"]
 mod lines;
@@ -113,6 +113,8 @@ pub struct Pane {
     /// 行ストリームの購読者の進み具合（送り手が遅い購読者を待つため）。
     line_subscribers: Mutex<Vec<Weak<Progress>>>,
     lines_ring_bytes: usize,
+    /// pty を読むスレッドが購読者を待つ間の起床。購読者の進み・購読の終了・close・子の終了・release で起こす。
+    wakeup: Arc<Wakeup>,
 }
 
 impl Inner {
@@ -189,6 +191,7 @@ impl Pane {
             exit_seen: AtomicBool::new(false),
             line_subscribers: Mutex::new(Vec::new()),
             lines_ring_bytes: opts.lines_ring_bytes,
+            wakeup: Arc::new(Wakeup::default()),
         }))
     }
 
@@ -231,6 +234,7 @@ impl Pane {
         std::thread::spawn(move || {
             let exit = pty::wait_exit(child, pane.pid);
             pane.exit_seen.store(true, Ordering::Release);
+            pane.wakeup.notify();
             // 残りの出力を読み切ってから終了を報告する（終了直前の出力を取りこぼさない）。
             if let Err(RecvTimeoutError::Timeout) = drained_rx.recv_timeout(READER_DRAIN_TIMEOUT) {
                 // 孫が pty を握っていて EOF が来ない。ここまでに読めた分で打ち切る。
@@ -388,6 +392,7 @@ impl Pane {
             }
             first
         };
+        self.wakeup.notify();
         if first {
             pty::hangup_tree(self.pid);
             let pane = Arc::clone(self);
@@ -405,6 +410,7 @@ impl Pane {
     /// 閉じた Pane への参照を購読に残さないための印。待っている購読を起こして止める。
     pub fn release(&self) {
         self.released.store(true, Ordering::Release);
+        self.wakeup.notify();
         self.lines_tx.send_modify(|_| {});
     }
 

@@ -4,8 +4,8 @@
 //! 遅い購読者のぶんはリングが保持する。リングに追い越された（カーソルの次が追い出された）購読者だけ切断し、
 //! 再接続後に gap で知らされる。
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -20,6 +20,42 @@ const YIELD_EVERY: u32 = 256;
 /// 購読者がこの時間カーソルを進めず、かつ追いついてもいないなら、止まっている（読んでいない）とみなす。
 pub const STALL_AFTER: Duration = Duration::from_secs(1);
 
+/// 購読者の進みを待つスレッド（pty を読むスレッド）を起こす仕組み。待っていない間の `notify` は原子変数の確認だけで済む。
+#[derive(Debug, Default)]
+pub struct Wakeup {
+    waiting: AtomicBool,
+    generation: Mutex<u64>,
+    changed: Condvar,
+}
+
+impl Wakeup {
+    /// 待つ前に呼ぶ。返す世代を、条件の確認の後の `wait` に渡す（確認と待機の間の通知を取りこぼさない）。
+    pub fn begin(&self) -> u64 {
+        self.waiting.store(true, Ordering::SeqCst);
+        *self.generation.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// 世代が `seen` から変わるか `timeout` が過ぎるまで待つ。
+    pub fn wait(&self, seen: u64, timeout: Duration) {
+        let guard = self.generation.lock().unwrap_or_else(PoisonError::into_inner);
+        let _ = self
+            .changed
+            .wait_timeout_while(guard, timeout, |generation| *generation == seen);
+    }
+
+    /// 待ち終わった（`begin` の後に必ず呼ぶ）。
+    pub fn end(&self) {
+        self.waiting.store(false, Ordering::SeqCst);
+    }
+
+    pub fn notify(&self) {
+        if self.waiting.load(Ordering::SeqCst) {
+            *self.generation.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+            self.changed.notify_all();
+        }
+    }
+}
+
 /// 購読者の進み具合。送り手（pty を読むスレッド）が、遅れている購読者を待つかどうかの判断に使う。
 /// 購読のタスクが終わると（`Arc` が落ちると）送り手の側からは見えなくなる。
 #[derive(Debug)]
@@ -28,14 +64,28 @@ pub struct Progress {
     /// 最後に進んだ（または追いついていた）時刻。`started` からの経過ミリ秒。
     active_ms: AtomicU64,
     started: Instant,
+    /// 進んだとき・購読が終わったときに起こす相手。
+    waker: OnceLock<Arc<Wakeup>>,
 }
 
 impl Progress {
-    fn new(cursor: u64) -> Self {
+    pub(crate) fn new(cursor: u64) -> Self {
         Self {
             cursor: AtomicU64::new(cursor),
             active_ms: AtomicU64::new(0),
             started: Instant::now(),
+            waker: OnceLock::new(),
+        }
+    }
+
+    /// 進んだとき・購読が終わったときに起こす相手を決める。
+    pub fn set_waker(&self, waker: Arc<Wakeup>) {
+        let _ = self.waker.set(waker);
+    }
+
+    fn wake(&self) {
+        if let Some(waker) = self.waker.get() {
+            waker.notify();
         }
     }
 
@@ -47,11 +97,13 @@ impl Progress {
     fn advance(&self, cursor: u64) {
         self.cursor.store(cursor, Ordering::Release);
         self.active_ms.store(self.elapsed_ms(), Ordering::Release);
+        self.wake();
     }
 
     /// 追いついている（送るものが無い）。止まっているわけではない。
     fn caught_up(&self) {
         self.active_ms.store(self.elapsed_ms(), Ordering::Release);
+        self.wake();
     }
 
     /// 最後に送った seq。
@@ -173,9 +225,66 @@ async fn pump(
     }
 }
 
+impl Drop for Progress {
+    /// 購読のタスクが終わった（`Arc` が落ちた）ことを、待っている送り手に知らせる。
+    fn drop(&mut self) {
+        self.wake();
+    }
+}
+
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
-    use super::has_gap;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    use super::{Progress, Wakeup, has_gap};
+
+    #[test]
+    fn a_waiter_is_woken_by_a_notify_instead_of_polling() {
+        let wakeup = Arc::new(Wakeup::default());
+        let seen = wakeup.begin();
+        let notifier = Arc::clone(&wakeup);
+        let handle = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            notifier.notify();
+        });
+        let started = Instant::now();
+        wakeup.wait(seen, Duration::from_secs(10));
+        wakeup.end();
+        handle.join().unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "woken early, not by the timeout"
+        );
+    }
+
+    #[test]
+    fn a_notify_between_the_check_and_the_wait_is_not_lost() {
+        let wakeup = Wakeup::default();
+        let seen = wakeup.begin();
+        wakeup.notify(); // 確認の後・待機の前
+        let started = Instant::now();
+        wakeup.wait(seen, Duration::from_secs(10));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn advancing_or_dropping_a_progress_wakes_the_waiter() {
+        let wakeup = Arc::new(Wakeup::default());
+        let progress = Progress::new(0);
+        progress.set_waker(Arc::clone(&wakeup));
+        let seen = wakeup.begin();
+        progress.advance(3);
+        assert_eq!(progress.cursor(), 3);
+        let started = Instant::now();
+        wakeup.wait(seen, Duration::from_secs(10));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        let seen = wakeup.begin();
+        drop(progress);
+        wakeup.wait(seen, Duration::from_secs(10));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
 
     #[test]
     fn an_empty_stream_has_oldest_one_past_head() {
