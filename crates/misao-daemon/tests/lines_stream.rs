@@ -196,3 +196,42 @@ async fn closing_the_pane_stops_its_subscriptions_without_breaking_the_connectio
         1001
     );
 }
+
+/// 読んでいる（カーソルが進んでいる）が子より遅い購読者は、リングが小さくても取りこぼさない。
+/// 子の出力を止めて待つので、リングに追い越されて切断されることがない。
+#[tokio::test]
+async fn a_slow_but_reading_subscriber_never_loses_lines() {
+    const LINES: u64 = 60_000;
+    let limits = Limits {
+        lines_ring_bytes: 256 * 1024,
+        ..Limits::default()
+    };
+    let core = core_with(limits);
+    let mut control = connect(&core);
+    let mut slow = connect_with_buffer(&core, 4 * 1024);
+    let epoch = control.ok("server.info", json!({})).await["epoch"].clone();
+    let pane_id = open(
+        &mut control,
+        &format!("yes 0123456789abcdef0123456789abcdef | head -n {LINES}"),
+    )
+    .await;
+    let r = slow
+        .ok(
+            "pane.subscribe_lines",
+            json!({"paneId": pane_id, "since": 0, "epoch": epoch}),
+        )
+        .await;
+    assert_eq!(r["gap"], false);
+    let (mut received, mut since_pause) = (0u64, 0u32);
+    while received < LINES {
+        let n = slow.next_notification().await;
+        received += 1;
+        assert_eq!(n["params"]["seq"], received, "no gap, no duplicate, in order");
+        since_pause += 1;
+        if since_pause == 200 {
+            since_pause = 0;
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    wait_exit(&mut control, &pane_id).await;
+}

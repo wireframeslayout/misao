@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use portable_pty::MasterPty;
@@ -21,7 +21,7 @@ use crate::log::now_iso;
 use crate::pty::{self, ExitInfo, PtyProcess, SpawnRequest};
 use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
-use crate::stream::{Next, StreamSource};
+use crate::stream::{Next, Progress, StreamSource};
 
 /// close の SIGHUP から SIGKILL までの猶予（Node 版の `KILL_GRACE_MS`）。
 const KILL_GRACE: Duration = Duration::from_secs(3);
@@ -33,6 +33,11 @@ const GROUP_KILL_WAIT: Duration = Duration::from_secs(2);
 const DEFAULT_COLS: u32 = 80;
 const DEFAULT_ROWS: u32 = 24;
 const READ_CHUNK: usize = 16 * 1024;
+/// 行ストリームの購読者の遅れがリング容量のこの割合を超えたら、追いつくまで pty を読まない（子の書き込みを止める）。
+/// 超えるまでは読み続け、リングが遅い購読者を吸収する。
+const LAG_LIMIT_DIVISOR: u64 = 2;
+/// 購読者を待っている間に、遅れを見直す間隔。
+const THROTTLE_POLL: Duration = Duration::from_millis(1);
 
 pub struct PaneOpenOptions<'a> {
     pub cmd: Vec<String>,
@@ -104,6 +109,11 @@ pub struct Pane {
     /// close が始まった時刻（SIGHUP を送った時刻）。2 回目以降の close は何もせず終了を待つ。
     closing: Mutex<Option<Instant>>,
     released: AtomicBool,
+    /// 子のプロセスが終了した（残りの出力は待たずに読み切る）。
+    exit_seen: AtomicBool,
+    /// 行ストリームの購読者の進み具合（送り手が遅い購読者を待つため）。
+    line_subscribers: Mutex<Vec<Weak<Progress>>>,
+    lines_ring_bytes: usize,
 }
 
 impl Inner {
@@ -177,6 +187,9 @@ impl Pane {
             settled_tx: watch::Sender::new(false),
             closing: Mutex::new(None),
             released: AtomicBool::new(false),
+            exit_seen: AtomicBool::new(false),
+            line_subscribers: Mutex::new(Vec::new()),
+            lines_ring_bytes: opts.lines_ring_bytes,
         }))
     }
 
@@ -207,6 +220,7 @@ impl Pane {
         std::thread::spawn(move || {
             let mut buf = vec![0u8; READ_CHUNK];
             loop {
+                pane.wait_for_subscribers();
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => pane.on_output(&buf[..n]),
@@ -217,6 +231,7 @@ impl Pane {
         let pane = Arc::clone(self);
         std::thread::spawn(move || {
             let exit = pty::wait_exit(child, pane.pid);
+            pane.exit_seen.store(true, Ordering::Release);
             // 残りの出力を読み切ってから終了を報告する（終了直前の出力を取りこぼさない）。
             if let Err(RecvTimeoutError::Timeout) = drained_rx.recv_timeout(READER_DRAIN_TIMEOUT) {
                 // 孫が pty を握っていて EOF が来ない。ここまでに読めた分で打ち切る。
@@ -242,6 +257,40 @@ impl Pane {
         if let Some(head) = new_head {
             self.lines_tx.send_replace(head);
         }
+    }
+
+    /// 行ストリームの購読者が、リングに追い越されそうなほど遅れている間は pty を読まない。
+    /// 読まなければ子の書き込みが詰まるので、動いている（カーソルが進んでいる）購読者は取りこぼさない。
+    /// 止まっている購読者（読んでいない）は待たず、リングに追い越されたら切断する。
+    /// 閉じている途中・子の終了後は待たない（出力を読み切って終わらせる）。
+    fn wait_for_subscribers(&self) {
+        while self.is_lagging() {
+            std::thread::sleep(THROTTLE_POLL);
+        }
+    }
+
+    fn is_lagging(&self) -> bool {
+        if self.exit_seen.load(Ordering::Acquire) || self.is_released() || lock(&self.closing).is_some() {
+            return false;
+        }
+        let live: Vec<Arc<Progress>> = {
+            let mut subscribers = lock(&self.line_subscribers);
+            subscribers.retain(|p| p.strong_count() > 0);
+            subscribers.iter().filter_map(Weak::upgrade).collect()
+        };
+        if live.is_empty() {
+            return false;
+        }
+        let limit = self.lines_ring_bytes as u64 / LAG_LIMIT_DIVISOR;
+        let inner = lock(&self.inner);
+        let head = inner.lines.cumulative_head();
+        live.iter().any(|p| {
+            !p.is_stalled()
+                && inner
+                    .lines
+                    .cumulative_at(p.cursor())
+                    .is_some_and(|delivered| head - delivered > limit)
+        })
     }
 
     fn on_exit(&self, exit: ExitInfo, events: &EventLog) {
@@ -437,6 +486,10 @@ impl StreamSource for LinesSource {
 
     fn wake(&self) -> watch::Receiver<u64> {
         self.0.lines_tx.subscribe()
+    }
+
+    fn track(&self, progress: &Arc<Progress>) {
+        lock(&self.0.line_subscribers).push(Arc::downgrade(progress));
     }
 }
 

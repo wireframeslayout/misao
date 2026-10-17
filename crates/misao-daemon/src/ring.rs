@@ -5,6 +5,8 @@ pub struct RingEntry<T> {
     pub seq: u64,
     pub ts: String,
     size: usize,
+    /// このエントリまでに push した size の累計（追い出されたぶんも含む）。
+    cumulative: u64,
     pub item: T,
 }
 
@@ -15,6 +17,8 @@ pub struct SeqRing<T> {
     entries: VecDeque<RingEntry<T>>,
     capacity: usize,
     total: usize,
+    /// これまでに push した size の累計。
+    pushed: u64,
     head: u64,
 }
 
@@ -24,6 +28,7 @@ impl<T> SeqRing<T> {
             entries: VecDeque::new(),
             capacity,
             total: 0,
+            pushed: 0,
             head: 0,
         }
     }
@@ -40,7 +45,14 @@ impl<T> SeqRing<T> {
     pub fn push(&mut self, item: T, size: usize, ts: String) -> u64 {
         self.head += 1;
         let seq = self.head;
-        self.entries.push_back(RingEntry { seq, ts, size, item });
+        self.pushed += size as u64;
+        self.entries.push_back(RingEntry {
+            seq,
+            ts,
+            size,
+            cumulative: self.pushed,
+            item,
+        });
         self.total += size;
         while self.total > self.capacity && self.entries.len() > 1 {
             if let Some(evicted) = self.entries.pop_front() {
@@ -48,6 +60,20 @@ impl<T> SeqRing<T> {
             }
         }
         seq
+    }
+
+    /// seq までに push した size の累計。0 は常に 0。保持範囲外（追い出し済み・head より先）なら None。
+    /// 2 つの seq の差が、その間に積まれたぶんの size になる。
+    pub fn cumulative_at(&self, seq: u64) -> Option<u64> {
+        if seq == 0 {
+            return Some(0);
+        }
+        self.entry(seq).map(|e| e.cumulative)
+    }
+
+    /// head までに push した size の累計。
+    pub fn cumulative_head(&self) -> u64 {
+        self.pushed
     }
 
     /// seq のエントリ。保持範囲外（追い出し済み・head より先）なら None。O(1)。
@@ -96,6 +122,20 @@ mod tests {
         assert_eq!((r.oldest(), r.head()), (3, 5));
         assert!(r.entry(2).is_none());
         assert_eq!(r.entry(3).map(|e| e.item), Some("c"));
+    }
+
+    #[test]
+    fn cumulative_sizes_measure_the_distance_between_two_seqs_even_after_eviction() {
+        let mut r = ring(3);
+        for item in ["a", "b", "c", "d", "e"] {
+            r.push(item, 1, String::new());
+        }
+        assert_eq!(r.cumulative_head(), 5);
+        assert_eq!(r.cumulative_at(5), Some(5));
+        assert_eq!(r.cumulative_at(3), Some(3));
+        assert_eq!(r.cumulative_at(2), None, "evicted");
+        assert_eq!(r.cumulative_at(0), Some(0));
+        assert_eq!(r.cumulative_at(9), None, "ahead of head");
     }
 
     #[test]
