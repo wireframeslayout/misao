@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Daemon } from '@misao/daemon';
 import type { DaemonOptions } from '@misao/daemon';
-import { MisaoPathError, resolveSocketPath } from '@misao/sdk';
+import { MisaoPathError, isNamedPipePath, resolveMisaoDirs, resolveSocketPath } from '@misao/sdk';
 import type { CliIo } from '../cli-io.js';
 import type { ResolvedConfig } from '../config/index.js';
 import { CliError } from '../errors.js';
@@ -19,13 +19,16 @@ const DATA_DIR_MODE = 0o700;
 export interface ServeOverrides {
   /** 解決済みのソケットパス。省略時は設定のもの。 */
   socket?: string | undefined;
-  /** pid と persistence.json の置き場所。省略時はソケットの親ディレクトリ。 */
+  /** pid と persistence.json の置き場所。省略時はソケットの親ディレクトリ (名前付きパイプでは必須)。 */
   dataDir?: string | undefined;
 }
 
 /** 設定 (misao.json) と引数から DaemonOptions を組み立てる。設定値はここで Daemon へ渡す。 */
 export function buildDaemonOptions(config: ResolvedConfig, overrides: ServeOverrides): DaemonOptions {
   const socketPath = overrides.socket ?? config.socket;
+  if (overrides.dataDir === undefined && isNamedPipePath(socketPath)) {
+    throw new Error('a named pipe endpoint has no parent directory; pass dataDir');
+  }
   const dataDir = overrides.dataDir ?? path.dirname(socketPath);
   return {
     version: MISAO_VERSION,
@@ -40,7 +43,7 @@ export function buildDaemonOptions(config: ResolvedConfig, overrides: ServeOverr
 
 function resolveSocketOverride(io: CliIo, socket: string | undefined): string | undefined {
   if (socket === undefined) return undefined;
-  const explicitPath = socket.startsWith('~') ? socket : path.resolve(io.cwd, socket);
+  const explicitPath = socket.startsWith('~') || isNamedPipePath(socket) ? socket : path.resolve(io.cwd, socket);
   try {
     return resolveSocketPath({ env: {}, explicitPath, homeDir: io.homeDir });
   } catch (error) {
@@ -54,6 +57,12 @@ function resolveDataDir(io: CliIo, dir: string | undefined): string | undefined 
   return dir === '~' || dir.startsWith('~/') ? path.join(io.homeDir, dir.slice(1)) : path.resolve(io.cwd, dir);
 }
 
+/** 名前付きパイプ (Windows) には親ディレクトリが無いので、pid と状態の置き場所は misao のディレクトリにする。 */
+function pipeDataDir(io: CliIo, socketPath: string): string | undefined {
+  if (!isNamedPipePath(socketPath)) return undefined;
+  return resolveMisaoDirs({ env: io.env, homeDir: io.homeDir })[0].path;
+}
+
 export const serveCommand: Command = {
   name: 'serve',
   summary: 'デーモンを前面で起動する（SIGTERM / SIGINT で終了）',
@@ -61,8 +70,9 @@ export const serveCommand: Command = {
   options: { socket: { type: 'string' }, data: { type: 'string' } },
   async run({ args, io, config }) {
     expectPositionals(args, 0, 0, USAGE);
-    const dataDir = resolveDataDir(io, args.string('data'));
-    const options = buildDaemonOptions(config, { socket: resolveSocketOverride(io, args.string('socket')), dataDir });
+    const socket = resolveSocketOverride(io, args.string('socket'));
+    const dataDir = resolveDataDir(io, args.string('data')) ?? pipeDataDir(io, socket ?? config.socket);
+    const options = buildDaemonOptions(config, { socket, dataDir });
     if (dataDir !== undefined) fs.mkdirSync(dataDir, { recursive: true, mode: DATA_DIR_MODE });
     const daemon = new Daemon({
       ...options,

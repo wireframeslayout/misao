@@ -103,3 +103,12 @@ test('serve: 長すぎる --socket は使い方の誤り (2)', async () => {
   assert.equal(await run(['serve', '--socket', `/tmp/${'x'.repeat(200)}/misao.sock`], io), 2);
   assert.match(io.err(), /--socket/);
 });
+
+test('buildDaemonOptions: 名前付きパイプは親ディレクトリが無いので dataDir が必須、あれば pid / state をそこへ置く', () => {
+  const socket = '\\\\.\\pipe\\misao-u-0123456789abcdef';
+  assert.throws(() => buildDaemonOptions(CONFIG, { socket }), /pass dataDir/);
+  const options = buildDaemonOptions(CONFIG, { socket, dataDir: '/data' });
+  assert.equal(options.socketPath, socket);
+  assert.equal(options.pidPath, path.join('/data', 'daemon.pid'));
+  assert.equal(options.statePath, path.join('/data', 'persistence.json'));
+});

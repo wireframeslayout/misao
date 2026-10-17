@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { commandNameFromArgv, parseForegroundPgid, sanitizeCommandName } from '../src/foreground.js';
+import { commandNameFromArgv, parseForegroundPgid, readForegroundCommand, sanitizeCommandName } from '../src/foreground.js';
 
 test('parseForegroundPgid: tpgid を返す', () => {
   assert.equal(parseForegroundPgid('123 (bash) S 100 123 123 34816 4567 4194304 1 0'), 4567);
@@ -85,4 +85,12 @@ test('sanitizeCommandName: 64 コードポイントで切り、サロゲート�
   assert.equal(sanitizeCommandName('x'.repeat(65)), 'x'.repeat(64));
   const emoji = '😀'.repeat(65);
   assert.equal(sanitizeCommandName(emoji), '😀'.repeat(64));
+});
+
+test('readForegroundCommand: win32 は未対応で undefined（node-pty の process は端末名なので使わない）', () => {
+  assert.equal(readForegroundCommand(1, () => 'xterm-256color', 'win32'), undefined);
+});
+
+test('readForegroundCommand: Linux 以外の Unix は node-pty の process を使う', () => {
+  assert.equal(readForegroundCommand(1, () => 'zsh', 'darwin'), 'zsh');
 });

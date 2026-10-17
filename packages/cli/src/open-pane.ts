@@ -10,10 +10,10 @@ export interface OpenPaneRequest {
   windowId: string | undefined;
 }
 
-/** ログインシェルの起動コマンド。シェルが取れない環境では usage エラー。 */
-export function loginShell(shell: string | null): string[] {
+/** ログインシェルの起動コマンド。シェルが取れない環境では usage エラー。Windows の cmd.exe は -l を受け付けないので付けない。 */
+export function loginShell(shell: string | null, platform: NodeJS.Platform = process.platform): string[] {
   if (shell === null) throw new CliError('usage', 'ログインシェルを特定できません。-- の後ろにコマンドを指定してください');
-  return [shell, '-l'];
+  return platform === 'win32' ? [shell] : [shell, '-l'];
 }
 
 /** 端末から作るペインを開く。origin=terminal ラベルを必ず付ける (未登録のペインを見分けるため)。 */
