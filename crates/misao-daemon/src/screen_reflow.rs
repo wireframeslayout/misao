@@ -3,6 +3,7 @@
 
 use std::collections::VecDeque;
 
+use crate::screen_attr::Attr;
 use crate::screen_buffer::Buffer;
 use crate::screen_line::{Cell, Line};
 
@@ -59,7 +60,7 @@ impl Buffer {
             return;
         }
         while self.lines.len() < self.ybase + self.rows {
-            let blank = self.blank_line(false);
+            let blank = self.blank_line(false, Attr::DEFAULT);
             self.lines.push_back(blank);
         }
     }
@@ -145,7 +146,7 @@ impl Buffer {
                 lines[dest - 1].set_cell(new_cols - 1, Cell::NULL);
             }
         }
-        lines[dest].replace_cells(dest_col, new_cols);
+        lines[dest].replace_cells(dest_col, new_cols, Attr::DEFAULT);
         let mut empty = 0;
         for i in (1..lines.len()).rev() {
             if i > dest || lines[i].trimmed_length() == 0 {

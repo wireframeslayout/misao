@@ -117,6 +117,11 @@ impl PaneView {
         self.tracker.next_deadline()
     }
 
+    /// attach の snapshot の再生列。
+    pub fn serialize_snapshot(&self) -> String {
+        self.screen.serialize_snapshot()
+    }
+
     pub fn snapshot(&self) -> ScreenSnapshot {
         ScreenSnapshot {
             text: self.screen.rows().join("\n"),

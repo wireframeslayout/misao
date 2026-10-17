@@ -75,6 +75,11 @@ impl Screen {
         }
     }
 
+    /// 再生用のエスケープ列（attach の snapshot）。
+    pub fn serialize_snapshot(&self) -> String {
+        self.emulator.serialize_snapshot()
+    }
+
     /// 見えている各行の文字（行末の空のセルは除く）。
     pub fn rows(&self) -> Vec<String> {
         let buffer = self.emulator.buf_ref();

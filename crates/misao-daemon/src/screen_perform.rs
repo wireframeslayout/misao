@@ -4,7 +4,7 @@
 use vte::{Params, Perform};
 
 use crate::screen_charset::{Charset, is_charset_final};
-use crate::screen_emulator::Emulator;
+use crate::screen_emulator::{Emulator, MouseMode};
 
 /// i 番目のパラメータ（無ければ 0）。
 fn param(params: &Params, i: usize) -> usize {
@@ -43,6 +43,14 @@ impl Emulator {
     fn set_private_modes(&mut self, params: &Params, on: bool) {
         for mode in each_param(params) {
             match (mode, on) {
+                (1, _) => self.input.app_cursor_keys = on,
+                (66, _) => self.input.app_keypad = on,
+                (9, _) => self.set_mouse(MouseMode::X10, on),
+                (1000, _) => self.set_mouse(MouseMode::Vt200, on),
+                (1002, _) => self.set_mouse(MouseMode::Drag, on),
+                (1003, _) => self.set_mouse(MouseMode::Any, on),
+                (1004, _) => self.input.send_focus = on,
+                (2004, _) => self.input.bracketed_paste = on,
                 (2, true) => self.reset_charsets(),
                 (6, _) => self.set_origin_mode(on),
                 (7, _) => self.set_wraparound(on),
@@ -62,6 +70,11 @@ impl Emulator {
                 _ => {}
             }
         }
+    }
+
+    /// マウスの報告は最後に設定したものが有効。どれかを解除すると報告なしになる（xterm.js と同じ）。
+    fn set_mouse(&mut self, mode: MouseMode, on: bool) {
+        self.input.mouse = if on { mode } else { MouseMode::None };
     }
 
     fn select_charset(&mut self, intermediate: u8, final_byte: u8) {
@@ -176,6 +189,7 @@ impl Emulator {
             ([], 'g') => self.tab_clear(param(params, 0)),
             ([], 'h') => self.set_modes(params, true),
             ([], 'l') => self.set_modes(params, false),
+            ([], 'm') => self.attr.apply_sgr(params),
             ([b'?'], 'h') => self.set_private_modes(params, true),
             ([b'?'], 'l') => self.set_private_modes(params, false),
             ([], 'r') => {
@@ -198,6 +212,8 @@ impl Emulator {
             ([], 'H') => self.tab_set(),
             ([], 'M') => self.reverse_index(),
             ([], 'c') => self.full_reset(),
+            ([], '=') => self.input.app_keypad = true,
+            ([], '>') => self.input.app_keypad = false,
             ([], 'n') | ([], '}') => self.set_glevel(2),
             ([], 'o') | ([], '|') => self.set_glevel(3),
             ([], '~') => self.set_glevel(1),

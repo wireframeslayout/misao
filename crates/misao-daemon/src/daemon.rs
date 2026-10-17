@@ -21,6 +21,8 @@ pub struct DaemonOptions {
     pub version: Option<String>,
     pub socket_path: PathBuf,
     pub pid_path: PathBuf,
+    /// 状態の保存先（`persistence.json`）。
+    pub state_path: PathBuf,
     pub limits: Limits,
     pub log: Logger,
     /// pane の稼働判定に使うプロファイル。
@@ -46,12 +48,28 @@ impl Daemon {
             version,
             socket_path,
             pid_path,
+            state_path,
             limits,
             log,
             profiles,
         } = opts;
         ensure_socket_dir(&socket_path)?;
         acquire_pid_file(&pid_path, std::process::id())?;
+        // pid ファイルで排他を取った後に、保存した状態を読む。壊れていれば起動を止める（pid ファイルは残さない）。
+        let core = match Core::new(CoreOptions {
+            version,
+            socket_path: socket_path.clone(),
+            limits,
+            log: log.clone(),
+            state_path: Some(state_path),
+            profiles,
+        }) {
+            Ok(core) => core,
+            Err(message) => {
+                let _ = fs::remove_file(&pid_path);
+                return Err(DaemonError::State(message));
+            }
+        };
         // 古いソケットの判定から終了時のソケット削除まで、ソケットの隣の lock で他の起動を締め出す。
         // (pid ファイルは --data 次第で場所が変わるので、ソケットに対する排他はこちらで取る。)
         let (start_lock, listener) = match Self::listen(&socket_path, &log).await {
@@ -66,13 +84,6 @@ impl Daemon {
             socket_path.display(),
             std::process::id()
         ));
-        let core = Core::new(CoreOptions {
-            version,
-            socket_path: socket_path.clone(),
-            limits,
-            log: log.clone(),
-            profiles,
-        });
         Ok(Self {
             start_lock,
             listener,

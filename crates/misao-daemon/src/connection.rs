@@ -16,6 +16,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
 
+use crate::attachment::Attachment;
 use crate::core::Core;
 use crate::rpc;
 
@@ -37,6 +38,8 @@ pub struct ConnHandle {
     kill_tx: watch::Sender<bool>,
     /// `${stream}:${paneId}` → 購読タスク。同じキーの再購読は既存を置き換える（二重配信の防止）。
     subscriptions: Mutex<HashMap<String, AbortHandle>>,
+    /// paneId → この接続の attach。1 つの pane につき 1 つ（同じ clientId の再 attach は置き換える）。
+    attachments: Mutex<HashMap<String, Arc<Attachment>>>,
 }
 
 impl ConnHandle {
@@ -49,6 +52,7 @@ impl ConnHandle {
             drain_tx: watch::Sender::new(0),
             kill_tx: watch::Sender::new(false),
             subscriptions: Mutex::new(HashMap::new()),
+            attachments: Mutex::new(HashMap::new()),
         });
         (conn, rx)
     }
@@ -66,6 +70,11 @@ impl ConnHandle {
 
     pub fn send_response(&self, response: &Response) {
         self.send(response);
+    }
+
+    /// 組み立て済みの 1 行（NDJSON）を送信キューへ入れる。
+    pub fn send_bytes(&self, bytes: Vec<u8>) {
+        self.enqueue(bytes);
     }
 
     fn enqueue(&self, bytes: Vec<u8>) {
@@ -115,6 +124,47 @@ impl ConnHandle {
         }
     }
 
+    pub fn attachment(&self, pane_id: &str) -> Option<Arc<Attachment>> {
+        self.attachments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(pane_id)
+            .cloned()
+    }
+
+    pub fn set_attachment(&self, pane_id: &str, attachment: Arc<Attachment>) {
+        self.attachments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(pane_id.to_string(), attachment);
+    }
+
+    pub fn take_attachment(&self, pane_id: &str) -> Option<Arc<Attachment>> {
+        self.attachments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(pane_id)
+    }
+
+    /// 指定の attach が今の attach のままなら外す（pane の close で、後から置き換わったものを消さない）。
+    pub fn remove_attachment_if(&self, pane_id: &str, attachment_id: u64) -> bool {
+        let mut attachments = self.attachments.lock().unwrap_or_else(PoisonError::into_inner);
+        if attachments.get(pane_id).is_some_and(|a| a.id == attachment_id) {
+            attachments.remove(pane_id);
+            return true;
+        }
+        false
+    }
+
+    pub fn attached_pane_ids(&self) -> Vec<String> {
+        self.attachments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .keys()
+            .cloned()
+            .collect()
+    }
+
     /// 同じキーの既存の購読を止める。
     pub fn cancel_subscription(&self, key: &str) {
         let removed = self
@@ -140,12 +190,16 @@ impl ConnHandle {
     }
 }
 
-/// 接続のタスクが終わる（正常・abort のどちらでも）と接続を片付ける。
-struct ConnGuard(Arc<ConnHandle>);
+/// 接続のタスクが終わる（正常・abort のどちらでも）と接続を片付ける。attach していた pane からも外す。
+struct ConnGuard {
+    conn: Arc<ConnHandle>,
+    core: Arc<Core>,
+}
 
 impl Drop for ConnGuard {
     fn drop(&mut self) {
-        self.0.destroy();
+        self.conn.destroy();
+        self.core.connection_closed(&self.conn);
     }
 }
 
@@ -185,7 +239,10 @@ where
 {
     let (mut reader, writer) = tokio::io::split(stream);
     let (conn, rx) = ConnHandle::new();
-    let _guard = ConnGuard(Arc::clone(&conn));
+    let _guard = ConnGuard {
+        conn: Arc::clone(&conn),
+        core: Arc::clone(&core),
+    };
     let mut writer_task = tokio::spawn(write_loop(writer, rx, Arc::clone(&conn)));
     let mut killed = conn.kill_tx.subscribe();
     let mut splitter = LineSplitter::default();

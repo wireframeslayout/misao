@@ -1,24 +1,28 @@
 //! 画面の編集: スクロール、消去、行・文字の挿入と削除（xterm.js の `InputHandler` のうち、セルを書き換える部分）。
 
+use crate::screen_attr::Attr;
 use crate::screen_emulator::Emulator;
 
 impl Emulator {
     pub fn scroll_up(&mut self, n: usize) {
+        let erase = self.attr.erase();
         let b = self.buf();
         let (top, bottom) = (b.ybase + b.scroll_top, b.ybase + b.scroll_bottom);
         for _ in 0..n.min(bottom - top + 1) {
             b.lines.remove(top);
-            let blank = b.blank_line(false);
+            let blank = b.blank_line(false, erase);
             b.lines.insert(bottom, blank);
         }
     }
 
     pub fn scroll_down(&mut self, n: usize) {
+        // xterm.js は、`CSI T` だけは消去した行に背景色を引き継がない（既定の属性の空行を入れる）。
+        let erase = Attr::DEFAULT;
         let b = self.buf();
         let (top, bottom) = (b.ybase + b.scroll_top, b.ybase + b.scroll_bottom);
         for _ in 0..n.min(bottom - top + 1) {
             b.lines.remove(bottom);
-            let blank = b.blank_line(false);
+            let blank = b.blank_line(false, erase);
             b.lines.insert(top, blank);
         }
     }
@@ -36,16 +40,18 @@ impl Emulator {
     }
 
     fn erase_in_row(&mut self, y: usize, start: usize, end: usize, clear_wrap: bool) {
+        let erase = self.attr.erase();
         let row = self.buf().row_mut(y);
-        row.replace_cells(start, end);
+        row.replace_cells(start, end, erase);
         if clear_wrap {
             row.is_wrapped = false;
         }
     }
 
     fn reset_row(&mut self, y: usize) {
+        let erase = self.attr.erase();
         let row = self.buf().row_mut(y);
-        row.fill_null();
+        row.fill_null(erase);
         row.is_wrapped = false;
     }
 
@@ -102,6 +108,7 @@ impl Emulator {
 
     pub fn insert_lines(&mut self, n: usize) {
         self.restrict_cursor(None);
+        let erase = self.attr.erase();
         let b = self.buf();
         if b.y > b.scroll_bottom || b.y < b.scroll_top {
             return;
@@ -109,7 +116,7 @@ impl Emulator {
         let (row, bottom) = (b.ybase + b.y, b.ybase + b.scroll_bottom);
         for _ in 0..n.min(bottom - row + 1) {
             b.lines.remove(bottom);
-            let blank = b.blank_line(false);
+            let blank = b.blank_line(false, erase);
             b.lines.insert(row, blank);
         }
         b.x = 0;
@@ -117,6 +124,7 @@ impl Emulator {
 
     pub fn delete_lines(&mut self, n: usize) {
         self.restrict_cursor(None);
+        let erase = self.attr.erase();
         let b = self.buf();
         if b.y > b.scroll_bottom || b.y < b.scroll_top {
             return;
@@ -124,7 +132,7 @@ impl Emulator {
         let (row, bottom) = (b.ybase + b.y, b.ybase + b.scroll_bottom);
         for _ in 0..n.min(bottom - row + 1) {
             b.lines.remove(row);
-            let blank = b.blank_line(false);
+            let blank = b.blank_line(false, erase);
             b.lines.insert(bottom, blank);
         }
         b.x = 0;
@@ -132,23 +140,26 @@ impl Emulator {
 
     pub fn insert_chars(&mut self, n: usize) {
         self.restrict_cursor(None);
+        let erase = self.attr.erase();
         let b = self.buf();
         let (x, y) = (b.x, b.y);
-        b.row_mut(y).insert_cells(x, n);
+        b.row_mut(y).insert_cells(x, n, erase);
     }
 
     pub fn delete_chars(&mut self, n: usize) {
         self.restrict_cursor(None);
+        let erase = self.attr.erase();
         let b = self.buf();
         let (x, y) = (b.x, b.y);
-        b.row_mut(y).delete_cells(x, n);
+        b.row_mut(y).delete_cells(x, n, erase);
     }
 
     pub fn erase_chars(&mut self, n: usize) {
         self.restrict_cursor(None);
+        let erase = self.attr.erase();
         let b = self.buf();
         let (x, y) = (b.x, b.y);
-        b.row_mut(y).replace_cells(x, x + n);
+        b.row_mut(y).replace_cells(x, x + n, erase);
     }
 
     /// `CSI Ps b`: 直前の文字を繰り返す。
@@ -174,12 +185,12 @@ impl Emulator {
 
     pub fn screen_alignment_pattern(&mut self) {
         self.set_cursor(0, 0);
-        let rows = self.rows;
+        let (rows, attr) = (self.rows, self.attr);
         let b = self.buf();
         for t in 0..rows {
             if let Some(line) = b.lines.get_mut(b.ybase + b.y + t) {
                 for x in 0..line.len() {
-                    line.set_code(x, 'E' as u32, 1);
+                    line.set_code(x, 'E' as u32, 1, attr);
                 }
                 line.is_wrapped = false;
             }

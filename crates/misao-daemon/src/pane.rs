@@ -13,7 +13,9 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::ansi::AnsiLineAssembler;
+use crate::attachment::{Attachment, output_line};
 use crate::child_env::build_child_env;
+use crate::connection::ConnHandle;
 use crate::event_log::EventLog;
 use crate::foreground::ForegroundQuery;
 use crate::ids::new_pane_id;
@@ -27,6 +29,8 @@ use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
 use crate::stream::{Progress, Wakeup};
 
+#[path = "pane_attach.rs"]
+mod attach;
 #[path = "pane_close.rs"]
 mod close;
 #[path = "pane_lines.rs"]
@@ -87,6 +91,8 @@ struct Inner {
     cols: u64,
     rows: u64,
     sizes: SizeArbiter,
+    /// attach しているクライアント（`pane.info` の `clients`。attach の順）。
+    clients: Vec<String>,
     /// 生の出力（pty から読んだままのバイト列）。attach の再生に使う（後続の段）。
     raw: SeqRing<Vec<u8>>,
     /// ANSI を除いた行。`pane.subscribe_lines` が読む。
@@ -133,11 +139,15 @@ pub struct Pane {
     /// close の片付けが完了したら true。
     closed_tx: watch::Sender<bool>,
     released: AtomicBool,
+    /// `pane.open` が保存に失敗して取り消された。イベントを一切出さない（観測されないまま消える）。
+    quiet: AtomicBool,
     /// 子のプロセスが終了した（残りの出力は待たずに読み切る）。
     exit_seen: AtomicBool,
     /// 画面・タイトル・稼働判定（`pane.screen` / `pane.info` / `pane.title` / `pane.state`）。
     observer: Arc<PaneObserver>,
     events: Arc<EventLog>,
+    /// attach している接続ごとの出力の届け先。`order` の lock の中で配る。
+    attachments: Mutex<Vec<Arc<Attachment>>>,
     /// 行ストリームの購読者の進み具合（送り手が遅い購読者を待つため）。
     line_subscribers: Mutex<Vec<Weak<Progress>>>,
     lines_ring_bytes: usize,
@@ -225,6 +235,7 @@ impl Pane {
                 cols,
                 rows,
                 sizes: SizeArbiter::default(),
+                clients: Vec::new(),
                 raw: SeqRing::new(opts.raw_ring_bytes),
                 lines: SeqRing::new(opts.lines_ring_bytes),
                 assembler: AnsiLineAssembler::default(),
@@ -246,7 +257,9 @@ impl Pane {
             close_started: AtomicBool::new(false),
             closed_tx: watch::Sender::new(false),
             released: AtomicBool::new(false),
+            quiet: AtomicBool::new(false),
             exit_seen: AtomicBool::new(false),
+            attachments: Mutex::new(Vec::new()),
             line_subscribers: Mutex::new(Vec::new()),
             lines_ring_bytes: opts.lines_ring_bytes,
             wakeup: Arc::new(Wakeup::default()),
@@ -323,17 +336,18 @@ impl Pane {
     fn on_output(&self, data: &[u8]) {
         let _order = lock(&self.order);
         let ts = now_iso();
-        let new_head = {
+        let (seq, new_head) = {
             let mut inner = lock(&self.inner);
             inner.last_output_at = Some(ts.clone());
-            inner.raw.push(data.to_vec(), data.len(), ts.clone());
+            let seq = inner.raw.push(data.to_vec(), data.len(), ts.clone());
             let lines = inner.assembler.push(data);
             let any = !lines.is_empty();
             for text in lines {
                 inner.push_line(text, ts.clone());
             }
-            any.then(|| inner.lines.head())
+            (seq, any.then(|| inner.lines.head()))
         };
+        self.broadcast(seq, &ts, data);
         if let Some(head) = new_head {
             self.lines_tx.send_replace(head);
         }
@@ -362,11 +376,13 @@ impl Pane {
         }
         // pane.exited の直後に pane.state(exited)（exit 段）を確定する。
         self.observer.exited(|| {
-            self.events.emit(
-                "pane.exited",
-                json!({"exitCode": exit.exit_code, "signal": exit.signal}),
-                Some(&self.id),
-            );
+            if !self.quiet.load(Ordering::Acquire) {
+                self.events.emit(
+                    "pane.exited",
+                    json!({"exitCode": exit.exit_code, "signal": exit.signal}),
+                    Some(&self.id),
+                );
+            }
         });
         self.exited_tx.send_replace(true);
     }
@@ -476,7 +492,7 @@ impl Pane {
             "lastOutputAt": inner.last_output_at,
             "cols": inner.cols,
             "rows": inner.rows,
-            "clients": [],
+            "clients": inner.clients,
             "sizeOwner": inner.sizes.owner(),
         });
         if let (Some(command), Some(map)) = (fg_command, info.as_object_mut()) {
@@ -500,6 +516,15 @@ impl Pane {
     /// `pane.screen` の本体。
     pub fn screen(&self) -> ScreenSnapshot {
         self.observer.snapshot()
+    }
+
+    /// 開いたばかりで、まだ公開していない pane を取り消す（保存の失敗）。イベントは出さずに止めて片付ける。
+    pub async fn abort_open(self: &Arc<Self>) {
+        self.quiet.store(true, Ordering::Release);
+        self.observer.mute();
+        self.start();
+        self.close().await;
+        self.release();
     }
 
     /// 閉じた Pane への参照を購読に残さないための印。待っている購読を起こして止める。

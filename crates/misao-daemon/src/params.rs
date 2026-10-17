@@ -4,8 +4,8 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 
 use crate::rpc_error::{RpcFailure, RpcResult};
@@ -16,9 +16,15 @@ pub type Labels = BTreeMap<String, String>;
 macro_rules! validated_string {
     ($(#[$meta:meta])* $name:ident, $check:expr, $expected:expr) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-        #[serde(try_from = "String")]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(try_from = "String", into = "String")]
         pub struct $name(String);
+
+        impl From<$name> for String {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
 
         impl TryFrom<String> for $name {
             type Error = String;
@@ -93,9 +99,15 @@ fn integer(n: &Number) -> Option<i128> {
 const MAX_SAFE_INTEGER: i128 = 9_007_199_254_740_991;
 
 /// 正の整数（cols / rows）。値はそのまま保持し、pty へ渡すときだけ 16 bit に丸める。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "Number")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "Number", into = "u64")]
 pub struct Dimension(u64);
+
+impl From<Dimension> for u64 {
+    fn from(value: Dimension) -> Self {
+        value.0
+    }
+}
 
 impl TryFrom<Number> for Dimension {
     type Error = String;
@@ -221,6 +233,36 @@ pub struct PaneListFilter {
     pub state: Option<ProcessState>,
     pub labels: Option<Labels>,
     pub workspace: Option<Name>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttachMode {
+    #[default]
+    Raw,
+    Cells,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Replay {
+    Raw,
+    Snapshot,
+    #[default]
+    None,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaneAttachParams {
+    pub pane_id: PaneId,
+    pub client_id: Name,
+    #[serde(default)]
+    pub mode: AttachMode,
+    #[serde(default)]
+    pub replay: Replay,
+    pub cols: Option<Dimension>,
+    pub rows: Option<Dimension>,
 }
 
 #[derive(Debug, Deserialize)]

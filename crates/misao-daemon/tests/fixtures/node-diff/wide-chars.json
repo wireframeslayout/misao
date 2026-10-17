@@ -67,6 +67,7 @@
     "kind": "screen",
     "at": 100,
     "text": "日本語のテキスト、ＡＢＣ　全角スペース。\nああああああああああああああああああああああああああああああああああああああああ\nい\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nあう\né ä ñ combining\n┌────────┐\n│ 箱 罫線 │\n└────────┘\n❯ ⏺ ✻ ✳ ⎿ · … → ← ↑ ↓ ▐▛███▜▌\n日\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m日本語のテキスト、ＡＢＣ　全角スペース。\u001b[0m\u001b[K\u001b[2;1H\u001b[0mああああああああああああああああああああああああああああああああああああああああ\u001b[0m\u001b[K\u001b[3;1H\u001b[0mい\u001b[0m\u001b[K\u001b[4;1H\u001b[0maaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\u001b[0m\u001b[K\u001b[5;1H\u001b[0mあう\u001b[0m\u001b[K\u001b[6;1H\u001b[0mé ä ñ combining\u001b[0m\u001b[K\u001b[7;1H\u001b[0m┌────────┐\u001b[0m\u001b[K\u001b[8;1H\u001b[0m│ 箱 罫線 │\u001b[0m\u001b[K\u001b[9;1H\u001b[0m└────────┘\u001b[0m\u001b[K\u001b[10;1H\u001b[0m❯ ⏺ ✻ ✳ ⎿ · … → ← ↑ ↓ ▐▛███▜▌\u001b[0m\u001b[K\u001b[11;1H\u001b[0m日\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[15;1H\u001b[0m\u001b[K\u001b[16;1H\u001b[0m\u001b[K\u001b[17;1H\u001b[0m\u001b[K\u001b[18;1H\u001b[0m\u001b[K\u001b[19;1H\u001b[0m\u001b[K\u001b[20;1H\u001b[0m\u001b[K\u001b[21;1H\u001b[0m\u001b[K\u001b[22;1H\u001b[0m\u001b[K\u001b[23;1H\u001b[0m\u001b[K\u001b[24;1H\u001b[0m\u001b[K\u001b[12;1H",
     "cursor": {
      "x": 0,
      "y": 11

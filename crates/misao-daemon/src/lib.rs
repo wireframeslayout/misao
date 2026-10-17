@@ -2,6 +2,8 @@
 //! 画面・タイトル・稼働判定（プロファイルは規則のデータ）も持つ。状態の保存・attach は後続の段。
 
 mod ansi;
+mod attach_handlers;
+mod attachment;
 mod byte_activity;
 mod child_env;
 mod connection;
@@ -19,6 +21,7 @@ mod pane_handlers;
 mod pane_observer;
 mod pane_view;
 mod params;
+mod persistence;
 mod profile;
 mod profile_rules;
 mod pty;
@@ -27,6 +30,7 @@ mod ring;
 mod rpc;
 mod rpc_error;
 mod screen;
+mod screen_attr;
 mod screen_buffer;
 mod screen_charset;
 mod screen_cursor;
@@ -37,7 +41,9 @@ mod screen_osc;
 mod screen_perform;
 mod screen_reflow;
 mod screen_reflow_smaller;
+mod screen_snapshot;
 mod size_arbiter;
+mod state_persister;
 mod state_tracker;
 mod stream;
 mod title_activity;

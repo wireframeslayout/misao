@@ -360,6 +360,7 @@
     "kind": "screen",
     "at": 61,
     "text": "\n\nalpha\ng\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0malpha\u001b[0m\u001b[K\u001b[4;1H\u001b[0mg\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[?7l\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -377,6 +378,7 @@
     "kind": "screen",
     "at": 121,
     "text": "é         äb\n═══\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0mé         \u001b[0;7mäb\u001b[0m\u001b[K\u001b[2;1H\u001b[0;7m═══\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[?7l\u001b[2;4H",
     "cursor": {
      "x": 3,
      "y": 1
@@ -394,6 +396,7 @@
     "kind": "screen",
     "at": 181,
     "text": "═══\n\n\n    é\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0;7m═══\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m    é\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[6;1H",
     "cursor": {
      "x": 0,
      "y": 5
@@ -406,6 +409,7 @@
     "kind": "screen",
     "at": 241,
     "text": "\n\n\n\n═══\n delta",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0;7m═══\u001b[0m\u001b[K\u001b[6;1H\u001b[0m delta\u001b[0m\u001b[K\u001b[6;7H",
     "cursor": {
      "x": 6,
      "y": 5
@@ -423,6 +427,7 @@
     "kind": "screen",
     "at": 301,
     "text": "\n═══\n delta\n      ─│┌┐\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;7m═══\u001b[0m\u001b[K\u001b[3;1H\u001b[0m delta\u001b[0m\u001b[K\u001b[4;1H\u001b[0m      ─│┌┐\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[?7l\u001b[2;1H",
     "cursor": {
      "x": 0,
      "y": 1
@@ -440,6 +445,7 @@
     "kind": "screen",
     "at": 361,
     "text": "\n═══\nx\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;7m═══\u001b[0m\u001b[K\u001b[3;1H\u001b[0mx\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[?6h\u001b[2;1H",
     "cursor": {
      "x": 0,
      "y": 1
@@ -452,6 +458,7 @@
     "kind": "screen",
     "at": 421,
     "text": "gamma xgamma\n \nx\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0mgamma xgamma\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0mx\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[?6h\u001b[6;1H",
     "cursor": {
      "x": 0,
      "y": 5
@@ -469,6 +476,7 @@
     "kind": "screen",
     "at": 481,
     "text": "     😀\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m     😀\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[?7l\u001b[6;1H",
     "cursor": {
      "x": 0,
      "y": 5
@@ -481,6 +489,7 @@
     "kind": "screen",
     "at": 541,
     "text": "\n\n\n\n\n delta",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m delta\u001b[0m\u001b[K\u001b[1;12H",
     "cursor": {
      "x": 11,
      "y": 0
@@ -498,6 +507,7 @@
     "kind": "screen",
     "at": 601,
     "text": "\ng\n\n\n\n",
+    "snapshot": "\u001b[?1049h\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0mg\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[6;1H",
     "cursor": {
      "x": 0,
      "y": 5
@@ -510,6 +520,7 @@
     "kind": "screen",
     "at": 700,
     "text": "\ng\n\n\n\n",
+    "snapshot": "\u001b[?1049h\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0mg\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[6;1H",
     "cursor": {
      "x": 0,
      "y": 5

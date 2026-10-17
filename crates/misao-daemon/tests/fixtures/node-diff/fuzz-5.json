@@ -395,6 +395,7 @@
     "kind": "screen",
     "at": 61,
     "text": "\n─│┌┐\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m─│┌┐\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[?6h\u001b[3;1H",
     "cursor": {
      "x": 0,
      "y": 2
@@ -407,6 +408,7 @@
     "kind": "screen",
     "at": 126,
     "text": "\n\n\n\n\n─│┌┐\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m─│┌┐\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[?6h\u001b[8;1H",
     "cursor": {
      "x": 0,
      "y": 7
@@ -419,6 +421,7 @@
     "kind": "screen",
     "at": 191,
     "text": "             😀😀    ═\n| |\n\n\n\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m             \u001b[0;31m😀😀\u001b[0m    \u001b[0;31m═\u001b[0m\u001b[K\u001b[2;1H\u001b[0;31m| |\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[?6h\u001b[2;4H",
     "cursor": {
      "x": 3,
      "y": 1
@@ -441,6 +444,7 @@
     "kind": "screen",
     "at": 251,
     "text": "\n\n\n\n\n\n\n      😀\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m      😀\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[10;8H",
     "cursor": {
      "x": 7,
      "y": 9
@@ -465,6 +469,7 @@
     "kind": "screen",
     "at": 311,
     "text": "\n\n\n\n      😀\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m      😀\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -477,6 +482,7 @@
     "kind": "screen",
     "at": 376,
     "text": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[15;1H\u001b[0m\u001b[K\u001b[8;19H",
     "cursor": {
      "x": 18,
      "y": 7
@@ -489,6 +495,7 @@
     "kind": "screen",
     "at": 441,
     "text": "gamma g\n\n\n\n\n\n\n\n\n\n\n                  beta\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0mgamma g\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m                  beta\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[3;1H",
     "cursor": {
      "x": 0,
      "y": 2
@@ -501,6 +508,7 @@
     "kind": "screen",
     "at": 501,
     "text": "\n\n\n\n\n                  beta\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m                  beta\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -525,6 +533,7 @@
     "kind": "screen",
     "at": 561,
     "text": "\n\n\n\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[3;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[4;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[5;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[6;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[7;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[8;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[9;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[10;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[11;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[12;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[13;1H\u001b[0;42m                               \u001b[0m\u001b[K\u001b[?6h\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -537,6 +546,7 @@
     "kind": "screen",
     "at": 626,
     "text": "─│┌┐    ═══\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m─│┌┐    ═══\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[?6h\u001b[1;12H",
     "cursor": {
      "x": 11,
      "y": 0
@@ -549,6 +559,7 @@
     "kind": "screen",
     "at": 725,
     "text": "─│┌┐    ═══\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m─│┌┐    ═══\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[?6h\u001b[1;12H",
     "cursor": {
      "x": 11,
      "y": 0

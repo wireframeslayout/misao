@@ -4,6 +4,8 @@ use misao_protocol::ErrorCode;
 use serde::Serialize;
 
 use crate::ids::new_window_id;
+use crate::params::{Name, WindowId};
+use crate::persistence::{PersistedWindow, PersistedWorkspace};
 use crate::rpc_error::{RpcFailure, RpcResult};
 
 const DEFAULT_WORKSPACE: &str = "default";
@@ -272,6 +274,46 @@ impl Layout {
 
     pub fn restore(&mut self, snapshot: Vec<WorkspaceDef>) {
         self.workspaces = snapshot;
+    }
+
+    /// 起動時に、保存した定義から復元する。
+    pub fn restore_persisted(&mut self, persisted: Vec<PersistedWorkspace>) {
+        self.workspaces = persisted
+            .into_iter()
+            .map(|w| WorkspaceDef {
+                name: String::from(w.name),
+                windows: w
+                    .windows
+                    .into_iter()
+                    .map(|win| WindowDef {
+                        id: String::from(win.id),
+                        name: String::from(win.name),
+                    })
+                    .collect(),
+            })
+            .collect();
+    }
+
+    /// 保存用の定義。名前と ID は作成時に検証済みなので、形式の違反は内部エラー。
+    pub fn to_persisted(&self) -> Result<Vec<PersistedWorkspace>, String> {
+        self.workspaces
+            .iter()
+            .map(|w| {
+                Ok(PersistedWorkspace {
+                    name: Name::try_from(w.name.clone())?,
+                    windows: w
+                        .windows
+                        .iter()
+                        .map(|win| {
+                            Ok(PersistedWindow {
+                                id: WindowId::try_from(win.id.clone())?,
+                                name: Name::try_from(win.name.clone())?,
+                            })
+                        })
+                        .collect::<Result<_, String>>()?,
+                })
+            })
+            .collect()
     }
 
     fn assert_workspace_open(&self, name: &str) -> RpcResult<()> {

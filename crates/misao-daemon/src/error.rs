@@ -25,6 +25,9 @@ pub enum DaemonError {
     PidFileHeld { pid: i32, path: PathBuf },
     #[error("could not acquire {}: another process keeps recreating it", .0.display())]
     PidFileContended(PathBuf),
+    /// 保存した状態（`persistence.json`）が読めない。
+    #[error("{0}")]
+    State(String),
     #[error("{context}: {source}")]
     Io {
         context: String,

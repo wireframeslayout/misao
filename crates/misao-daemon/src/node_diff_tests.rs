@@ -96,7 +96,7 @@ fn replay(scenario: &Value) -> (Option<String>, Vec<Value>) {
             "screen" => {
                 let s = view.snapshot();
                 log.push(json!({
-                    "kind": "screen", "at": at, "text": s.text, "cursor": {"x": s.cursor.x, "y": s.cursor.y},
+                    "kind": "screen", "at": at, "text": s.text, "snapshot": view.serialize_snapshot(), "cursor": {"x": s.cursor.x, "y": s.cursor.y},
                     "altScreen": s.alt_screen, "title": s.title, "activity": s.activity,
                 }));
             }
