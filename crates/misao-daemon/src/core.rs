@@ -41,6 +41,7 @@ pub struct Core {
     state: Mutex<State>,
     /// 子プロセスの環境変数 `MISAO_SOCKET` に渡す、接続口のパス。
     pub(crate) socket_path: PathBuf,
+    pub(crate) limits: Limits,
 }
 
 pub(crate) fn to_value<T: Serialize>(value: &T) -> RpcResult<Value> {
@@ -70,6 +71,7 @@ impl Core {
             started_at: Instant::now(),
             log,
             socket_path,
+            limits,
             events: Arc::new(EventLog::new(limits.events)),
             state: Mutex::new(State {
                 layout: Layout::default(),
@@ -92,7 +94,7 @@ impl Core {
         self: &Arc<Self>,
         method: &str,
         raw: Option<&Map<String, Value>>,
-        _ctx: &mut RequestContext,
+        ctx: &mut RequestContext,
     ) -> RpcResult<Value> {
         match method {
             "server.info" => {
@@ -115,6 +117,7 @@ impl Core {
             "pane.list" => self.pane_list(raw),
             "pane.write" => self.pane_write(raw),
             "pane.resize" => self.pane_resize(raw),
+            "pane.subscribe_lines" => self.pane_subscribe_lines(raw, ctx),
             "pane.set_label" => self.pane_set_label(raw),
             "pane.close" => self.pane_close(raw).await,
             _ => Err(RpcFailure::new(

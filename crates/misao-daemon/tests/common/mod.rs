@@ -33,7 +33,12 @@ pub struct Client {
 }
 
 pub fn connect(core: &Arc<Core>) -> Client {
-    let (client, server) = tokio::io::duplex(1024 * 1024);
+    connect_with_buffer(core, 1024 * 1024)
+}
+
+/// 送受信バッファの小さい接続（読まないクライアントの再現に使う）。
+pub fn connect_with_buffer(core: &Arc<Core>, buffer: usize) -> Client {
+    let (client, server) = tokio::io::duplex(buffer);
     tokio::spawn(serve_connection(server, Arc::clone(core)));
     let (reader, writer) = tokio::io::split(client);
     Client {
@@ -141,4 +146,37 @@ pub fn is_alive(pid: &str) -> bool {
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok_and(|s| s.success())
+}
+
+impl Client {
+    /// 接続が閉じられるまで読み捨てる。`WAIT` までに閉じなければ失敗する。
+    pub async fn drain_until_closed(&mut self) {
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let n = tokio::time::timeout(WAIT, self.reader.read_line(&mut line))
+                .await
+                .expect("the connection was not closed");
+            if n.unwrap_or(0) == 0 {
+                return;
+            }
+        }
+    }
+
+    /// 通知を `count` 件集める（応答は混ざらない前提）。
+    pub async fn notifications(&mut self, count: usize) -> Vec<Value> {
+        let mut out = Vec::new();
+        while out.len() < count {
+            out.push(self.next_notification().await);
+        }
+        out
+    }
+
+    /// 少しの間通知が来ないことを確かめる。
+    pub async fn assert_no_notification(&mut self, quiet: Duration) {
+        let mut line = String::new();
+        if let Ok(read) = tokio::time::timeout(quiet, self.reader.read_line(&mut line)).await {
+            panic!("unexpected message ({read:?}): {line}");
+        }
+    }
 }

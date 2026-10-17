@@ -11,13 +11,15 @@ use tokio::task::JoinSet;
 
 use crate::core::{Core, State, to_value};
 use crate::layout::ResolvedWindow;
-use crate::pane::{Pane, PaneOpenOptions, RunState};
+use crate::pane::{LinesSource, Pane, PaneOpenOptions, RunState};
 use crate::params::{
     self, InputSource, PaneListParams, PaneOpenParams, PaneRefParams, PaneResizeParams, PaneSetLabelParams,
-    PaneWriteParams,
+    PaneWriteParams, SubscribeLinesParams,
 };
 use crate::registry::{PaneEntry, PaneRegistry};
+use crate::rpc::RequestContext;
 use crate::rpc_error::{RpcFailure, RpcResult};
+use crate::stream;
 
 type Raw<'a> = Option<&'a Map<String, Value>>;
 
@@ -76,6 +78,8 @@ impl Core {
                         cols: p.cols.map(params::Dimension::get),
                         rows: p.rows.map(params::Dimension::get),
                         socket_path: &self.socket_path,
+                        raw_ring_bytes: self.limits.raw_ring_bytes,
+                        lines_ring_bytes: self.limits.lines_ring_bytes,
                     })
                     .map_err(|e| RpcFailure::invalid_params(format!("spawn failed: {e}")))?;
                     Ok((pane, target))
@@ -200,6 +204,21 @@ impl Core {
             Some(&pane.id),
         );
         Ok(ok())
+    }
+
+    pub(crate) fn pane_subscribe_lines(&self, raw: Raw<'_>, ctx: &mut RequestContext) -> RpcResult<Value> {
+        let p: SubscribeLinesParams = params::parse("pane.subscribe_lines", raw)?;
+        let pane = live_pane(&self.state().registry, p.pane_id.as_str())?;
+        // 接続ごとの購読キー。同じキーの再購読は既存を置き換える。
+        let key = format!("lines:{}", pane.id);
+        Ok(stream::subscribe(
+            ctx,
+            key,
+            Arc::new(LinesSource(pane)),
+            p.since.map(params::Seq::get),
+            p.epoch.as_ref().map(params::Epoch::as_str),
+            &self.epoch,
+        ))
     }
 
     pub(crate) fn pane_set_label(&self, raw: Raw<'_>) -> RpcResult<Value> {

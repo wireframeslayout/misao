@@ -12,12 +12,16 @@ use portable_pty::MasterPty;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
+use crate::ansi::AnsiLineAssembler;
 use crate::child_env::build_child_env;
 use crate::event_log::EventLog;
 use crate::ids::new_pane_id;
+use crate::limits::LINE_ENTRY_OVERHEAD;
 use crate::log::now_iso;
 use crate::pty::{self, ExitInfo, PtyProcess, SpawnRequest};
+use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
+use crate::stream::{Next, StreamSource};
 
 /// close の SIGHUP から SIGKILL までの猶予（Node 版の `KILL_GRACE_MS`）。
 const KILL_GRACE: Duration = Duration::from_secs(3);
@@ -39,6 +43,10 @@ pub struct PaneOpenOptions<'a> {
     pub cols: Option<u32>,
     pub rows: Option<u32>,
     pub socket_path: &'a Path,
+    /// 生出力リングの上限バイト数。
+    pub raw_ring_bytes: usize,
+    /// 行ストリームリングの上限バイト数。
+    pub lines_ring_bytes: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +71,11 @@ struct Inner {
     cols: u32,
     rows: u32,
     sizes: SizeArbiter,
+    /// 生の出力（pty から読んだままのバイト列）。attach の再生に使う（後続の段）。
+    raw: SeqRing<Vec<u8>>,
+    /// ANSI を除いた行。`pane.subscribe_lines` が読む。
+    lines: SeqRing<String>,
+    assembler: AnsiLineAssembler,
 }
 
 /// `start` が取り出す、スレッドへ渡すもの。
@@ -83,12 +96,22 @@ pub struct Pane {
     /// 入力を pty へ書くスレッドへの送り口（pty の書き込みは詰まりうるので、RPC のスレッドでは書かない）。
     input: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
     /// 子のプロセス（リーダー）が終了し、`pane.exited` を出し終えたら true。
+    /// 行リングの head。新しい行が入るたびに進む。
+    lines_tx: watch::Sender<u64>,
     exited_tx: watch::Sender<bool>,
     /// 終了後の後片付け（close のときのプロセスグループの掃除）まで済んだら true。
     settled_tx: watch::Sender<bool>,
     /// close が始まった時刻（SIGHUP を送った時刻）。2 回目以降の close は何もせず終了を待つ。
     closing: Mutex<Option<Instant>>,
     released: AtomicBool,
+}
+
+impl Inner {
+    /// 行リングの 1 エントリは、文字数（UTF-16 の長さ）+ 固定のオーバーヘッドで数える（Node 版と同じ）。
+    fn push_line(&mut self, text: String, ts: String) {
+        let size = text.chars().map(char::len_utf16).sum::<usize>() + LINE_ENTRY_OVERHEAD;
+        self.lines.push(text, size, ts);
+    }
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -138,6 +161,9 @@ impl Pane {
                 cols,
                 rows,
                 sizes: SizeArbiter::default(),
+                raw: SeqRing::new(opts.raw_ring_bytes),
+                lines: SeqRing::new(opts.lines_ring_bytes),
+                assembler: AnsiLineAssembler::default(),
             }),
             master: Mutex::new(master),
             handoff: Mutex::new(Some(Handoff {
@@ -146,6 +172,7 @@ impl Pane {
                 child,
             })),
             input: Mutex::new(None),
+            lines_tx: watch::Sender::new(0),
             exited_tx: watch::Sender::new(false),
             settled_tx: watch::Sender::new(false),
             closing: Mutex::new(None),
@@ -199,15 +226,39 @@ impl Pane {
         });
     }
 
-    fn on_output(&self, _data: &[u8]) {
-        lock(&self.inner).last_output_at = Some(now_iso());
+    fn on_output(&self, data: &[u8]) {
+        let ts = now_iso();
+        let new_head = {
+            let mut inner = lock(&self.inner);
+            inner.last_output_at = Some(ts.clone());
+            inner.raw.push(data.to_vec(), data.len(), ts.clone());
+            let lines = inner.assembler.push(data);
+            let any = !lines.is_empty();
+            for text in lines {
+                inner.push_line(text, ts.clone());
+            }
+            any.then(|| inner.lines.head())
+        };
+        if let Some(head) = new_head {
+            self.lines_tx.send_replace(head);
+        }
     }
 
     fn on_exit(&self, exit: ExitInfo, events: &EventLog) {
-        {
+        let new_head = {
             let mut inner = lock(&self.inner);
+            // 改行なしで終わった最終行も行ストリームに流す
+            let rest = inner.assembler.pending().to_string();
+            let any = !rest.is_empty();
+            if any {
+                inner.push_line(rest, now_iso());
+            }
             inner.state = RunState::Exited;
             inner.exit = Some(exit);
+            any.then(|| inner.lines.head())
+        };
+        if let Some(head) = new_head {
+            self.lines_tx.send_replace(head);
         }
         events.emit(
             "pane.exited",
@@ -337,12 +388,111 @@ impl Pane {
         let _ = settled.wait_for(|done| *done).await;
     }
 
-    /// 閉じた Pane への参照を購読に残さないための印。
+    /// 閉じた Pane への参照を購読に残さないための印。待っている購読を起こして止める。
     pub fn release(&self) {
         self.released.store(true, Ordering::Release);
+        self.lines_tx.send_modify(|_| {});
     }
 
     pub fn is_released(&self) -> bool {
         self.released.load(Ordering::Acquire)
+    }
+}
+
+/// `pane.subscribe_lines` の購読元（行リング）。
+pub struct LinesSource(pub Arc<Pane>);
+
+impl StreamSource for LinesSource {
+    fn bounds(&self) -> (u64, u64) {
+        let inner = lock(&self.0.inner);
+        (inner.lines.head(), inner.lines.oldest())
+    }
+
+    fn next(&self, cursor: u64, writable: bool) -> Next {
+        if self.0.is_released() {
+            return Next::Released;
+        }
+        let inner = lock(&self.0.inner);
+        if cursor + 1 < inner.lines.oldest() {
+            return Next::Overtaken;
+        }
+        if cursor >= inner.lines.head() {
+            return Next::Empty;
+        }
+        if !writable {
+            return Next::Blocked;
+        }
+        match inner.lines.entry(cursor + 1) {
+            Some(entry) => Next::Entry {
+                seq: entry.seq,
+                notification: json!({
+                    "jsonrpc": "2.0",
+                    "method": "pane.line",
+                    "params": {"seq": entry.seq, "ts": entry.ts, "paneId": self.0.id, "text": entry.item},
+                }),
+            },
+            None => Next::Overtaken,
+        }
+    }
+
+    fn wake(&self) -> watch::Receiver<u64> {
+        self.0.lines_tx.subscribe()
+    }
+}
+
+#[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    impl Pane {
+        /// 生出力リングの `(oldest, head)`。
+        fn raw_bounds(&self) -> (u64, u64) {
+            let inner = lock(&self.inner);
+            (inner.raw.oldest(), inner.raw.head())
+        }
+
+        fn raw_bytes(&self) -> usize {
+            let inner = lock(&self.inner);
+            (inner.raw.oldest()..=inner.raw.head())
+                .filter_map(|seq| inner.raw.entry(seq).map(|e| e.item.len()))
+                .sum()
+        }
+    }
+
+    #[test]
+    fn the_raw_ring_keeps_only_the_newest_bytes_up_to_its_capacity() {
+        let socket = PathBuf::from("/tmp/unused.sock");
+        let pane = Pane::spawn(PaneOpenOptions {
+            cmd: vec![
+                "sh".into(),
+                "-c".into(),
+                "head -c 20000 /dev/zero | tr '\\0' x".into(),
+            ],
+            cwd: None,
+            env: BTreeMap::new(),
+            ephemeral_env: BTreeMap::new(),
+            cols: None,
+            rows: None,
+            socket_path: &socket,
+            raw_ring_bytes: 4096,
+            lines_ring_bytes: 1024,
+        })
+        .unwrap();
+        pane.start(Arc::new(EventLog::new(10)));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while pane.state() != RunState::Exited {
+            assert!(Instant::now() < deadline, "the pane did not exit");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let (oldest, head) = pane.raw_bounds();
+        assert!(
+            oldest > 1 && head >= oldest,
+            "old chunks were evicted: {oldest}..{head}"
+        );
+        // 直近のチャンクは、容量を超えていても 1 つは残る。それ以外は容量に収まる。
+        assert!(pane.raw_bytes() <= 4096 + READ_CHUNK);
     }
 }
