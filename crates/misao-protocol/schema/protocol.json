@@ -1,0 +1,2265 @@
+{
+  "protocolVersion": "0.3.0",
+  "jsonrpc": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "anyOf": [
+      {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "id": {
+            "type": [
+              "number",
+              "string"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "id",
+          "method"
+        ],
+        "additionalProperties": {}
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "jsonrpc": {
+                "type": "string",
+                "const": "2.0"
+              },
+              "id": {
+                "type": [
+                  "number",
+                  "string"
+                ]
+              },
+              "result": {},
+              "error": {
+                "description": "A response carries exactly one of result or error",
+                "not": {}
+              }
+            },
+            "required": [
+              "jsonrpc",
+              "id",
+              "result"
+            ],
+            "additionalProperties": {}
+          },
+          {
+            "type": "object",
+            "properties": {
+              "jsonrpc": {
+                "type": "string",
+                "const": "2.0"
+              },
+              "id": {
+                "description": "null when the request could not be parsed",
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {}
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "additionalProperties": {}
+              },
+              "result": {
+                "description": "A response carries exactly one of result or error",
+                "not": {}
+              }
+            },
+            "required": [
+              "jsonrpc",
+              "id",
+              "error"
+            ],
+            "additionalProperties": {}
+          }
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "id": {
+            "description": "A notification carries no id",
+            "not": {}
+          },
+          "method": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "method",
+          "params"
+        ],
+        "additionalProperties": {}
+      }
+    ]
+  },
+  "methods": {
+    "server.info": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "pid": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "epoch": {
+            "type": "string",
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "ULID that changes on every daemon start. When it changes, seq has been rewound: the client must discard its local since."
+          },
+          "uptimeSec": {
+            "type": "number",
+            "minimum": 0
+          },
+          "paneCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "eventHead": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Sequence number. Increases monotonically from 1 per stream. Streams: raw output per pane, lines per pane, and daemon-wide events."
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "pid",
+          "epoch",
+          "uptimeSec",
+          "paneCount",
+          "eventHead"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "server.schema": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocolVersion"
+        ],
+        "additionalProperties": {},
+        "description": "The JSON schema of the whole protocol"
+      }
+    },
+    "workspace.list": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Workspace name"
+            },
+            "windows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "windowId": {
+                    "type": "string",
+                    "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                    "description": "Window id: \"w_\" followed by a ULID"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Window name"
+                  },
+                  "workspace": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Workspace name"
+                  }
+                },
+                "required": [
+                  "windowId",
+                  "name",
+                  "workspace"
+                ],
+                "additionalProperties": {}
+              }
+            }
+          },
+          "required": [
+            "name",
+            "windows"
+          ],
+          "additionalProperties": {}
+        }
+      }
+    },
+    "workspace.create": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace name"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace name"
+          },
+          "windows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "windowId": {
+                  "type": "string",
+                  "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "description": "Window id: \"w_\" followed by a ULID"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Window name"
+                },
+                "workspace": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Workspace name"
+                }
+              },
+              "required": [
+                "windowId",
+                "name",
+                "workspace"
+              ],
+              "additionalProperties": {}
+            }
+          }
+        },
+        "required": [
+          "name",
+          "windows"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "workspace.close": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace name"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "workspace.rename": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace name"
+          },
+          "newName": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace name"
+          }
+        },
+        "required": [
+          "name",
+          "newName"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "window.create": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace name"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Window name"
+          }
+        },
+        "required": [
+          "workspace",
+          "name"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windowId": {
+            "type": "string",
+            "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Window id: \"w_\" followed by a ULID"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Window name"
+          },
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace name"
+          }
+        },
+        "required": [
+          "windowId",
+          "name",
+          "workspace"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "window.close": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windowId": {
+            "type": "string",
+            "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Window id: \"w_\" followed by a ULID"
+          }
+        },
+        "required": [
+          "windowId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "window.rename": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windowId": {
+            "type": "string",
+            "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Window id: \"w_\" followed by a ULID"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Window name"
+          }
+        },
+        "required": [
+          "windowId",
+          "name"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "window.focus": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windowId": {
+            "type": "string",
+            "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Window id: \"w_\" followed by a ULID"
+          },
+          "clientId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Client identifier chosen by the client"
+          }
+        },
+        "required": [
+          "windowId",
+          "clientId"
+        ],
+        "description": "Focus is tracked per client"
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.open": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cmd": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "env": {
+            "description": "Environment variables for the child process. Saved to persistence.json: pass secrets in ephemeralEnv instead.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "ephemeralEnv": {
+            "description": "Environment variables injected into the child process but never persisted to persistence.json nor exposed in pane.info, pane.list or events. Pass values that must not survive a daemon restart, such as tokens, here. On respawn the caller must pass them again. Overrides env on the same key.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "cols": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Positive integer (columns or rows)"
+          },
+          "rows": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Positive integer (columns or rows)"
+          },
+          "labels": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Free-form labels. The daemon never interprets them. Recommended keys: owner, task, agent, origin, windowId, name. Recommended origin values: \"hub\", \"terminal\"; a pane created by `misao new` carries origin=terminal (used to discover unregistered panes). The windowId key is the hub-side window number (e.g. 806; the CLI displays it as W-806) and is unrelated to the daemon's window id. The name key is a human-readable display name."
+          },
+          "windowId": {
+            "description": "Target window. Defaults to the default workspace/window.",
+            "type": "string",
+            "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          },
+          "preplace": {
+            "description": "Files placed in a temporary directory created outside cwd. The caller decides the content.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^(?!\\.\\.?(?:[/\\\\]|$))[^/\\\\\\0:]+(?:[/\\\\](?!\\.\\.?(?:[/\\\\]|$))[^/\\\\\\0:]+)*$",
+                  "description": "File path relative to the temporary directory. Absolute paths, empty / \".\" / \"..\" segments, a trailing separator, NUL and \":\" (Windows drive letters) are rejected. This is only a first check: the daemon must always confirm after path.resolve that the path stays inside the temporary directory."
+                },
+                "content": {
+                  "type": "string",
+                  "description": "File content (UTF-8 string)"
+                },
+                "mode": {
+                  "description": "File mode (0 to 0o777)",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 511
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ]
+            }
+          }
+        },
+        "required": [
+          "cmd"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          }
+        },
+        "required": [
+          "paneId"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.info": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          }
+        },
+        "required": [
+          "paneId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null when processState is \"stopped\""
+          },
+          "cmd": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace name"
+          },
+          "window": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                "description": "Window id: \"w_\" followed by a ULID"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Window name"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": {}
+          },
+          "labels": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Free-form labels. The daemon never interprets them. Recommended keys: owner, task, agent, origin, windowId, name. Recommended origin values: \"hub\", \"terminal\"; a pane created by `misao new` carries origin=terminal (used to discover unregistered panes). The windowId key is the hub-side window number (e.g. 806; the CLI displays it as W-806) and is unrelated to the daemon's window id. The name key is a human-readable display name."
+          },
+          "processState": {
+            "default": "unknown",
+            "description": "Process state. \"stopped\": the daemon restarted, the PTY was lost and only metadata remains. The daemon never sends \"unknown\"; receivers read values they do not know as \"unknown\".",
+            "type": "string",
+            "enum": [
+              "running",
+              "exited",
+              "stopped",
+              "unknown"
+            ]
+          },
+          "exitCode": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signal": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "agentState": {
+            "default": "unknown",
+            "description": "Agent state. Receivers read values they do not know as \"unknown\".",
+            "type": "string",
+            "enum": [
+              "working",
+              "blocked",
+              "idle",
+              "exited",
+              "unknown"
+            ]
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "fgCommand": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "lastOutputAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                "description": "Time recorded by the daemon (ISO 8601, UTC)"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cols": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Positive integer (columns or rows)"
+          },
+          "rows": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Positive integer (columns or rows)"
+          },
+          "clients": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Client identifier chosen by the client"
+            }
+          },
+          "sizeOwner": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "Client identifier chosen by the client"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "paneId",
+          "pid",
+          "cmd",
+          "cwd",
+          "workspace",
+          "window",
+          "labels",
+          "processState",
+          "exitCode",
+          "signal",
+          "agentState",
+          "decidedBy",
+          "title",
+          "lastOutputAt",
+          "cols",
+          "rows",
+          "clients",
+          "sizeOwner"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.list": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "exited",
+                  "stopped"
+                ],
+                "description": "Process state. \"stopped\": the daemon restarted, the PTY was lost and only metadata remains."
+              },
+              "labels": {
+                "description": "Matches when every key/value is equal",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "workspace": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Workspace name"
+              }
+            },
+            "additionalProperties": false,
+            "description": "All conditions are ANDed. Unknown conditions are rejected (InvalidParams) so an old daemon never ignores a filter and returns every pane."
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "paneId": {
+              "type": "string",
+              "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+              "description": "Pane id: \"p_\" followed by a ULID"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "null when processState is \"stopped\""
+            },
+            "cmd": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "workspace": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Workspace name"
+            },
+            "window": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "description": "Window id: \"w_\" followed by a ULID"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Window name"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": {}
+            },
+            "labels": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Free-form labels. The daemon never interprets them. Recommended keys: owner, task, agent, origin, windowId, name. Recommended origin values: \"hub\", \"terminal\"; a pane created by `misao new` carries origin=terminal (used to discover unregistered panes). The windowId key is the hub-side window number (e.g. 806; the CLI displays it as W-806) and is unrelated to the daemon's window id. The name key is a human-readable display name."
+            },
+            "processState": {
+              "default": "unknown",
+              "description": "Process state. \"stopped\": the daemon restarted, the PTY was lost and only metadata remains. The daemon never sends \"unknown\"; receivers read values they do not know as \"unknown\".",
+              "type": "string",
+              "enum": [
+                "running",
+                "exited",
+                "stopped",
+                "unknown"
+              ]
+            },
+            "exitCode": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signal": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "agentState": {
+              "default": "unknown",
+              "description": "Agent state. Receivers read values they do not know as \"unknown\".",
+              "type": "string",
+              "enum": [
+                "working",
+                "blocked",
+                "idle",
+                "exited",
+                "unknown"
+              ]
+            },
+            "decidedBy": {
+              "type": "string"
+            },
+            "fgCommand": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "lastOutputAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                  "description": "Time recorded by the daemon (ISO 8601, UTC)"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cols": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Positive integer (columns or rows)"
+            },
+            "rows": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Positive integer (columns or rows)"
+            },
+            "clients": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Client identifier chosen by the client"
+              }
+            },
+            "sizeOwner": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Client identifier chosen by the client"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "paneId",
+            "pid",
+            "cmd",
+            "cwd",
+            "workspace",
+            "window",
+            "labels",
+            "processState",
+            "exitCode",
+            "signal",
+            "agentState",
+            "decidedBy",
+            "title",
+            "lastOutputAt",
+            "cols",
+            "rows",
+            "clients",
+            "sizeOwner"
+          ],
+          "additionalProperties": {}
+        }
+      }
+    },
+    "pane.write": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "paneId": {
+                "type": "string",
+                "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                "description": "Pane id: \"p_\" followed by a ULID"
+              },
+              "clientId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Client identifier chosen by the client"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "hub",
+                  "terminal"
+                ],
+                "description": "Origin of the input: the controlling app (hub) or a terminal client"
+              },
+              "data": {
+                "type": "string"
+              },
+              "dataB64": {
+                "not": {}
+              }
+            },
+            "required": [
+              "paneId",
+              "data"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "paneId": {
+                "type": "string",
+                "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                "description": "Pane id: \"p_\" followed by a ULID"
+              },
+              "clientId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Client identifier chosen by the client"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "hub",
+                  "terminal"
+                ],
+                "description": "Origin of the input: the controlling app (hub) or a terminal client"
+              },
+              "dataB64": {
+                "type": "string"
+              },
+              "data": {
+                "not": {}
+              }
+            },
+            "required": [
+              "paneId",
+              "dataB64"
+            ]
+          }
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.send_keys": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          },
+          "keys": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Key names, e.g. Enter, Escape, Tab, C-c, Up, Down"
+          },
+          "clientId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Client identifier chosen by the client"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "hub",
+              "terminal"
+            ],
+            "description": "Origin of the input: the controlling app (hub) or a terminal client"
+          }
+        },
+        "required": [
+          "paneId",
+          "keys"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.resize": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          },
+          "cols": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Positive integer (columns or rows)"
+          },
+          "rows": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Positive integer (columns or rows)"
+          },
+          "clientId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Client identifier chosen by the client"
+          }
+        },
+        "required": [
+          "paneId",
+          "cols",
+          "rows"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.screen": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          }
+        },
+        "required": [
+          "paneId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "y": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "additionalProperties": {}
+          },
+          "altScreen": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "activity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Counter that increases on every output and resize; unchanged while the pane is quiet"
+          }
+        },
+        "required": [
+          "text",
+          "cursor",
+          "altScreen",
+          "title",
+          "activity"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.set_label": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "paneId": {
+                "type": "string",
+                "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                "description": "Pane id: \"p_\" followed by a ULID"
+              },
+              "set": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Free-form labels. The daemon never interprets them. Recommended keys: owner, task, agent, origin, windowId, name. Recommended origin values: \"hub\", \"terminal\"; a pane created by `misao new` carries origin=terminal (used to discover unregistered panes). The windowId key is the hub-side window number (e.g. 806; the CLI displays it as W-806) and is unrelated to the daemon's window id. The name key is a human-readable display name."
+              },
+              "unset": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "paneId",
+              "set"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "paneId": {
+                "type": "string",
+                "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                "description": "Pane id: \"p_\" followed by a ULID"
+              },
+              "set": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Free-form labels. The daemon never interprets them. Recommended keys: owner, task, agent, origin, windowId, name. Recommended origin values: \"hub\", \"terminal\"; a pane created by `misao new` carries origin=terminal (used to discover unregistered panes). The windowId key is the hub-side window number (e.g. 806; the CLI displays it as W-806) and is unrelated to the daemon's window id. The name key is a human-readable display name."
+              },
+              "unset": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "paneId",
+              "unset"
+            ]
+          }
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "labels": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Labels after applying the change"
+          }
+        },
+        "required": [
+          "labels"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.attach": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          },
+          "clientId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Client identifier chosen by the client"
+          },
+          "mode": {
+            "default": "raw",
+            "description": "\"cells\" is reserved only: the daemon returns 1004 Unsupported.",
+            "type": "string",
+            "enum": [
+              "raw",
+              "cells"
+            ]
+          },
+          "replay": {
+            "default": "none",
+            "type": "string",
+            "enum": [
+              "raw",
+              "snapshot",
+              "none"
+            ]
+          },
+          "cols": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Positive integer (columns or rows)"
+          },
+          "rows": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Positive integer (columns or rows)"
+          }
+        },
+        "required": [
+          "paneId",
+          "clientId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "head": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Latest raw output seq covered by the replay"
+          },
+          "oldest": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Sequence number. Increases monotonically from 1 per stream. Streams: raw output per pane, lines per pane, and daemon-wide events."
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "head",
+          "oldest",
+          "truncated"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.detach": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          }
+        },
+        "required": [
+          "paneId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.subscribe_lines": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          },
+          "since": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Last seq already received. Replays seq > since, then switches to live. Omit for live only."
+          },
+          "epoch": {
+            "type": "string",
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Epoch that since belongs to. If it differs from the current epoch, the daemon returns gap: true and replays from the oldest retained item."
+          }
+        },
+        "required": [
+          "paneId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "gap": {
+            "type": "boolean",
+            "description": "True when events were missed: since is older than the retained range (since < oldest-1), since is ahead of head, or the epoch passed with since differs from the current one. A daemon restart is detected only by comparing epoch."
+          },
+          "head": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Latest seq at subscribe time. Replay covers seq <= head; live delivery covers seq > head."
+          },
+          "epoch": {
+            "type": "string",
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "ULID that changes on every daemon start. When it changes, seq has been rewound: the client must discard its local since."
+          }
+        },
+        "required": [
+          "gap",
+          "head",
+          "epoch"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.close": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          }
+        },
+        "required": [
+          "paneId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "pane.respawn": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          },
+          "cmd": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "paneId"
+        ],
+        "description": "Schema only. The Phase 1 daemon returns 1005 NotImplemented."
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paneId": {
+            "type": "string",
+            "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Pane id: \"p_\" followed by a ULID"
+          }
+        },
+        "required": [
+          "paneId"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "events.subscribe": {
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Last seq already received. Replays seq > since, then switches to live. Omit for live only."
+          },
+          "epoch": {
+            "type": "string",
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Epoch that since belongs to. If it differs from the current epoch, the daemon returns gap: true and replays from the oldest retained item."
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "gap": {
+            "type": "boolean",
+            "description": "True when events were missed: since is older than the retained range (since < oldest-1), since is ahead of head, or the epoch passed with since differs from the current one. A daemon restart is detected only by comparing epoch."
+          },
+          "head": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Latest seq at subscribe time. Replay covers seq <= head; live delivery covers seq > head."
+          },
+          "epoch": {
+            "type": "string",
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "ULID that changes on every daemon start. When it changes, seq has been rewound: the client must discard its local since."
+          }
+        },
+        "required": [
+          "gap",
+          "head",
+          "epoch"
+        ],
+        "additionalProperties": {}
+      }
+    }
+  },
+  "notifications": {
+    "pane.output": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Sequence number. Increases monotonically from 1 per stream. Streams: raw output per pane, lines per pane, and daemon-wide events."
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+          "description": "Time recorded by the daemon (ISO 8601, UTC)"
+        },
+        "paneId": {
+          "type": "string",
+          "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Pane id: \"p_\" followed by a ULID"
+        },
+        "dataB64": {
+          "type": "string",
+          "description": "Raw PTY output, base64"
+        },
+        "replay": {
+          "description": "Set when the data is a replay. \"snapshot\": a screen snapshot. The daemon never sends \"unknown\"; receivers read replay kinds they do not know as \"unknown\".",
+          "default": "unknown",
+          "type": "string",
+          "enum": [
+            "snapshot",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "seq",
+        "ts",
+        "paneId",
+        "dataB64"
+      ],
+      "additionalProperties": {}
+    },
+    "pane.line": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Sequence number. Increases monotonically from 1 per stream. Streams: raw output per pane, lines per pane, and daemon-wide events."
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+          "description": "Time recorded by the daemon (ISO 8601, UTC)"
+        },
+        "paneId": {
+          "type": "string",
+          "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Pane id: \"p_\" followed by a ULID"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "ts",
+        "paneId",
+        "text"
+      ],
+      "additionalProperties": {}
+    },
+    "event": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Sequence number. Increases monotonically from 1 per stream. Streams: raw output per pane, lines per pane, and daemon-wide events."
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+          "description": "Time recorded by the daemon (ISO 8601, UTC)"
+        },
+        "type": {
+          "type": "string"
+        },
+        "paneId": {
+          "type": "string",
+          "pattern": "^p_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Pane id: \"p_\" followed by a ULID"
+        },
+        "data": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "seq",
+        "ts",
+        "type",
+        "data"
+      ],
+      "additionalProperties": {}
+    }
+  },
+  "events": {
+    "daemon.started": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "protocolVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pid",
+        "protocolVersion"
+      ],
+      "additionalProperties": {}
+    },
+    "pane.opened": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "cmd": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "labels": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Free-form labels. The daemon never interprets them. Recommended keys: owner, task, agent, origin, windowId, name. Recommended origin values: \"hub\", \"terminal\"; a pane created by `misao new` carries origin=terminal (used to discover unregistered panes). The windowId key is the hub-side window number (e.g. 806; the CLI displays it as W-806) and is unrelated to the daemon's window id. The name key is a human-readable display name."
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workspace name"
+        },
+        "windowId": {
+          "type": "string",
+          "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Window id: \"w_\" followed by a ULID"
+        }
+      },
+      "required": [
+        "pid",
+        "cmd",
+        "labels",
+        "workspace",
+        "windowId"
+      ],
+      "additionalProperties": {}
+    },
+    "pane.title": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": {}
+    },
+    "pane.exited": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "exitCode": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signal": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "exitCode",
+        "signal"
+      ],
+      "additionalProperties": {}
+    },
+    "pane.resized": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Positive integer (columns or rows)"
+        },
+        "rows": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Positive integer (columns or rows)"
+        },
+        "clientId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "description": "Client identifier chosen by the client"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cols",
+        "rows",
+        "clientId"
+      ],
+      "additionalProperties": {}
+    },
+    "pane.closed": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": {}
+    },
+    "pane.state": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "state": {
+          "default": "unknown",
+          "description": "Agent state. Receivers read values they do not know as \"unknown\".",
+          "type": "string",
+          "enum": [
+            "working",
+            "blocked",
+            "idle",
+            "exited",
+            "unknown"
+          ]
+        },
+        "decidedBy": {
+          "type": "string"
+        },
+        "prev": {
+          "default": "unknown",
+          "description": "Agent state. Receivers read values they do not know as \"unknown\".",
+          "type": "string",
+          "enum": [
+            "working",
+            "blocked",
+            "idle",
+            "exited",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "decidedBy"
+      ],
+      "additionalProperties": {}
+    },
+    "pane.label": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "set": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Free-form labels. The daemon never interprets them. Recommended keys: owner, task, agent, origin, windowId, name. Recommended origin values: \"hub\", \"terminal\"; a pane created by `misao new` carries origin=terminal (used to discover unregistered panes). The windowId key is the hub-side window number (e.g. 806; the CLI displays it as W-806) and is unrelated to the daemon's window id. The name key is a human-readable display name."
+        },
+        "unset": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "set",
+        "unset"
+      ],
+      "additionalProperties": {}
+    },
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "source": {
+          "default": "unknown",
+          "description": "Origin of the input: the controlling app (hub) or a terminal client. The daemon never sends \"unknown\"; receivers read values they do not know as \"unknown\".",
+          "type": "string",
+          "enum": [
+            "hub",
+            "terminal",
+            "unknown"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "source",
+        "bytes"
+      ],
+      "additionalProperties": {},
+      "description": "The input content itself is not carried"
+    },
+    "client.attached": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Client identifier chosen by the client"
+        }
+      },
+      "required": [
+        "clientId"
+      ],
+      "additionalProperties": {}
+    },
+    "client.detached": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Client identifier chosen by the client"
+        }
+      },
+      "required": [
+        "clientId"
+      ],
+      "additionalProperties": {}
+    },
+    "workspace.created": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workspace name"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "workspace.closed": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workspace name"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "workspace.renamed": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workspace name"
+        },
+        "newName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workspace name"
+        }
+      },
+      "required": [
+        "name",
+        "newName"
+      ],
+      "additionalProperties": {}
+    },
+    "window.created": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "string",
+          "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Window id: \"w_\" followed by a ULID"
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workspace name"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Window name"
+        }
+      },
+      "required": [
+        "windowId",
+        "workspace",
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "window.closed": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "string",
+          "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Window id: \"w_\" followed by a ULID"
+        }
+      },
+      "required": [
+        "windowId"
+      ],
+      "additionalProperties": {}
+    },
+    "window.renamed": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "string",
+          "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Window id: \"w_\" followed by a ULID"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Window name"
+        }
+      },
+      "required": [
+        "windowId",
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "focus": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "string",
+          "pattern": "^w_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Window id: \"w_\" followed by a ULID"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Client identifier chosen by the client"
+        }
+      },
+      "required": [
+        "windowId",
+        "clientId"
+      ],
+      "additionalProperties": {}
+    }
+  },
+  "errors": {
+    "Parse": -32700,
+    "InvalidRequest": -32600,
+    "MethodNotFound": -32601,
+    "InvalidParams": -32602,
+    "Internal": -32603,
+    "PaneNotFound": 1001,
+    "PaneExited": 1002,
+    "Ambiguous": 1003,
+    "Unsupported": 1004,
+    "NotImplemented": 1005,
+    "WorkspaceNotFound": 1006,
+    "WindowNotFound": 1007,
+    "AlreadyExists": 1008
+  }
+}

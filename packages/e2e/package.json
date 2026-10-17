@@ -5,7 +5,8 @@
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
-    "test:e2e": "node --conditions=@misao/source --import tsx --test --test-force-exit --test-concurrency=1 \"test/**/*.test.ts\""
+    "test:e2e": "node --conditions=@misao/source --import tsx --test --test-force-exit --test-concurrency=1 \"test/**/*.test.ts\"",
+    "test:e2e:rust": "MISAO_DAEMON_BIN=\"${MISAO_DAEMON_BIN:-../../target/debug/misao}\" node --conditions=@misao/source --import tsx --test --test-force-exit --test-concurrency=1 test/server-info.test.ts"
   },
   "dependencies": {
     "@misao/daemon": "0.0.0",

@@ -37,6 +37,17 @@ export function cleanEnv(): Record<string, string> {
   return env;
 }
 
+/**
+ * デーモンを起動する argv。`MISAO_DAEMON_BIN` を指定すると、Node 版の代わりにその実行ファイル
+ * （Rust 版の `target/debug/misao` など）で `misao serve` を動かす。未設定なら Node 版。
+ * `MISAO_*` は cleanEnv が子へ渡さないので、ここでだけ読む。
+ */
+function daemonCmd(configPath: string, socket: string, dir: string): string[] {
+  const serveArgs = ['serve', '--config', configPath, '--socket', socket, '--data', dir];
+  const bin = process.env['MISAO_DAEMON_BIN'];
+  return bin === undefined || bin === '' ? nodeCmd(CLI_MAIN, ...serveArgs) : [bin, ...serveArgs];
+}
+
 /** 一時ディレクトリに misao.json を置き、`misao serve` を子プロセスで起動する。 */
 export async function startDaemonProcess(config: DaemonConfig = {}): Promise<DaemonProcess> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-e2e-'));
@@ -44,7 +55,7 @@ export async function startDaemonProcess(config: DaemonConfig = {}): Promise<Dae
   const configPath = path.join(dir, 'misao.json');
   fs.writeFileSync(configPath, JSON.stringify({ ...config, logLevel: 'warn' }));
   const log = fs.openSync(path.join(dir, 'daemon.log'), 'a');
-  const [command, ...args] = nodeCmd(CLI_MAIN, 'serve', '--config', configPath, '--socket', socket, '--data', dir);
+  const [command, ...args] = daemonCmd(configPath, socket, dir);
   const child: ChildProcess = spawn(command!, args, { env: cleanEnv(), stdio: ['ignore', log, log] });
   fs.closeSync(log);
   const pid = child.pid;

@@ -1,0 +1,30 @@
+[package]
+name = "misao"
+description = "misao: headless pane server (daemon + CLI)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "misao"
+path = "src/main.rs"
+
+[dependencies]
+misao-daemon.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+misao-protocol.workspace = true
+tempfile.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+nix.workspace = true
+
+[lints]
+workspace = true
