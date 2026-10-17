@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use portable_pty::MasterPty;
 use serde_json::{Value, json};
-use tokio::sync::{OnceCell, watch};
+use tokio::sync::watch;
 
 use crate::ansi::AnsiLineAssembler;
 use crate::child_env::build_child_env;
@@ -112,8 +112,10 @@ pub struct Pane {
     reaped: AtomicBool,
     /// close が始まった時刻（SIGHUP を送った時刻）。2 回目以降の close は何もせず終了を待つ。
     closing: Mutex<Option<Instant>>,
-    /// close の片付け（1 回だけ）。完了したら入る。
-    closed: OnceCell<()>,
+    /// close の片付けを始めた（最初の `close` だけが独立したタスクとして起動する）。
+    close_started: AtomicBool,
+    /// close の片付けが完了したら true。
+    closed_tx: watch::Sender<bool>,
     released: AtomicBool,
     /// 子のプロセスが終了した（残りの出力は待たずに読み切る）。
     exit_seen: AtomicBool,
@@ -208,7 +210,8 @@ impl Pane {
             survivors_at_exit: AtomicBool::new(false),
             reaped: AtomicBool::new(false),
             closing: Mutex::new(None),
-            closed: OnceCell::new(),
+            close_started: AtomicBool::new(false),
+            closed_tx: watch::Sender::new(false),
             released: AtomicBool::new(false),
             exit_seen: AtomicBool::new(false),
             line_subscribers: Mutex::new(Vec::new()),
@@ -419,8 +422,18 @@ impl Pane {
     /// SIGHUP → 3 秒 → SIGKILL（プロセスグループ全体）。リーダーの終了と、グループに残ったプロセスの
     /// 掃除、リーダーの回収まで済んだら戻る。リーダーが既に（自然に）終了していても、グループに残ったプロセスがいれば
     /// 同じ手順で止める。片付けは 1 回だけ行い、並行して呼ばれた分と後から呼ばれた分は、その完了を待つだけ。
+    /// 片付けは最初の呼び出しが起動する独立したタスクで行うので、呼び出し側がキャンセルされても続く
+    /// （デーモンの終了で接続のタスクが abort された後の `shutdown` が、SIGHUP と猶予を数え直さない）。
     pub async fn close(self: &Arc<Self>) {
-        self.closed.get_or_init(|| self.run_close()).await;
+        if !self.close_started.swap(true, Ordering::AcqRel) {
+            let pane = Arc::clone(self);
+            tokio::spawn(async move {
+                pane.run_close().await;
+                pane.closed_tx.send_replace(true);
+            });
+        }
+        let mut done = self.closed_tx.subscribe();
+        let _ = done.wait_for(|finished| *finished).await;
     }
 
     async fn run_close(&self) {
@@ -671,5 +684,61 @@ mod tests {
         let started = Instant::now();
         pane.close().await;
         assert!(started.elapsed() < Duration::from_millis(500));
+    }
+
+    /// close の途中で呼び出し側が abort されても（デーモンの終了で接続のタスクが abort される）、片付けは続く。
+    /// 後から close（shutdown）しても、SIGHUP を送り直さず、猶予も数え直さない。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_cancelled_close_does_not_restart_the_clean_up_for_the_next_close() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (hups, ready) = (tmp.path().join("hups"), tmp.path().join("ready"));
+        // SIGHUP を数えて無視する。SIGKILL まで生き続ける。
+        let script = format!(
+            "trap 'echo hup >> {hups}' HUP; touch {ready}; while true; do sleep 0.05; done",
+            hups = hups.display(),
+            ready = ready.display()
+        );
+        let socket = PathBuf::from("/tmp/unused.sock");
+        let pane = Pane::spawn(PaneOpenOptions {
+            cmd: vec!["sh".into(), "-c".into(), script],
+            cwd: None,
+            env: BTreeMap::new(),
+            ephemeral_env: BTreeMap::new(),
+            cols: None,
+            rows: None,
+            socket_path: &socket,
+            raw_ring_bytes: 1024,
+            lines_ring_bytes: 1024,
+        })
+        .unwrap();
+        pane.start(Arc::new(EventLog::new(10)));
+        wait_for("the trap", || ready.exists());
+        let started = Instant::now();
+        let first = tokio::spawn({
+            let pane = Arc::clone(&pane);
+            async move { pane.close().await }
+        });
+        wait_for("the first SIGHUP", || {
+            std::fs::read_to_string(&hups).is_ok_and(|s| s.lines().count() == 1)
+        });
+        first.abort();
+        let _ = first.await;
+        pane.close().await; // shutdown 相当
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= Duration::from_secs(2),
+            "the grace period is honoured: {elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_millis(5500),
+            "the grace period is not counted again: {elapsed:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&hups).unwrap().lines().count(),
+            1,
+            "SIGHUP exactly once"
+        );
+        assert_eq!(pane.state(), RunState::Exited);
+        assert_eq!(crate::pty::group_state(pane.pid), GroupState::Empty);
     }
 }
