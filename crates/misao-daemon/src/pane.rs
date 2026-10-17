@@ -150,6 +150,9 @@ pub struct Pane {
     events: Arc<EventLog>,
     /// attach している接続ごとの出力の届け先。`order` の lock の中で配る。
     attachments: Mutex<Vec<Arc<Attachment>>>,
+    /// テスト用: attach が pane 側に登録した後、接続側に登録する前に止まる場所。
+    #[cfg(test)]
+    attach_gate: Mutex<Option<(Arc<std::sync::Barrier>, Arc<std::sync::Barrier>)>>,
     /// 行ストリームの購読者の進み具合（送り手が遅い購読者を待つため）。
     line_subscribers: Mutex<Vec<Weak<Progress>>>,
     lines_ring_bytes: usize,
@@ -263,6 +266,8 @@ impl Pane {
             quiet: AtomicBool::new(false),
             exit_seen: AtomicBool::new(false),
             attachments: Mutex::new(Vec::new()),
+            #[cfg(test)]
+            attach_gate: Mutex::new(None),
             line_subscribers: Mutex::new(Vec::new()),
             lines_ring_bytes: opts.lines_ring_bytes,
             wakeup: Arc::new(Wakeup::default()),

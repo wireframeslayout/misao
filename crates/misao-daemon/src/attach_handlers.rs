@@ -29,15 +29,7 @@ impl Core {
         let pane = self.state().registry.live(p.pane_id.as_str())?;
         let conn = Arc::clone(&ctx.conn);
         let client_id = p.client_id.as_str();
-        let previous = conn.attachment(&pane.id);
-        let replacing = previous.as_ref().is_some_and(|a| a.client_id == client_id);
-        // 同じ接続・同じ clientId の再 attach: 出力の届け先だけを差し替える（クライアントとしては残し、client.detached も出さない）。
-        let old_id = previous.as_ref().filter(|_| replacing).map(|a| a.id);
-        if replacing {
-            conn.take_attachment(&pane.id);
-        } else {
-            self.detach_from(&conn, &pane.id);
-        }
+        // サイズの指定は先に適用する（snapshot が新しいサイズの画面になる）。失敗したら何も変えない（古い attach は残る）。
         if let (Some(cols), Some(rows)) = (p.cols, p.rows) {
             pane.resize(cols.get(), rows.get(), Some(client_id))
                 .map_err(RpcFailure::internal)?;
@@ -48,11 +40,19 @@ impl Core {
                 Some(&pane.id),
             );
         }
+        // 登録・差し替え（pane 側と接続側）は pane の中で 1 つの操作として行う。close が始まっていれば古い attach を残して断る。
         let attached = pane
-            .attach(&conn, client_id, p.replay, old_id)
+            .attach(&conn, client_id, p.replay)
             .map_err(|_| RpcFailure::new(ErrorCode::PANE_EXITED, "pane is closing"))?;
-        conn.set_attachment(&pane.id, Arc::clone(&attached.attachment));
-        if !replacing {
+        if let Some(displaced) = attached.displaced {
+            self.report_inherited_size(&pane, displaced.inherited);
+            self.events.emit(
+                "client.detached",
+                json!({"clientId": displaced.client_id}),
+                Some(&pane.id),
+            );
+        }
+        if !attached.replaced {
             self.events
                 .emit("client.attached", json!({"clientId": client_id}), Some(&pane.id));
         }
@@ -126,9 +126,6 @@ impl Core {
     /// pane の close で、全接続の attach を外す（閉じた Pane への参照を残さない）。
     pub(crate) fn release_attachments(&self, pane: &Pane) {
         for attachment in pane.close_attachments() {
-            if let Some(conn) = attachment.conn() {
-                conn.remove_attachment_if(&pane.id, attachment.id);
-            }
             self.events.emit(
                 "client.detached",
                 json!({"clientId": attachment.client_id}),

@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use super::*;
+use crate::connection::ConnHandle;
 
 impl Pane {
     /// 生出力リングの `(oldest, head)`。
@@ -329,4 +330,59 @@ fn concurrent_output_and_resize_leave_a_consistent_screen() {
         assert_eq!(text.split('\n').count(), 3);
         crate::pty::kill_tree(pane.pid);
     }
+}
+
+/// pane 側に登録した後・接続側に登録する前で attach が止まっている間に close が始まっても、
+/// 両側の解除は線形化される: close は attach の完了を待ち、接続側にも pane 側にも何も残らない。
+#[test]
+fn a_close_waits_for_an_attach_paused_between_the_pane_side_and_the_connection_side() {
+    let pane = quiet_pane();
+    let (conn, _rx) = ConnHandle::new();
+    let arrived = Arc::new(std::sync::Barrier::new(2));
+    let release = Arc::new(std::sync::Barrier::new(2));
+    pane.pause_next_attach(Arc::clone(&arrived), Arc::clone(&release));
+    let attacher = {
+        let (pane, conn) = (Arc::clone(&pane), Arc::clone(&conn));
+        std::thread::spawn(move || pane.attach(&conn, "A", crate::params::Replay::None).is_ok())
+    };
+    arrived.wait(); // attach は pane 側に登録済みで、order を持ったまま止まっている
+    let closer = {
+        let pane = Arc::clone(&pane);
+        std::thread::spawn(move || pane.close_attachments().len())
+    };
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(conn.attachment(&pane.id).is_none(), "the connection side is not registered yet");
+    release.wait(); // attach を再開する
+    assert!(attacher.join().unwrap(), "the attach that started before the close completes");
+    assert_eq!(closer.join().unwrap(), 1, "the close released it on the pane side");
+    assert!(conn.attachment(&pane.id).is_none(), "and on the connection side");
+    assert!(!pane.has_attachment_for("A"));
+    // close の後の attach は断る
+    assert!(pane.attach(&conn, "B", crate::params::Replay::None).is_err());
+    assert!(conn.attachment(&pane.id).is_none());
+}
+
+/// 断られた attach は、同じ接続・同じ clientId の古い attach を両側に残す。
+#[test]
+fn a_refused_attach_leaves_the_old_attachment_on_both_sides() {
+    let pane = quiet_pane();
+    let (conn, _rx) = ConnHandle::new();
+    let first = pane.attach(&conn, "A", crate::params::Replay::None).unwrap();
+    pane.refuse_attach();
+    assert!(pane.attach(&conn, "A", crate::params::Replay::None).is_err());
+    assert_eq!(conn.attachment(&pane.id).map(|a| a.id), Some(first.attachment.id));
+    assert!(pane.has_attachment_for("A"));
+}
+
+/// 同じ接続で別の clientId が attach すると、古い方は両側から外れ、クライアントとサイズの調停からも外れる。
+#[test]
+fn attaching_with_another_client_id_on_the_same_connection_displaces_the_old_client() {
+    let pane = quiet_pane();
+    let (conn, _rx) = ConnHandle::new();
+    pane.attach(&conn, "A", crate::params::Replay::None).unwrap();
+    let second = pane.attach(&conn, "B", crate::params::Replay::None).unwrap();
+    assert_eq!(second.displaced.as_ref().map(|d| d.client_id.as_str()), Some("A"));
+    assert!(!second.replaced);
+    assert!(!pane.has_attachment_for("A") && pane.has_attachment_for("B"));
+    assert_eq!(conn.attachment(&pane.id).map(|a| a.id), Some(second.attachment.id));
 }

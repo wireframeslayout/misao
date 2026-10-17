@@ -148,11 +148,12 @@ impl ConnHandle {
             .cloned()
     }
 
-    pub fn set_attachment(&self, pane_id: &str, attachment: Arc<Attachment>) {
+    /// 登録して、同じ pane の古い attach を返す。
+    pub fn replace_attachment(&self, pane_id: &str, attachment: Arc<Attachment>) -> Option<Arc<Attachment>> {
         self.attachments
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(pane_id.to_string(), attachment);
+            .insert(pane_id.to_string(), attachment)
     }
 
     pub fn take_attachment(&self, pane_id: &str) -> Option<Arc<Attachment>> {
