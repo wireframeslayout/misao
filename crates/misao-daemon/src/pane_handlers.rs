@@ -236,10 +236,11 @@ impl Core {
     pub(crate) fn pane_set_label(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: PaneSetLabelParams = params::parse("pane.set_label", raw)?;
         p.require_change("pane.set_label")?;
-        let labels =
-            self.state()
-                .registry
-                .set_labels(p.pane_id.as_str(), p.set.as_ref(), p.unset.as_deref())?;
+        // 状態の変更とイベントの発行は、同じ lock の中で行う（他のハンドラと同じ）。
+        let mut state = self.state();
+        let labels = state
+            .registry
+            .set_labels(p.pane_id.as_str(), p.set.as_ref(), p.unset.as_deref())?;
         self.events.emit(
             "pane.label",
             json!({"set": p.set.unwrap_or_default(), "unset": p.unset.unwrap_or_default()}),
