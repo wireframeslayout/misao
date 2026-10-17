@@ -45,6 +45,8 @@ pub use lines::LinesSource;
 const KILL_GRACE: Duration = Duration::from_secs(3);
 /// 子の終了後、残りの出力を読み切るのを待つ上限（孫が pty を握り続けて EOF にならない場合の打ち切り）。
 const READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+/// Windows: 子の終了後、出力がこれだけ途切れたら読み切ったとみなす（ConPTY の出力は、ConPTY を閉じるまで EOF にならない）。
+const OUTPUT_QUIET: Duration = Duration::from_millis(200);
 /// close で、リーダーの終了後にグループの残りが消えるのを確かめる間隔と、SIGKILL 後に待つ上限。
 const GROUP_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const GROUP_KILL_WAIT: Duration = Duration::from_secs(2);
@@ -129,6 +131,8 @@ pub struct Pane {
     /// 入力を pty へ書くスレッドへの送り口（pty の書き込みは詰まりうるので、RPC のスレッドでは書かない）。
     /// 子が終了すると外す（送り口を閉じて入力のスレッドと writer を終わらせる）。
     input: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
+    /// 最後に出力を読んだ時刻（Windows の `wait_for_output_drain` が使う）。
+    last_output: Mutex<Instant>,
     /// 出力の取り込み（リングへの格納と端末の解析）と resize を、受け取った順に画面へ反映するための順序づけ。
     /// 解析は `inner` の外で行うので、これが無いと、格納済みの出力の解析の前に resize が入り、古い出力が新しいサイズで解析される。
     /// ロックの順序: order -> inner -> observer。
@@ -267,6 +271,7 @@ impl Pane {
             })),
             input: Mutex::new(None),
             order: Mutex::new(()),
+            last_output: Mutex::new(Instant::now()),
             input_queued: Arc::new(AtomicUsize::new(0)),
             lines_tx: watch::Sender::new(0),
             exited_tx: watch::Sender::new(false),
@@ -347,14 +352,35 @@ impl Pane {
             pane.exit_seen.store(true, Ordering::Release);
             pane.wakeup.notify();
             // 残りの出力を読み切ってから終了を報告する（終了直前の出力を取りこぼさない）。
-            if let Err(RecvTimeoutError::Timeout) = drained_rx.recv_timeout(READER_DRAIN_TIMEOUT) {
-                // 孫が pty を握っていて EOF が来ない。ここまでに読めた分で打ち切る。
-            }
+            pane.wait_for_output_drain(&drained_rx);
             pane.on_exit(exit);
         });
     }
 
+    /// 子の終了後、残りの出力を読み切るのを待つ。
+    /// Unix は pty の EOF まで（孫が pty を握って EOF が来なければ `READER_DRAIN_TIMEOUT` で打ち切る）。
+    /// Windows は EOF が来ないので、出力が `OUTPUT_QUIET` 途切れるまで（最長 `READER_DRAIN_TIMEOUT`）。
+    fn wait_for_output_drain(&self, drained: &mpsc::Receiver<()>) {
+        if !cfg!(windows) {
+            let _ = drained.recv_timeout(READER_DRAIN_TIMEOUT);
+            return;
+        }
+        let started = Instant::now();
+        loop {
+            match drained.recv_timeout(Duration::from_millis(20)) {
+                Err(RecvTimeoutError::Timeout) => {}
+                Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
+            }
+            let quiet =
+                started.elapsed() >= OUTPUT_QUIET && lock(&self.last_output).elapsed() >= OUTPUT_QUIET;
+            if quiet || started.elapsed() >= READER_DRAIN_TIMEOUT {
+                return;
+            }
+        }
+    }
+
     fn on_output(&self, data: &[u8]) {
+        *lock(&self.last_output) = Instant::now();
         let _order = lock(&self.order);
         let ts = now_iso();
         let (seq, new_head, queries) = {
