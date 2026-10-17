@@ -25,6 +25,7 @@ use crate::pane_observer::PaneObserver;
 use crate::pane_view::{PaneView, ScreenSnapshot};
 use crate::profile::{Profile, select_profile};
 use crate::pty::{self, ExitInfo, GroupState, ProcessTree, PtyProcess, SpawnRequest};
+use crate::repaint_filter::RepaintFilter;
 use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
 use crate::stream::{Progress, Wakeup};
@@ -101,6 +102,8 @@ struct Inner {
     /// ANSI を除いた行。`pane.subscribe_lines` が読む。
     lines: SeqRing<String>,
     assembler: AnsiLineAssembler,
+    /// resize 後の全画面の再描画を行ストリームから除く（Windows の ConPTY）。
+    repaint: RepaintFilter,
 }
 
 /// `start` が取り出す、スレッドへ渡すもの。
@@ -250,6 +253,7 @@ impl Pane {
                 raw: SeqRing::new(opts.raw_ring_bytes),
                 lines: SeqRing::new(opts.lines_ring_bytes),
                 assembler: AnsiLineAssembler::default(),
+                repaint: RepaintFilter::default(),
             }),
             master: Mutex::new(master),
             handoff: Mutex::new(Some(Handoff {
@@ -353,7 +357,8 @@ impl Pane {
             let mut inner = lock(&self.inner);
             inner.last_output_at = Some(ts.clone());
             let seq = inner.raw.push(data.to_vec(), data.len(), ts.clone());
-            let lines = inner.assembler.push(data);
+            let fed = inner.repaint.filter(data, Instant::now());
+            let lines = inner.assembler.push(&fed);
             let any = !lines.is_empty();
             for text in lines {
                 inner.push_line(text, ts.clone());
@@ -453,9 +458,15 @@ impl Pane {
     /// 決まったサイズを pty・画面・記録へ適用する。pty が失敗したら何も変えない（先に pty を変える）。
     fn apply(&self, inner: &mut Inner, decision: &SizeDecision) -> Result<(), String> {
         if inner.state == RunState::Running {
+            let size = pty::pty_size(decision.cols, decision.rows);
             lock(&self.master)
-                .resize(pty::pty_size(decision.cols, decision.rows))
+                .resize(size)
                 .map_err(|e| format!("cannot resize the pty: {e:#}"))?;
+            // ConPTY は resize のたびに画面全体を書き直すので、その再描画は行ストリームに流さない。
+            let changed = (inner.cols, inner.rows) != (decision.cols, decision.rows);
+            if cfg!(windows) && changed {
+                inner.repaint.arm(u64::from(size.rows), Instant::now());
+            }
         }
         inner.cols = decision.cols;
         inner.rows = decision.rows;

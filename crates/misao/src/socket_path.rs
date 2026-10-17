@@ -109,20 +109,16 @@ pub fn config_candidates_in_dirs(
 
 /// ソケットパスを解決する。
 /// 優先順: `$MISAO_SOCKET` > `explicit` > `$MISAO_DIR/misao.sock` > `~/.misao/misao.sock`。
+/// Windows の接続口は名前付きパイプ（Unix ソケットのパスではない）で、名前は `pipe_name` が決める。
+#[cfg(windows)]
 pub fn resolve_socket_path(env: &PathEnv, explicit: Option<&str>, home: &str) -> Result<PathBuf, PathError> {
-    // Windows の接続口は名前付きパイプ（Unix ソケットのパスではない）。
-    #[cfg(windows)]
-    {
-        let user = crate::win_user::current_user_name()
-            .map_err(|e| PathError::new(format!("cannot determine the user name: {e}")))?;
-        return crate::pipe_name::resolve_pipe_name(env, explicit, home, &user).map(PathBuf::from);
-    }
-    #[cfg(not(windows))]
-    resolve_unix_socket_path(env, explicit, home)
+    let user = crate::win_user::current_user_name()
+        .map_err(|e| PathError::new(format!("cannot determine the user name: {e}")))?;
+    crate::pipe_name::resolve_pipe_name(env, explicit, home, &user).map(PathBuf::from)
 }
 
 #[cfg(not(windows))]
-fn resolve_unix_socket_path(env: &PathEnv, explicit: Option<&str>, home: &str) -> Result<PathBuf, PathError> {
+pub fn resolve_socket_path(env: &PathEnv, explicit: Option<&str>, home: &str) -> Result<PathBuf, PathError> {
     let resolved = if let Some(socket) = set(env.socket.as_deref()) {
         expand_home("MISAO_SOCKET", socket, home)?
     } else if let Some(path) = explicit {

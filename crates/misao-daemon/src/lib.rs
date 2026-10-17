@@ -29,6 +29,7 @@ mod profile;
 mod profile_rules;
 mod pty;
 mod registry;
+mod repaint_filter;
 mod ring;
 mod rpc;
 mod rpc_error;

@@ -1,0 +1,271 @@
+//! ConPTY の resize 後の全画面の再描画を、行ストリームから除く。
+//!
+//! ConPTY は resize のたびに、画面全体を `ESC[H`（ホーム）から `ESC[K` + 改行で書き直す。ANSI を除いて行にすると、
+//! すでに流した行が重複し、約 100 行の空行が入る（実機の記録: `docs/*/windows.md` §10.1）。
+//! resize を適用した直後に 1 回だけ構えて（`arm`）、`ESC[H` で始まるフレームを、その終わりまで行の組み立てに渡さない。
+//! フレームは、最後の行の後ろのカーソル位置の復元（CUP）か、カーソルの表示（`ESC[?25h`）で終わる。
+//! 生の出力のリング・画面モデル・稼働判定には元のバイト列がそのまま渡る（除くのは行ストリームだけ）。
+
+use std::borrow::Cow;
+use std::time::{Duration, Instant};
+
+/// resize の後、再描画を待つ長さ。実機では resize から 800 ms 以内に収まる。
+const ARM_WINDOW: Duration = Duration::from_secs(2);
+/// フレームの開始から、終わりの印が来なくても打ち切るまでの長さ（カーソルを隠したままのアプリ向け）。
+const FRAME_MAX: Duration = Duration::from_millis(500);
+/// CSI の途中でチャンクが切れたときに持ち越す上限。これを超える CSI はエスケープシーケンスではないとして流す。
+const HELD_MAX: usize = 32;
+
+#[derive(Debug, Default)]
+enum State {
+    #[default]
+    Idle,
+    /// 再描画のフレームの中。
+    Frame { started: Instant, line_feeds: u64 },
+}
+
+#[derive(Debug, Default)]
+pub struct RepaintFilter {
+    armed: Option<(Instant, u64)>,
+    state: State,
+    /// 前のチャンクの末尾にあった、終わっていない CSI（`ESC [ ...`）。
+    held: Vec<u8>,
+}
+
+fn is_final(byte: u8) -> bool {
+    (0x40..=0x7e).contains(&byte)
+}
+
+/// ホームへの移動（`ESC[H` / `ESC[1;1H` / `ESC[;H` ...）か。params は `[` の後ろ、最終バイトの前。
+fn is_home(params: &[u8]) -> bool {
+    matches!(params, b"" | b"1" | b";" | b"1;" | b";1" | b"1;1")
+}
+
+impl RepaintFilter {
+    /// resize を適用した。次の再描画のフレームを 1 つ除く。`rows` は新しい行数。
+    pub fn arm(&mut self, rows: u64, now: Instant) {
+        self.armed = Some((now + ARM_WINDOW, rows));
+    }
+
+    /// 行の組み立てに渡すバイト列を返す。構えていない間は何もしない（そのまま返す）。
+    pub fn filter<'a>(&mut self, data: &'a [u8], now: Instant) -> Cow<'a, [u8]> {
+        if let Some((until, _)) = self.armed
+            && now > until
+            && matches!(self.state, State::Idle)
+        {
+            self.armed = None;
+        }
+        if self.armed.is_none() && self.held.is_empty() && matches!(self.state, State::Idle) {
+            return Cow::Borrowed(data);
+        }
+        let mut input = std::mem::take(&mut self.held);
+        input.extend_from_slice(data);
+        let mut out = Vec::with_capacity(input.len());
+        let mut index = 0;
+        while index < input.len() {
+            if let State::Frame { started, .. } = self.state
+                && now.saturating_duration_since(started) > FRAME_MAX
+            {
+                self.state = State::Idle;
+            }
+            let byte = input[index];
+            if byte != 0x1b {
+                if let State::Frame { line_feeds, .. } = &mut self.state {
+                    *line_feeds += u64::from(byte == b'\n');
+                } else {
+                    out.push(byte);
+                }
+                index += 1;
+                continue;
+            }
+            // ESC: CSI（`ESC [ params final`）だけを見る。
+            let Some(&second) = input.get(index + 1) else {
+                self.held = input[index..].to_vec();
+                break;
+            };
+            if second != b'[' {
+                if matches!(self.state, State::Idle) {
+                    out.extend_from_slice(&input[index..index + 2]);
+                }
+                index += 2;
+                continue;
+            }
+            let Some(length) = input[index + 2..].iter().position(|&b| is_final(b)) else {
+                if input.len() - index <= HELD_MAX {
+                    self.held = input[index..].to_vec();
+                } else if matches!(self.state, State::Idle) {
+                    out.extend_from_slice(&input[index..]);
+                }
+                break;
+            };
+            let end = index + 2 + length;
+            let params = &input[index + 2..end];
+            let sequence = &input[index..=end];
+            if !self.on_csi(params, input[end], now) {
+                out.extend_from_slice(sequence);
+            }
+            index = end + 1;
+        }
+        Cow::Owned(out)
+    }
+
+    /// CSI を 1 つ見た。再描画のフレームの一部として消費したら true（行の組み立てに渡さない）。
+    fn on_csi(&mut self, params: &[u8], final_byte: u8, now: Instant) -> bool {
+        match self.state {
+            State::Idle => {
+                if final_byte == b'H' && is_home(params) && self.armed.is_some() {
+                    self.state = State::Frame {
+                        started: now,
+                        line_feeds: 0,
+                    };
+                    return true;
+                }
+                false
+            }
+            State::Frame { line_feeds, .. } => {
+                let rows = self.armed.map_or(0, |(_, rows)| rows);
+                let cursor_shown = final_byte == b'h' && params == b"?25";
+                let cursor_restored = final_byte == b'H' && line_feeds >= rows.saturating_sub(1);
+                if cursor_shown || cursor_restored {
+                    self.state = State::Idle;
+                    self.armed = None;
+                }
+                true
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn run(filter: &mut RepaintFilter, data: &[u8], now: Instant) -> Vec<u8> {
+        filter.filter(data, now).into_owned()
+    }
+
+    fn frame(rows: usize, cup: &str) -> String {
+        format!(
+            "\x1b[?25l\x1b[H{}\x1b[K{cup}\x1b[?25h",
+            "text\x1b[K\r\n".repeat(rows - 1)
+        )
+    }
+
+    #[test]
+    fn nothing_changes_while_not_armed() {
+        let mut filter = RepaintFilter::default();
+        let data = frame(5, "\x1b[2;3H");
+        assert_eq!(run(&mut filter, data.as_bytes(), Instant::now()), data.as_bytes());
+    }
+
+    #[test]
+    fn the_frame_after_a_resize_is_dropped_but_the_surroundings_are_kept() {
+        let mut filter = RepaintFilter::default();
+        let now = Instant::now();
+        filter.arm(5, now);
+        let input = format!("before\r\n{}after\r\n", frame(5, "\x1b[2;3H"));
+        let out = String::from_utf8(run(&mut filter, input.as_bytes(), now)).unwrap();
+        assert_eq!(out, "before\r\n\x1b[?25l\x1b[?25hafter\r\n");
+        // 1 回きり: 次の ESC[H はそのまま通る
+        let again = frame(5, "\x1b[2;3H");
+        assert_eq!(run(&mut filter, again.as_bytes(), now), again.as_bytes());
+    }
+
+    #[test]
+    fn a_frame_split_at_every_byte_is_still_dropped() {
+        let mut filter = RepaintFilter::default();
+        let now = Instant::now();
+        filter.arm(4, now);
+        let input = format!("a\r\n{}b\r\n", frame(4, "\x1b[1;46H"));
+        let mut out = Vec::new();
+        for byte in input.as_bytes() {
+            out.extend(run(&mut filter, std::slice::from_ref(byte), now));
+        }
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.starts_with("a\r\n") && text.ends_with("b\r\n"), "{text:?}");
+        assert!(!text.contains("text"), "{text:?}");
+    }
+
+    #[test]
+    fn the_frame_ends_at_the_cursor_show_when_the_row_count_differs() {
+        let mut filter = RepaintFilter::default();
+        let now = Instant::now();
+        filter.arm(10, now);
+        let input = format!("{}tail\r\n", frame(3, ""));
+        let out = String::from_utf8(run(&mut filter, input.as_bytes(), now)).unwrap();
+        assert_eq!(out, "\x1b[?25ltail\r\n");
+    }
+
+    #[test]
+    fn an_unfinished_frame_is_cut_off_and_an_expired_arm_is_forgotten() {
+        let mut filter = RepaintFilter::default();
+        let now = Instant::now();
+        filter.arm(5, now);
+        // カーソルを隠したまま終わりの印が来ない: 500 ms 後の出力は通る
+        assert_eq!(run(&mut filter, b"\x1b[Hxx\r\n", now), b"");
+        let later = now + FRAME_MAX + Duration::from_millis(1);
+        assert_eq!(run(&mut filter, b"real\r\n", later), b"real\r\n");
+        // 構えたまま 2 秒たったら、ホームへの移動は通る
+        filter.arm(5, now);
+        let expired = now + ARM_WINDOW + Duration::from_millis(1);
+        assert_eq!(run(&mut filter, b"\x1b[Hok\r\n", expired), b"\x1b[Hok\r\n");
+    }
+
+    #[test]
+    fn other_sequences_and_a_long_unfinished_csi_pass_through() {
+        let mut filter = RepaintFilter::default();
+        let now = Instant::now();
+        filter.arm(5, now);
+        assert_eq!(
+            run(&mut filter, b"\x1b[31mred\x1b[0m\x1b]0;t\x07", now),
+            b"\x1b[31mred\x1b[0m\x1b]0;t\x07"
+        );
+        let long = format!("\x1b[{}", "9".repeat(64));
+        assert_eq!(run(&mut filter, long.as_bytes(), now), long.as_bytes());
+    }
+
+    #[test]
+    fn the_recorded_windows_repaints_leave_no_duplicate_lines() {
+        use crate::ansi::AnsiLineAssembler;
+
+        for (name, text) in [
+            (
+                "cmd",
+                include_str!("../tests/fixtures/windows/conpty-cmd-idle-resize.jsonl"),
+            ),
+            (
+                "powershell",
+                include_str!("../tests/fixtures/windows/conpty-ps-idle-resize.jsonl"),
+            ),
+        ] {
+            let mut filter = RepaintFilter::default();
+            let mut assembler = AnsiLineAssembler::default();
+            let (mut lines, mut unfiltered) = (Vec::new(), Vec::new());
+            let mut plain = AnsiLineAssembler::default();
+            let start = Instant::now();
+            for record in text.lines().skip(1) {
+                let value: serde_json::Value = serde_json::from_str(record).unwrap();
+                let at = start + Duration::from_millis(value["t"].as_u64().unwrap());
+                if let Some(size) = value["resize"].as_array() {
+                    filter.arm(size[1].as_u64().unwrap(), at);
+                } else if let Some(data) = value["d"].as_str() {
+                    lines.extend(assembler.push(&filter.filter(data.as_bytes(), at)));
+                    unfiltered.extend(plain.push(data.as_bytes()));
+                }
+            }
+            // 記録の最後の `exit` を除いて、banner と prompt が 1 回ずつ。空行は prompt の前の 1 行だけ。
+            assert!(
+                unfiltered.len() > lines.len() + 50,
+                "{name}: the repaints did produce noise"
+            );
+            let count = |needle: &str| lines.iter().filter(|l| l.contains(needle)).count();
+            assert!(count("misao-win-test") <= 1, "{name}: {lines:?}");
+            assert!(
+                lines.iter().filter(|l| l.is_empty()).count() <= 1,
+                "{name}: {lines:?}"
+            );
+            assert!(lines.len() <= 6, "{name}: {lines:?}");
+        }
+    }
+}
