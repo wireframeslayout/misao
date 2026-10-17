@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
@@ -16,7 +16,7 @@ use crate::ansi::AnsiLineAssembler;
 use crate::child_env::build_child_env;
 use crate::event_log::EventLog;
 use crate::ids::new_pane_id;
-use crate::limits::LINE_ENTRY_OVERHEAD;
+use crate::limits::{INPUT_QUEUE_BYTES, LINE_ENTRY_OVERHEAD};
 use crate::log::now_iso;
 use crate::pty::{self, ExitInfo, PtyProcess, SpawnRequest};
 use crate::ring::SeqRing;
@@ -98,7 +98,10 @@ pub struct Pane {
     master: Mutex<Box<dyn MasterPty + Send>>,
     handoff: Mutex<Option<Handoff>>,
     /// 入力を pty へ書くスレッドへの送り口（pty の書き込みは詰まりうるので、RPC のスレッドでは書かない）。
+    /// 子が終了すると外す（送り口を閉じて入力のスレッドと writer を終わらせる）。
     input: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
+    /// 入力の待ち行列に溜まっているバイト数（上限は `INPUT_QUEUE_BYTES`）。
+    input_queued: Arc<AtomicUsize>,
     /// 子のプロセス（リーダー）が終了し、`pane.exited` を出し終えたら true。
     /// 行リングの head。新しい行が入るたびに進む。
     lines_tx: watch::Sender<u64>,
@@ -188,6 +191,7 @@ impl Pane {
                 child,
             })),
             input: Mutex::new(None),
+            input_queued: Arc::new(AtomicUsize::new(0)),
             lines_tx: watch::Sender::new(0),
             exited_tx: watch::Sender::new(false),
             survivors_at_exit: AtomicBool::new(false),
@@ -213,14 +217,17 @@ impl Pane {
         };
         let (input_tx, input_rx) = mpsc::channel::<Vec<u8>>();
         *lock(&self.input) = Some(input_tx);
+        let queued = Arc::clone(&self.input_queued);
         std::thread::spawn(move || {
             while let Ok(data) = input_rx.recv() {
-                if writer.write_all(&data).and_then(|()| writer.flush()).is_err() {
+                let written = writer.write_all(&data).and_then(|()| writer.flush());
+                queued.fetch_sub(data.len(), Ordering::AcqRel);
+                if written.is_err() {
                     break;
                 }
             }
-            // 子が終わった後に writer を閉じても pty に何も書かない（portable-pty は drop で EOF を書く）ので、
-            // ここでは何もせず drop する。入力を送る経路は、終了後は pane.write が拒否する。
+            // 送り口が閉じた（子が終了した）か、書けなくなった。writer はここで drop される
+            // （portable-pty は drop のときに改行と EOF を pty へ書くが、子が居ない pty なので害はない）。
         });
         let (drained_tx, drained_rx) = mpsc::channel::<()>();
         let pane = Arc::clone(self);
@@ -271,6 +278,8 @@ impl Pane {
     }
 
     fn on_exit(&self, exit: ExitInfo, events: &EventLog) {
+        // 入力の送り口を閉じ、書き込みのスレッドと writer（master の複製）を終わらせる。
+        lock(&self.input).take();
         let new_head = {
             let mut inner = lock(&self.inner);
             // 改行なしで終わった最終行も行ストリームに流す
@@ -309,11 +318,27 @@ impl Pane {
         (inner.cols, inner.rows)
     }
 
-    /// 入力を pty へ送る（書き込みは専用スレッド）。
-    pub fn write(&self, data: Vec<u8>) {
-        if let Some(tx) = lock(&self.input).as_ref() {
-            let _ = tx.send(data);
+    /// `len` バイトの入力を待ち行列に受けられるか。溜まっているぶん（バイト数）を Err で返す。
+    /// 待ち行列が空なら、上限より大きい 1 回の入力も受ける。
+    pub fn check_input_room(&self, len: usize) -> Result<(), usize> {
+        let queued = self.input_queued.load(Ordering::Acquire);
+        if queued > 0 && queued.saturating_add(len) > INPUT_QUEUE_BYTES {
+            return Err(queued);
         }
+        Ok(())
+    }
+
+    /// 入力を pty へ送る（書き込みは専用スレッドで、ここでは待たない）。待ち行列が一杯なら溜まっているバイト数を Err で返す。
+    /// 終了した pane では何もしない（呼び出し側が先に拒否する）。
+    pub fn write(&self, data: Vec<u8>) -> Result<(), usize> {
+        let input = lock(&self.input);
+        let Some(tx) = input.as_ref() else {
+            return Ok(());
+        };
+        self.check_input_room(data.len())?;
+        self.input_queued.fetch_add(data.len(), Ordering::AcqRel);
+        let _ = tx.send(data);
+        Ok(())
     }
 
     /// client のサイズを記録し、そのクライアントをサイズ所有者にして pty へ適用する。
@@ -521,6 +546,16 @@ mod tests {
             assert!(Instant::now() < deadline, "timed out waiting for {what}");
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    #[test]
+    fn the_input_channel_is_closed_when_the_child_exits() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (pane, pid_file) = pane_with_a_survivor(tmp.path());
+        wait_for("the pane to exit", || pane.state() == RunState::Exited);
+        assert!(std::fs::read_to_string(pid_file).is_ok());
+        wait_for("the input channel to be released", || lock(&pane.input).is_none());
+        crate::pty::kill_tree(pane.pid);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

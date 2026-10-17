@@ -33,6 +33,13 @@ fn ok() -> Value {
     json!({"ok": true})
 }
 
+/// 入力の待ち行列が一杯（子が入力を読まない）。待たずに返す。Node 版には対応するエラーが無いので、内部エラーの番号を使う。
+fn input_queue_full(queued: usize) -> RpcFailure {
+    RpcFailure::internal(format!(
+        "pane input queue is full ({queued} bytes pending); the child is not reading its input"
+    ))
+}
+
 fn pane_exited() -> RpcFailure {
     RpcFailure::new(ErrorCode::PANE_EXITED, "pane has exited")
 }
@@ -171,6 +178,9 @@ impl Core {
             })?,
             (None, None) => Vec::new(),
         };
+        // 待ち行列が一杯なら、サイズの変更や入力のイベントより先に断る。
+        let bytes = data.len();
+        pane.check_input_room(bytes).map_err(input_queue_full)?;
         // 最後に操作したクライアントのサイズを優先する
         if let Some(client) = &p.client_id
             && pane.claim_size(client.as_str()).map_err(RpcFailure::internal)?
@@ -182,8 +192,7 @@ impl Core {
                 Some(&pane.id),
             );
         }
-        let bytes = data.len();
-        pane.write(data);
+        pane.write(data).map_err(input_queue_full)?;
         // 内容は記録しない
         let source = p.source.unwrap_or(InputSource::Hub);
         self.events.emit(

@@ -2,6 +2,10 @@
 /// Node 版の `LINE_ENTRY_OVERHEAD`。
 pub const LINE_ENTRY_OVERHEAD: usize = 64;
 
+/// pty へ書く入力の待ち行列の上限（バイト）。子が読まないままこれを超えて溜めない。
+/// 待ち行列が空のときの 1 回の入力は、これより大きくても受ける（上限は 1 行 8 MiB の NDJSON が決める）。
+pub const INPUT_QUEUE_BYTES: usize = 4 * 1024 * 1024;
+
 /// デーモンの上限値。既定は Node 版の `DEFAULT_DAEMON_LIMITS` と同じ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {

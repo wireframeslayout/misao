@@ -533,3 +533,34 @@ async fn shutdown_stops_the_surviving_group_of_an_exited_pane() {
     core.shutdown().await;
     assert!(!is_alive(&survivor));
 }
+
+#[tokio::test]
+async fn input_is_refused_with_an_error_once_the_queue_is_full_and_the_daemon_stays_responsive() {
+    use base64::Engine;
+    let mut c = connect(&core());
+    // 入力を読まない子。pty のバッファが埋まると、書き込みのスレッドが詰まって待ち行列が溜まる。
+    let pane_id = open(&mut c, json!(["sleep", "300"]), json!({})).await;
+    let chunk = base64::engine::general_purpose::STANDARD.encode(vec![b'x'; 1024 * 1024]);
+    let mut refused = None;
+    for _ in 0..40 {
+        let r = c
+            .call("pane.write", json!({"paneId": pane_id, "dataB64": chunk}))
+            .await;
+        if r.get("error").is_some() {
+            refused = Some(r);
+            break;
+        }
+    }
+    let refused = refused.expect("the queue must have a limit");
+    assert_eq!(refused["error"]["code"], -32603);
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("input queue is full"),
+        "{refused}"
+    );
+    // 他の RPC は待たされない。
+    assert_eq!(c.ok("server.info", json!({})).await["paneCount"], 1);
+    c.ok("pane.close", json!({"paneId": pane_id})).await;
+}
