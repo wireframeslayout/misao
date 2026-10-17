@@ -558,6 +558,33 @@ mod tests {
         crate::pty::kill_tree(pane.pid);
     }
 
+    #[test]
+    fn the_input_queue_refuses_input_beyond_its_limit_but_accepts_one_into_an_empty_queue() {
+        let socket = PathBuf::from("/tmp/unused.sock");
+        let pane = Pane::spawn(PaneOpenOptions {
+            cmd: vec!["sleep".into(), "30".into()],
+            cwd: None,
+            env: BTreeMap::new(),
+            ephemeral_env: BTreeMap::new(),
+            cols: None,
+            rows: None,
+            socket_path: &socket,
+            raw_ring_bytes: 1024,
+            lines_ring_bytes: 1024,
+        })
+        .unwrap();
+        // 待ち行列が空なら、上限より大きい入力も受ける。
+        assert!(pane.check_input_room(INPUT_QUEUE_BYTES * 2).is_ok());
+        // 書き込みのスレッドが詰まっている状況（start せず、送り口だけがある）で溜める。
+        let (tx, _rx) = mpsc::channel();
+        *lock(&pane.input) = Some(tx);
+        assert!(pane.write(vec![0; INPUT_QUEUE_BYTES - 10]).is_ok());
+        assert!(pane.write(vec![0; 10]).is_ok(), "exactly at the limit");
+        assert_eq!(pane.write(vec![0; 1]), Err(INPUT_QUEUE_BYTES));
+        assert_eq!(pane.check_input_room(1), Err(INPUT_QUEUE_BYTES));
+        crate::pty::kill_tree(pane.pid);
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn close_after_a_natural_exit_releases_the_threads_and_the_master() {
         let tmp = tempfile::TempDir::new().unwrap();

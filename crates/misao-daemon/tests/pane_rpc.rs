@@ -534,6 +534,8 @@ async fn shutdown_stops_the_surviving_group_of_an_exited_pane() {
     assert!(!is_alive(&survivor));
 }
 
+// macOS の pty は、読まれない行を溜めずに捨てるので書き込みが詰まらない。実際に詰まる Linux でだけ確かめる。
+#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn input_is_refused_with_an_error_once_the_queue_is_full_and_the_daemon_stays_responsive() {
     use base64::Engine;
