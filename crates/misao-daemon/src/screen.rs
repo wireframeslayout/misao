@@ -5,7 +5,7 @@
 use vte::Parser;
 
 use crate::screen_emulator::{Emulator, MIN_COLS, MIN_ROWS};
-use crate::screen_osc::OscGuard;
+use crate::screen_osc::{OscGuard, Segment};
 
 /// 画面の大きさの上限。プロトコルは安全な整数まで受けるが、格子はセルごとにメモリを使うので、
 /// 画面モデルだけをここで丸める（`pane.info` とイベントには元の値を返す）。
@@ -41,8 +41,16 @@ impl Screen {
 
     /// 出力を端末に食わせる。この出力で設定されたタイトルを順に返す（同じ値の再設定も 1 件ずつ）。
     pub fn feed(&mut self, data: &[u8]) -> Vec<String> {
-        let data = self.osc.filter(data);
-        self.parser.advance(&mut self.emulator, &data);
+        for segment in self.osc.filter(data) {
+            match segment {
+                Segment::Bytes(bytes) => self.parser.advance(&mut self.emulator, &bytes),
+                Segment::Cancel(byte) => {
+                    self.emulator.discard_osc = true;
+                    self.parser.advance(&mut self.emulator, &[byte]);
+                    self.emulator.discard_osc = false;
+                }
+            }
+        }
         self.emulator.flush_run();
         std::mem::take(&mut self.emulator.titles)
     }
@@ -156,6 +164,23 @@ mod tests {
         titles.extend(screen.feed(b"\x07ok\x1b]0;fine\x07"));
         assert_eq!(titles, vec!["fine".to_string()]);
         assert_eq!(text(&screen), "ok\n");
+    }
+
+    #[test]
+    fn a_cancelled_osc_sets_no_title_and_the_8_bit_st_ends_one() {
+        let mut screen = Screen::new(10, 2, 10);
+        // CAN / SUB で中止された OSC は何も起こさない（xterm.js と同じ）。中止の後の文字は画面に出る。
+        assert_eq!(
+            screen.feed(b"\x1b]0;lost\x18ab\x1b]2;lost\x1acd"),
+            Vec::<String>::new()
+        );
+        assert_eq!(text(&screen), "abcd\n");
+        // 8 ビットの ST（U+009C）で終わる
+        assert_eq!(
+            screen.feed("\x1b]0;kept\u{9c}ef".as_bytes()),
+            vec!["kept".to_string()]
+        );
+        assert_eq!(text(&screen), "abcdef\n");
     }
 
     #[test]

@@ -5,7 +5,6 @@ use vte::{Params, Perform};
 
 use crate::screen_charset::{Charset, is_charset_final};
 use crate::screen_emulator::Emulator;
-use crate::screen_osc::MAX_OSC_BYTES;
 
 /// i 番目のパラメータ（無ければ 0）。
 fn param(params: &Params, i: usize) -> usize {
@@ -107,9 +106,8 @@ impl Perform for Emulator {
 
     fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
         self.flush_run();
-        // 上限に達して中止された OSC（`screen_osc`）は捨てる。
-        let length = params.iter().map(|p| p.len()).sum::<usize>() + params.len().saturating_sub(1);
-        if length >= MAX_OSC_BYTES {
+        // 中止された OSC（CAN / SUB、長さの上限）は何も起こさない。
+        if self.discard_osc {
             self.reset_preceding();
             return;
         }

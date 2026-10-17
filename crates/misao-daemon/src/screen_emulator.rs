@@ -28,6 +28,8 @@ pub struct Emulator {
     /// 連続して届いた表示文字（`print` はこの単位で処理する。xterm.js のパーサーが呼ぶ単位と同じ）。
     pub(crate) run: Vec<u32>,
     pub titles: Vec<String>,
+    /// 中止させる 1 バイトを渡している間だけ true。中止される OSC の dispatch を捨てる。
+    pub(crate) discard_osc: bool,
 }
 
 impl Emulator {
@@ -51,6 +53,7 @@ impl Emulator {
             preceding: CharProps::default(),
             run: Vec::new(),
             titles: Vec::new(),
+            discard_osc: false,
         }
     }
 

@@ -12,6 +12,9 @@ const ESC: u8 = 0x1b;
 const BEL: u8 = 0x07;
 const CAN: u8 = 0x18;
 const SUB: u8 = 0x1a;
+/// 8 ビットの ST（U+009C）の UTF-8 は `C2 9C`。
+const C2: u8 = 0xc2;
+const ST_TAIL: u8 = 0x9c;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -20,17 +23,24 @@ enum State {
     GroundEsc,
     /// OSC の中身を数えている（これまでのバイト数）。
     Body(usize),
+    /// OSC の中身で `C2` を受けた直後（次が `9C` なら ST。そうでなければ `C2` は中身の一部）。
+    BodyC2(usize),
     /// OSC の中で ESC を受けた直後（`\` なら終端、`]` なら次の OSC）。
     BodyEsc,
     /// 上限に達したので、終端まで捨てている。
     Skip,
+    SkipC2,
     SkipEsc,
 }
 
-enum Action {
-    Pass,
-    Drop,
-    Abort,
+/// パーサーへ渡すもの。
+#[derive(Debug, PartialEq, Eq)]
+pub enum Segment {
+    /// そのまま渡す。
+    Bytes(Vec<u8>),
+    /// OSC を中止させる 1 バイト（CAN / SUB）。`vte` は中止の前に OSC を dispatch するので、画面側はこの 1 バイトを渡す間、
+    /// OSC の dispatch を捨てる（キャンセルされた OSC は何も起こさない。xterm.js と同じ）。
+    Cancel(u8),
 }
 
 #[derive(Debug)]
@@ -45,6 +55,23 @@ impl Default for OscGuard {
     }
 }
 
+/// 出力の組み立て。
+struct Out(Vec<Segment>);
+
+impl Out {
+    fn bytes(&mut self, bytes: &[u8]) {
+        if let Some(Segment::Bytes(last)) = self.0.last_mut() {
+            last.extend_from_slice(bytes);
+        } else {
+            self.0.push(Segment::Bytes(bytes.to_vec()));
+        }
+    }
+
+    fn cancel(&mut self, byte: u8) {
+        self.0.push(Segment::Cancel(byte));
+    }
+}
+
 impl OscGuard {
     pub fn new(limit: usize) -> Self {
         Self {
@@ -54,73 +81,109 @@ impl OscGuard {
     }
 
     /// `data` のうち、パーサーへ渡すもの。状態は呼び出しをまたいで持つ。
-    pub fn filter(&mut self, data: &[u8]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(data.len());
+    pub fn filter(&mut self, data: &[u8]) -> Vec<Segment> {
+        let mut out = Out(Vec::new());
         for &byte in data {
-            match self.step(byte) {
-                Action::Pass => out.push(byte),
-                Action::Drop => {}
-                Action::Abort => out.push(CAN),
-            }
+            self.step(byte, &mut out);
         }
-        out
+        out.0
     }
 
-    fn step(&mut self, byte: u8) -> Action {
-        // ESC の次の `]` は OSC の始まり（どの状態でも）。ESC の次のそれ以外は、OSC を終えて普通の列に戻る。
-        let after_esc = |byte: u8, esc: State| match byte {
+    fn after_esc(byte: u8, esc: State) -> State {
+        match byte {
             b']' => State::Body(0),
             ESC => esc,
             _ => State::Ground,
-        };
+        }
+    }
+
+    fn step(&mut self, byte: u8, out: &mut Out) {
         match self.state {
-            State::Ground | State::GroundEsc => {
+            State::Ground => {
                 self.state = if byte == ESC {
                     State::GroundEsc
-                } else if self.state == State::GroundEsc {
-                    after_esc(byte, State::GroundEsc)
                 } else {
                     State::Ground
                 };
-                Action::Pass
+                out.bytes(&[byte]);
             }
-            State::Body(n) => match byte {
-                BEL | CAN | SUB => {
-                    self.state = State::Ground;
-                    Action::Pass
-                }
-                ESC => {
-                    self.state = State::BodyEsc;
-                    Action::Pass
-                }
-                _ if n >= self.limit => {
-                    self.state = State::Skip;
-                    Action::Abort
-                }
-                _ => {
-                    self.state = State::Body(n + 1);
-                    Action::Pass
-                }
-            },
+            State::GroundEsc => {
+                self.state = Self::after_esc(byte, State::GroundEsc);
+                out.bytes(&[byte]);
+            }
+            State::Body(n) | State::BodyC2(n) => {
+                self.step_body(byte, n, matches!(self.state, State::BodyC2(_)), out)
+            }
             State::BodyEsc => {
-                self.state = after_esc(byte, State::BodyEsc);
-                Action::Pass
+                self.state = Self::after_esc(byte, State::BodyEsc);
+                out.bytes(&[byte]);
             }
-            State::Skip => match byte {
-                BEL | CAN | SUB => {
+            State::Skip => self.step_skip(byte, out),
+            State::SkipC2 => {
+                if byte == ST_TAIL {
                     self.state = State::Ground;
-                    Action::Pass
+                } else {
+                    self.state = State::Skip;
+                    self.step_skip(byte, out);
                 }
-                ESC => {
-                    self.state = State::SkipEsc;
-                    Action::Pass
-                }
-                _ => Action::Drop,
-            },
-            State::SkipEsc => {
-                self.state = after_esc(byte, State::SkipEsc);
-                Action::Pass
             }
+            State::SkipEsc => {
+                self.state = Self::after_esc(byte, State::SkipEsc);
+                out.bytes(&[byte]);
+            }
+        }
+    }
+
+    /// OSC の中身の 1 バイト。`pending_c2` なら、直前の `C2` はまだ渡していない。
+    fn step_body(&mut self, byte: u8, n: usize, pending_c2: bool, out: &mut Out) {
+        if pending_c2 && byte == ST_TAIL {
+            // 8 ビットの ST: `ESC \` として渡して OSC を終える。
+            self.state = State::Ground;
+            out.bytes(&[ESC, b'\\']);
+            return;
+        }
+        let mut n = n;
+        if pending_c2 {
+            out.bytes(&[C2]);
+            n += 1;
+        }
+        match byte {
+            BEL => {
+                self.state = State::Ground;
+                out.bytes(&[byte]);
+            }
+            CAN | SUB => {
+                self.state = State::Ground;
+                out.cancel(byte);
+            }
+            ESC => {
+                self.state = State::BodyEsc;
+                out.bytes(&[byte]);
+            }
+            _ if n >= self.limit => {
+                self.state = State::Skip;
+                out.cancel(CAN);
+            }
+            C2 => self.state = State::BodyC2(n),
+            _ => {
+                self.state = State::Body(n + 1);
+                out.bytes(&[byte]);
+            }
+        }
+    }
+
+    fn step_skip(&mut self, byte: u8, out: &mut Out) {
+        match byte {
+            BEL | CAN | SUB => {
+                self.state = State::Ground;
+                out.bytes(&[byte]);
+            }
+            ESC => {
+                self.state = State::SkipEsc;
+                out.bytes(&[byte]);
+            }
+            C2 => self.state = State::SkipC2,
+            _ => {}
         }
     }
 }
@@ -129,25 +192,79 @@ impl OscGuard {
 mod tests {
     use super::*;
 
+    fn bytes(segments: &[Segment]) -> Vec<u8> {
+        segments
+            .iter()
+            .flat_map(|s| match s {
+                Segment::Bytes(b) => b.clone(),
+                Segment::Cancel(c) => vec![*c],
+            })
+            .collect()
+    }
+
     #[test]
     fn short_osc_sequences_and_text_pass_through_unchanged() {
         let mut guard = OscGuard::new(8);
-        let input = b"a\x1b]0;hi\x07b\x1b]2;x\x1b\\c\x1b[1mz";
-        assert_eq!(guard.filter(input), input);
+        let input = "a\x1b]0;hi\x07b\x1b]2;x\x1b\\c\x1b[1mz日".as_bytes();
+        let out = guard.filter(input);
+        assert_eq!(out, vec![Segment::Bytes(input.to_vec())]);
     }
 
     #[test]
     fn an_over_long_osc_is_aborted_and_its_rest_is_dropped_up_to_the_terminator() {
         let mut guard = OscGuard::new(4);
         let out = guard.filter(b"x\x1b]0;abcdefghij\x07y");
-        assert_eq!(out, b"x\x1b]0;ab\x18\x07y".to_vec());
+        assert_eq!(
+            out,
+            vec![
+                Segment::Bytes(b"x\x1b]0;ab".to_vec()),
+                Segment::Cancel(CAN),
+                Segment::Bytes(b"\x07y".to_vec())
+            ]
+        );
     }
 
     #[test]
     fn the_state_carries_over_between_chunks_and_a_new_osc_can_follow_the_terminator() {
         let mut guard = OscGuard::new(3);
-        let mut out = guard.filter(b"\x1b]0;aaaaaaaa");
-        out.extend(guard.filter(b"aaaa\x1b\\\x1b]2;o\x07"));
+        let mut out = bytes(&guard.filter(b"\x1b]0;aaaaaaaa"));
+        out.extend(bytes(&guard.filter(b"aaaa\x1b\\\x1b]2;o\x07")));
         assert_eq!(out, b"\x1b]0;a\x18\x1b\\\x1b]2;o\x07".to_vec());
+    }
+
+    #[test]
+    fn can_and_sub_inside_an_osc_are_passed_as_cancel_segments() {
+        let mut guard = OscGuard::new(100);
+        let out = guard.filter(b"\x1b]0;abc\x18x\x1b]2;d\x1ay");
+        assert_eq!(
+            out,
+            vec![
+                Segment::Bytes(b"\x1b]0;abc".to_vec()),
+                Segment::Cancel(CAN),
+                Segment::Bytes(b"x\x1b]2;d".to_vec()),
+                Segment::Cancel(SUB),
+                Segment::Bytes(b"y".to_vec()),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_8_bit_st_ends_an_osc_but_other_c2_sequences_stay_in_the_title() {
+        let mut guard = OscGuard::new(100);
+        assert_eq!(
+            bytes(&guard.filter(b"\x1b]0;ab\xc2\x9cz")),
+            b"\x1b]0;ab\x1b\\z".to_vec()
+        );
+        let mut guard = OscGuard::new(100);
+        // C2 A0（U+00A0）は中身。チャンクの切れ目をまたいでも同じ。
+        let mut out = bytes(&guard.filter(b"\x1b]0;a\xc2"));
+        out.extend(bytes(&guard.filter(b"\xa0b\x07")));
+        assert_eq!(out, b"\x1b]0;a\xc2\xa0b\x07".to_vec());
+        // 上限を超えて捨てている間も、8 ビットの ST で終わる
+        let mut guard = OscGuard::new(1);
+        assert_eq!(
+            bytes(&guard.filter(b"\x1b]0;abcdef\xc2\x9cz")),
+            b"\x1b]0\x18z".to_vec()
+        );
     }
 }
