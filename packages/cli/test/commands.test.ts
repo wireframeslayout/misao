@@ -1,17 +1,11 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import type { PaneInfo } from '@misao/protocol';
-import { run } from '../src/run.js';
 import { MISAO_VERSION } from '../src/version.js';
-import { createTestIo } from './helpers/io.js';
+import { CLI_BIN, runMisao } from './helpers/runner.js';
+import type { Result } from './helpers/runner.js';
 import { openTestPane, startTestDaemon, waitFor } from './helpers/daemon.js';
 import type { TestDaemon } from './helpers/daemon.js';
-
-interface Result {
-  code: number;
-  out: string;
-  err: string;
-}
 
 interface MisaoOptions {
   stdin?: string;
@@ -21,16 +15,14 @@ interface MisaoOptions {
 
 async function misao(daemon: TestDaemon | undefined, argv: string[], stdinOrOptions?: string | MisaoOptions): Promise<Result> {
   const options: MisaoOptions = typeof stdinOrOptions === 'string' ? { stdin: stdinOrOptions } : (stdinOrOptions ?? {});
-  const io = createTestIo({
+  return runMisao(argv, {
     env: daemon?.env ?? { MISAO_SOCKET: '/tmp/misao-test-no-such-daemon/misao.sock' },
     homeDir: daemon?.dir ?? '/tmp/misao-test-no-home',
     cwd: daemon?.dir ?? '/tmp',
+    ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
     ...(options.isTTY === undefined ? {} : { isTTY: options.isTTY }),
     ...(options.shell === undefined ? {} : { shell: options.shell }),
   });
-  if (options.stdin !== undefined) io.stdin.end(options.stdin);
-  const code = await run(argv, io);
-  return { code, out: io.out(), err: io.err() };
 }
 
 const SLEEP = ['sh', '-c', 'sleep 60'];
@@ -109,7 +101,7 @@ describe('実デーモンに対するコマンド', () => {
     assert.match(human.out, new RegExp(daemon.socketPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     const json = JSON.parse((await misao(daemon, ['status', '--json'])).out) as { running: boolean; pid: number; epoch: string; socket: string };
     assert.equal(json.running, true);
-    assert.equal(json.pid, process.pid);
+    assert.equal(json.pid, daemon.pid);
     assert.equal(json.socket, daemon.socketPath);
   });
 
@@ -237,10 +229,11 @@ describe('実デーモンに対するコマンド', () => {
   test('new: cmd 省略はログインシェル (-l)、シェルが取れなければ使い方の誤り', async () => {
     const r = await misao(daemon, ['new', '--json'], { shell: '/bin/sh' });
     const pane = JSON.parse(r.out) as PaneInfo;
-    assert.deepEqual(pane.cmd, ['/bin/sh', '-l']);
+    // バイナリのログインシェルは passwd のもの (差し替えられない) なので、-l が付くことだけを確かめる。
+    if (CLI_BIN === undefined) assert.deepEqual(pane.cmd, ['/bin/sh', '-l']);
+    else assert.equal(pane.cmd[1], '-l');
     await misao(daemon, ['kill', pane.paneId, '--force']);
-    const none = await misao(daemon, ['new'], { shell: null });
-    assert.equal(none.code, 2);
+    if (CLI_BIN === undefined) assert.equal((await misao(daemon, ['new'], { shell: null })).code, 2);
   });
 
   test('new --workspace / --window: 無ければ作り、同じ指定なら同じ窓に置く', async () => {

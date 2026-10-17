@@ -5,7 +5,9 @@ use crate::config::Config;
 use crate::error::{CliError, ErrorKind};
 use crate::socket_path::{PathEnv, normalize_lexical, resolve_socket_path};
 
+#[cfg(unix)]
 const PID_FILE_NAME: &str = "daemon.pid";
+#[cfg(unix)]
 const STATE_FILE_NAME: &str = "persistence.json";
 
 pub struct ServeArgs {
