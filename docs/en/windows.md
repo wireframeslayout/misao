@@ -1,7 +1,7 @@
 # Native Windows support: investigation and prototype
 
 First stage of issue #37. It records what was found by reading the code and the node-pty 1.1.0 package, and describes the prototype that can be verified on Linux.
-**Nothing has been run on a Windows host yet.** Every statement marked "verify on host" is a hypothesis, to be checked with the list in section 10.
+At the time of the investigation nothing had been run on a Windows host. Statements marked "verify on host" were hypotheses; they were checked with the list in section 10 and the results are recorded in section 10.1 (the body has been updated where the host showed otherwise).
 
 Effort: S = up to half a day, M = 1-2 days, L = 3+ days.
 
@@ -39,24 +39,24 @@ The only options `net.Server.listen` passes for a named pipe are `readableAll` /
 
 | Option | What | Extra dependency | Strength | Effort | Notes |
 | --- | --- | --- | --- | --- | --- |
-| A. Rely on the default DACL (current prototype) | The DACL from a `NULL` SECURITY_ATTRIBUTES (Microsoft documents full control for SYSTEM / administrators / creator owner and read for Everyone and anonymous) | None | Weak; **likely insufficient** (Everyone's read access may let a read-only connection leak output) | S | Do not call it "protected" before checking the ACL on a host |
+| A. Rely on the default DACL (current prototype) | The DACL from a `NULL` SECURITY_ATTRIBUTES. **Confirmed on a host**: full control for SYSTEM / Administrators / the creator, read for Everyone and ANONYMOUS LOGON (section 10.1 V1) | None | Weak. A read-only connection receives nothing and, lacking write access, cannot send requests (verified), but anyone can connect and the pipe is reachable over SMB (another host) (section 10.1 V2) | S | Not "only the launching user". Does nothing against squatting |
 | B. Create the pipe in a native addon | `CreateNamedPipeW` with SDDL `D:P(A;;GA;;;<user SID>)`, bridged to Node as a Duplex | **Needs approval** (N-API addon or an ffi library, plus prebuild distribution) | Strong (with `FILE_FLAG_FIRST_PIPE_INSTANCE` also resists squatting) | L | An existing handle cannot be given to a libuv pipe handle, so the whole server has to live in the addon |
 | C. Rewrite the DACL after listen | `SetNamedSecurityInfo`-style call from outside | No way found in PowerShell / .NET to change the DACL of a pipe another process created; `icacls` cannot address pipes (verify on host) | - | - | Not realistic |
 | D. Authenticate at the application layer | A token file in `%LOCALAPPDATA%\misao` (user-only via the profile ACL) sent right after connecting | None (add an auth exchange to the protocol) | Medium: anyone can connect but cannot do anything. Within one user there is no boundary, as on Unix | M | Cheap to add while the protocol is 0.x |
-| E. Use AF_UNIX | Windows 10 1803+ has AF_UNIX, giving the same "parent directory ACL" model as Unix | None | Strong | - | libuv is expected not to support AF_UNIX on Windows (verify on host: `net.createServer().listen('C:\\x\\a.sock')`) |
+| E. Use AF_UNIX | Windows 10 1803+ has AF_UNIX, giving the same "parent directory ACL" model as Unix | None | Strong | - | **Not possible (verified on a host)**: `listen` on a `.sock` path in Node 24 fails with `EACCES` (section 10.1 V10) |
 | F. Loopback TCP + token | Listen on loopback, authenticate with a token | None | Medium (other users can still connect) | M | The endpoint becomes TCP, changing assumptions in the SDK and AZITO |
 
 **Recommendation**: first check the real ACL of option A on a host (item V1). Then D is the first candidate (Node only), and B the second candidate if a full ACL becomes a requirement. B adds a dependency and needs approval.
 
 Other measures:
 
-- **Client-side squatting**: if another user creates a pipe with the same name first, the SDK connects to it. Node cannot check the server process ID (`GetNamedPipeServerProcessId`). The token in D also covers this (a server without the token cannot answer). On the server side libuv is expected to set `FILE_FLAG_FIRST_PIPE_INSTANCE`, so a second daemon gets `EADDRINUSE` (verify on host).
-- **Remote clients**: libuv does not pass `PIPE_REJECT_REMOTE_CLIENTS` to `CreateNamedPipeW` (only `FILE_FLAG_FIRST_PIPE_INSTANCE` is set). **Do not expect remote connections to be refused.** V2 checks connecting from another host; if needed, block it with an ACL (B) or authentication (D).
+- **Client-side squatting**: if another user creates a pipe with the same name first, the SDK connects to it. Node cannot check the server process ID (`GetNamedPipeServerProcessId`). The token in D also covers this (a server without the token cannot answer). On the server side libuv sets `FILE_FLAG_FIRST_PIPE_INSTANCE`, so creating a second pipe with the same name gets `EADDRINUSE` (verified on a host, section 10.1 V3).
+- **Remote clients**: libuv does not pass `PIPE_REJECT_REMOTE_CLIENTS` to `CreateNamedPipeW` (only `FILE_FLAG_FIRST_PIPE_INSTANCE` is set). **Do not expect remote connections to be refused.** On a host we connected through `\\127.0.0.1\pipe\<name>` and `\\<hostname>\pipe\<name>` (over SMB) and got a JSON-RPC response (section 10.1 V2; a real connection from another host was not tried). Blocking it needs an ACL (B) or authentication (D).
 - **dataDir**: under `%USERPROFILE%` it inherits the profile's default ACL (user / SYSTEM / administrators). The equivalent of the Unix "700 + uid" check is not implemented because Node cannot read ACLs; only symlink and directory checks are done.
 
 ## 3. Foreground process
 
-- Existing problem found while reading the code: `foreground.ts` uses node-pty's `process` on non-Linux platforms, but `WindowsTerminal.process` in node-pty 1.1.0 returns `opt.name` (misao passes `xterm-256color`). On Windows the **terminal name would have been reported as the foreground command** instead of a program name.
+- Existing problem found while reading the code: `foreground.ts` uses node-pty's `process` on non-Linux platforms, but `WindowsTerminal.process` in node-pty 1.1.0 returns `opt.name` (misao passes `xterm-256color`). On Windows the **terminal name would have been reported as the foreground command** instead of a program name (verified on a host: `proc.process === "xterm-256color"`, section 10.1 V9).
 - Prototype: `readForegroundCommand(pid, ptyProcess, platform)` always returns `undefined` on win32 (the foreground command is omitted from `pane.info`). Whether the activity profile selection depends on it is to be checked in phase 2.
 - Implementation ideas:
   1. Use the process-ID list that node-pty's `conpty_console_list` (`WindowsPtyAgent._getConsoleProcessList`) returns for the console, and treat the last entry (most recently attached) as the foreground. It is internal API: mimic the bundled `conpty_console_list_agent.js`, or propose exposing it upstream.
@@ -94,7 +94,7 @@ Checked from the bundled files of node-pty 1.1.0 (a dependency of `packages/daem
 - **spawn-helper**: Unix only (a helper binary used by `UnixTerminal` at `fork`, shipped in the macOS prebuilds). It is not used on Windows and needs nothing.
 - **conpty.dll**: `useConptyDll` (default false) can switch to the bundled OpenConsole-based DLL (`third_party/conpty/1.23.251008001`). The default is the OS ConPTY. A candidate if old OS versions or the redraw differences below become a problem.
 - **API differences** (read from `lib/windowsTerminal.js`):
-  - `kill(signal)` throws `Signals not supported on windows.` when a signal is given. `Pane.close()` goes `process.kill(-pid, 'SIGHUP')` then, on failure, `process.kill(pid)` (a forced kill of that process only, not the tree). A win32 branch using `proc.kill()` (which ends the processes attached to the ConPTY console) is needed. **Not implemented in this PR**; item V4 observes the behavior.
+  - `kill(signal)` throws `Signals not supported on windows.` when a signal is given. `Pane.close()` goes `process.kill(-pid, 'SIGHUP')` then, on failure, `process.kill(pid)` (a forced kill of that process only, not the tree). A win32 branch using `proc.kill()` (which ends the processes attached to the ConPTY console) is needed. **Not implemented in this PR**. On a host the current `close()` takes about 4.7 s and leaves the shell's child processes (grandchildren) running; `proc.kill()` ended the grandchildren too (section 10.1 V4).
   - `encoding: null` is falsy, so no warning is printed. node-pty calls `setEncoding('utf8')` on the output socket on Windows (`windowsPtyAgent.js`), so output **always arrives as a string**; `pane.ts` converts it with `Buffer.from(d)`. The only thing to verify on a host is whether invalid UTF-8 or VT re-synthesis loses byte information (compare with the raw bytes captured in V11).
   - `resize` after exit throws (`Cannot resize a pty that has already exited`). Check that `pane.resize` does not throw on an exit race.
   - `proc.process` is the terminal name (section 3).
@@ -143,6 +143,91 @@ Prerequisite: Node.js 24+ (with user approval if a portable build is used). Use 
 | V9 | Foreground command | The foreground command in `pane.info` is empty; the value of `proc.process` | The terminal name does not leak |
 | V10 | AF_UNIX | `node -e "require('net').createServer().listen('C:\\\\Temp\\\\a.sock')"` | If it fails, option E is out |
 | V11 | Raw bytes | Save cmd / PowerShell / claude output to files | Use as the fixtures for section 7 |
+
+### 10.1 Results on a Windows host (2026-10-17, Windows 11 25H2 build 10.0.26200.9168, Node v24.22.0)
+
+- Environment: Windows 11 (Japanese locale, console code page 932), Windows PowerShell 5.1.26100.9168, under the profile of user `ServerUser` (no elevation used). There is no PowerShell 7 (`pwsh.exe`), `claude` or `git`.
+- Procedure: the official portable `node-v24.22.0-win-x64.zip` (SHA-256 `f9683a19...f80c3` matched `SHASUMS256.txt`) was unpacked to `%USERPROFILE%\misao-win-test\node`, with PATH changed only inside the process. This branch's working tree (without node_modules) was placed in `...\misao-win-test\misao` and `npm ci` (npm 11.19.1) was run. No installer, registry, service or administrator rights were used.
+- `npm ci` succeeded, but npm 11 did not run the `install-scripts` (esbuild postinstall, node-pty install) because they were not approved. node-pty still worked from its bundled `prebuilds/win32-x64` (no compiler needed).
+
+| ID | Result | Measured |
+| --- | --- | --- |
+| V1 | Done (A is insufficient) | The DACL of pipe `\\.\pipe\misao-ServerUser-72bd07d30c339cae` is shown below. Connections opened `In`-only and `Out`-only both succeeded. A read-only connection that waited while a pane was created received 0 bytes in 5 s (events only flow to subscribed connections). Everyone has no write access (`FILE_WRITE_DATA`), so another user should not be able to send requests (not measured with another user; manual step under V2) |
+| V2 | Partial | Another user and another host were not run (manual steps for the user). Instead, with the same user over SMB, `\\127.0.0.1\pipe\...` and `\\WIN-SERVER-001\pipe\...` connected just like `\\.\pipe\...` and returned the `server.info` response. The pipe is reachable through SMB (LanmanServer) |
+| V3 | Done | Second `serve` with the same `MISAO_DIR`: exit code 1, `another daemon (pid 22920) holds ...\daemon.pid`. Different `MISAO_DIR` but the same `MISAO_SOCKET`: exit code 1, `another daemon is already listening on \\.\pipe\...` (`EADDRINUSE` detected). A plain `net` server on the same name also gets `EADDRINUSE`. After `Stop-Process -Force` the pipe disappeared, the pid file stayed, and a restart replaced the pid. Panes were restored from `persistence.json` as `stopped`. Force-killing the daemon also ended the pane children (cmd.exe, powershell.exe) and grandchildren (ping.exe), because the ConPTY host closes |
+| V4 | Partial failure | `new`, `send`, `screen`, resize and exit detection work. `attach` (run inside a ConPTY) handled input, resize (100x30 -> 120x40) and detach with `Ctrl-^ d`. `exit /b 7` gave `pane.exited` with `exitCode` 7 and `signal` `null`. Japanese input/output (code page 932) is correct. **`kill --force` (`pane.close`) takes about 4.7 s; cmd.exe ends but the grandchild (`ping`) stays alive** (also with powershell.exe). The grandchildren were stopped by their recorded PIDs. Calling `pty.kill()` directly ended both cmd.exe and the grandchild, and the `exit` event arrived at once (`conpty_console_list_agent.js` prints `AttachConsole failed` to stderr, which does not prevent the exit) |
+| V5 | Done (no misdetection) | cmd.exe and powershell.exe panes were left idle for 25 s, then resized 5 times from an attach (100x30, 120x40, 80x24, 132x50, 90x28, 2.5 s apart), then idle for 15 s more: `pane.state` stayed `idle` (`decidedBy: bytes`) and never changed. Every resize triggers a full-screen repaint (about 2 KB at 80x24, several KB at 132x50), but it fell inside `byte-activity`'s 800 ms resize grace. Replaying the captured fixtures with the grace disabled also stayed idle. Visible output of `ping -n 14` (one line per second) did not make the pane working either (the threshold is 200 bytes per 3 s). A short burst such as `dir /s` finishes inside the grace (500 ms after input), so it does not become working. None of this is Windows-specific |
+| V6 | Equivalent verified | The CI log was not checked. The same smoke was run on the host: it printed `conpty-ok` and exited 0 (output below) |
+| V7 | Failures | See the list below. protocol: 56/56 pass. sdk-node: 77 of 125 fail; daemon: 82 of 217 fail (3 skipped); cli: 43 of 137 fail and 11 are cancelled (the `serve` tests do not end on SIGINT / SIGTERM). **All failures are assumptions in the tests** (no implementation bug found). e2e was not run. `daemon` `connection.test.ts` and `stream.test.ts` fail to listen on a `.sock` path and then never close the daemon, so the test runner does not exit (it finishes with `--test-timeout`) |
+| V8 | Partial failure | The npm shim `npm.cmd` stood in (there is no `claude.cmd` on this machine). **Names without an extension (`npm`, `node`) fail** (`spawn failed: Cannot create process, error code: 2` / `File not found: `; the latter prints an empty file name). `npm.cmd`, the full path to `npm.cmd`, `node.exe`, `powershell.exe` and `cmd.exe /c npm --version` succeed. `npm.ps1` gives `error code: 193` (not a Win32 application). `pwsh.exe` gives `File not found`. So AZITO sending `cmd: ["claude"]` fails; it has to be `claude.cmd` or wrapped in `cmd.exe /c` |
+| V9 | Done | `proc.process` is `"xterm-256color"` (the terminal name). `pane.info` (`ls --json`) has no foreground command field, so the name does not leak. The AGENT column of `ls` shows `cmd.exe` (derived from the head of `cmd`) |
+| V10 | Done (E is out) | `net.createServer().listen('<profile>\\...\\a.sock')` fails with `EACCES: permission denied` |
+| V11 | Done | Raw bytes of 6 scenarios were captured and saved under `packages/daemon/test/fixtures/windows/` (below) |
+
+**DACL for V1 (SDDL and expansion)**
+
+```
+O:S-1-5-21-...-1001G:S-1-5-21-...-513D:(A;;FR;;;WD)(A;;FR;;;AN)(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;S-1-5-21-...-1001)
+Everyone                      Allow  Read, Synchronize
+NT AUTHORITY\ANONYMOUS LOGON  Allow  Read, Synchronize
+NT AUTHORITY\SYSTEM           Allow  FullControl (2032127)
+BUILTIN\Administrators        Allow  FullControl (2032127)
+win-server-001\ServerUser     Allow  FullControl (2032127)   <- the launching user
+```
+
+**ACL conclusion**: A (the default DACL) is not "only the launching user" and is insufficient. The practical damage is smaller than feared (Everyone / anonymous have read only, cannot send requests, and have nothing to receive). Still, (1) anyone can connect and hold connection slots, (2) another host can reach the pipe through SMB, and (3) squatting is not prevented, so **option D (send the token from `%LOCALAPPDATA%\misao` right after connecting) is recommended**. Option B (native addon) only if the requirement rises to "other users must not even connect". E is out. The manual V2 measurements with another user / another host should confirm this.
+
+**Output for V6**
+
+```
+"\u001b[?9001h\u001b[?1004h\u001b[?25l\u001b[2J\u001b[m\u001b[Hconpty-ok\r\n\u001b]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe\u0007\u001b[?25h"
+```
+
+**Breakdown of the V7 failures (all in the tests)**
+
+| Cause | Where |
+| --- | --- |
+| Test helpers listen on a `*.sock` in a temp directory (Windows needs a pipe name); `Daemon.start()` fails with `on Windows the daemon endpoint must be a named pipe` | daemon: `daemon.test.ts` (42), `daemon-limits.test.ts` (6), `connection.test.ts` (7), `stream.test.ts` (11). cli: attach / loop / command tests through `test/helpers/daemon.ts` (about 29). sdk-node: `listen EACCES ...fake.sock` in `client*.test.ts` and `rpc-connection.test.ts` |
+| POSIX permission / owner checks (`not owned by the current user`, `mode 0600` is 438 = 0666, `ENOTSOCK` handling, an expected `EACCES`) | daemon: `socket.test.ts` (10), the Unix side of `endpoint.test.ts`, `persistence.test.ts` (1) |
+| Creating symlinks fails with `EPERM` (standard user without developer mode / privilege) | `socket.test.ts`, `endpoint.test.ts` |
+| Path assumptions (`/bin/bash`, `~/`, `/` separators), expectations of `readLoginShell` | cli: `cli-io.test.ts`, `config` tests (about 8), `buildDaemonOptions` in `serve` |
+| Graceful exit on SIGINT / SIGTERM (not receivable by Node on Windows, section 5) | cli: 2 `serve` tests (time out after 5 s) |
+| sdk-node `socket-path.test.ts` (9) | Reason not examined (likely path-format expectations) |
+
+**V11 fixtures** (`packages/daemon/test/fixtures/windows/`, one JSON per line. The first line is `meta`; the rest are `{t, d}` (the string node-pty's `onData` delivered, and milliseconds since spawn), `{t, input}`, `{t, resize}` and `{t, exit}`)
+
+| File | Content |
+| --- | --- |
+| `conpty-cmd-basic.jsonl` | cmd.exe start, `echo`, `dir`, Japanese text, `cls`, resize, `exit /b 5` |
+| `conpty-cmd-idle-resize.jsonl` | cmd.exe left idle while resized 4 times |
+| `conpty-ps-basic.jsonl` | powershell.exe start, `Get-Date`, multi-line output, Japanese text, resize, `exit` |
+| `conpty-ps-idle-resize.jsonl` | powershell.exe left idle while resized 4 times |
+| `conpty-cmd-flood.jsonl` | a large `dir /s` output (about 105 KB) and Ctrl-C |
+| `conpty-fake-agent.jsonl` | **Synthetic** (`claude` is not on this machine). A script that updates the title glyph (`✳` / `⠂`) through OSC 0 and repaints a spinner. Not a capture of the real claude |
+
+Observed (checking the hypotheses in section 7):
+
+- At start: `ESC[?9001h ESC[?1004h`, `ESC[?25l ESC[2J ESC[m ESC[H`, the screen content, `OSC 0;<exe path> BEL`, `ESC[?25h`. cmd updates the title while a command runs (`OSC 0;...cmd.exe - ping ...`) and restores it afterwards.
+- Newlines are `\r\n`. When the display advances, the cursor is placed with `ESC[<row>;<col>H` (for example `\x1b[7;1HC:\...>`).
+- **Every resize repaints the whole screen**, from `ESC[8;<rows>;<cols>t ESC[H` followed by a run of `ESC[K\r\n`. Through `AnsiLineAssembler`, idle cmd with 4 resizes showed the same lines (two banner lines and the prompt) 4 times each and about 110 empty lines (powershell: the prompt 3 times). **Duplicates in the line stream do happen, as hypothesized.**
+- Japanese text arrives as plain strings. cmd sometimes splits the title OSC and the echo into small chunks (`echo 日本語` came in several chunks).
+- On exit powershell prints `ESC[?25l`, `ESC[92mexit\r\n`, `ESC[?25h`, then the `exit` event follows.
+
+**Body text that disagreed with the host**: A in section 2.2 ("likely insufficient" -> confirmed), E ("expected" -> not possible), the double start ("expected" -> verified), and the `proc.process` and `close()` behavior in sections 3 and 6 were corrected as above. In addition, the host showed that node-pty installs from its prebuild even when npm 11 does not run `install-scripts`.
+
+**Code to fix in the next stage, found on the host**
+
+1. The win32 branch in `Pane.close()`: use `proc.kill()` instead of `process.kill(-pid, 'SIGHUP')` (grandchildren survive and closing takes about 4.7 s).
+2. Test helpers (`daemon/test/helpers`, `cli/test/helpers/daemon.ts`, sdk-node's `fake.sock`, ...) should use a pipe name from `resolveSocketPath` instead of a `*.sock` in a temp directory.
+3. `skip` (with a reason) or Windows expectations for POSIX-based tests: `socket.test.ts`, the Unix side of `endpoint.test.ts`, `persistence.test.ts` (mode), `cli-io.test.ts`, `config` tests, SIGINT / SIGTERM in `serve`, symlinks (`EPERM`).
+4. `connection.test.ts` / `stream.test.ts` hang after `Daemon.start()` fails (clean up in `after` when `daemon` is `undefined`, or add `--test-timeout`).
+5. Command resolution: resolve names without an extension (`claude`) through `PATHEXT` or wrap with `cmd.exe /c`. `spawn failed: File not found: ` has an empty file name, so include the name in the message. Run `.ps1` through `powershell.exe -File`.
+6. A stop RPC / `misao stop` (as the `serve` tests show, SIGINT / SIGTERM do not stop it gracefully on Windows).
+7. Application-level token authentication (option D, the conclusion of V1).
+8. Handling repaints: a resize repaint puts duplicate and empty lines into the line stream. The grace makes `byte-activity` fine as it is, but `tail` / `pane.line` (after `AnsiLineAssembler`) need a Windows-specific de-duplication. The behavior of `scrollback` / `screen` still has to be checked separately.
+9. The `Windows (experimental)` CI job: add `--test-timeout` (a hanging test otherwise waits for the 12-minute limit).
+
+**Items that need manual work by the user**: V2's "connection from another standard user" and "connection from another host". Steps: (1) With `serve` running, create another standard user, connect with something like `runas /user:<other>` with `MISAO_SOCKET=\\.\pipe\<name>` and `node packages\cli\dist\main.js status`, and confirm that even if the connection succeeds, no response comes back (write is denied). (2) From another host open `\\<hostname>\pipe\<name>` (the firewall and SMB must allow it). If the results are as expected, adopt option D.
 
 ## 11. Proposed next stages
 

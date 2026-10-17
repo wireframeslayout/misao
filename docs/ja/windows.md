@@ -1,7 +1,7 @@
 # Windows（ネイティブ）対応の調査と試作
 
 Issue #37 の第 1 段。コードと node-pty 1.1.0 の同梱物を読んでまとめた調査結果と、Linux で検証できる範囲の試作の説明です。
-**Windows ホストでの実行はまだしていません。** 「要実機確認」と書いた箇所はすべて仮説で、末尾の確認項目で確かめます。
+調査の時点では Windows ホストで実行していませんでした。「要実機確認」と書いた箇所は仮説で、§10 の確認項目で確かめ、結果を §10.1 に記録しました（実機で確かめた箇所は本文にも反映済み）。
 
 工数の目安: S = 半日まで、M = 1〜2 日、L = 3 日以上。
 
@@ -39,7 +39,7 @@ Node の `net.Server.listen` が名前付きパイプに対して渡せるのは
 
 | 案 | 内容 | 追加の依存 | 保護の強さ | 工数 | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| A. 既定の DACL に任せる（現状の試作） | `NULL` の SECURITY_ATTRIBUTES で作られる DACL（Microsoft のドキュメントでは SYSTEM / 管理者 / 作成者に full、Everyone と匿名に read） | なし | 弱い。**不十分の見込みが高い**（Everyone への read で、読み取りだけの接続から出力が漏れる可能性） | S | 実機で ACL を確認するまでは「保護済み」と言わない |
+| A. 既定の DACL に任せる（現状の試作） | `NULL` の SECURITY_ATTRIBUTES で作られる DACL。**実機で確認済み**: SYSTEM / Administrators / 作成者に full、Everyone と ANONYMOUS LOGON に read（§10.1 V1） | なし | 弱い。read だけの接続は何も受け取れず、書き込み権が無いので要求も送れない（実機で確認）が、誰でも接続でき、SMB 経由（別ホスト）でも届く（§10.1 V2） | S | 「起動したユーザーのみ」ではない。先取り（squatting）にも無力 |
 | B. ネイティブアドオンでパイプを自前で作る | `CreateNamedPipeW` に SDDL `D:P(A;;GA;;;<ユーザー SID>)` を渡し、Duplex として Node に橋渡し | **要承認**（N-API アドオン、または ffi 系。prebuild の配布も要る） | 強い（`FILE_FLAG_FIRST_PIPE_INSTANCE` と合わせて先取りにも強い） | L | libuv の pipe handle に既存のハンドルを渡せないため、サーバー全体をアドオンで実装する必要がある |
 | C. listen 後に DACL を書き換える | `SetNamedSecurityInfo` 相当を外部から | PowerShell / .NET では他プロセスが作ったパイプの DACL を変更する手段が見当たらない。`icacls` はパイプを扱えない（要実機確認） | - | - | 現実的ではない |
 | D. アプリ層で認証する | `%LOCALAPPDATA%\misao` の token ファイル（プロファイルの ACL で本人のみ）を接続直後に送らせる | なし（プロトコルに認証の交換を足す） | 中。接続はできるが何も操作できない。同一ユーザー内は Unix と同じく境界にならない | M | プロトコル 0.x のうちに入れるなら後方互換の問題が小さい |
@@ -50,13 +50,13 @@ Node の `net.Server.listen` が名前付きパイプに対して渡せるのは
 
 そのほかに必要な対策:
 
-- **クライアント側の先取り対策**: 他ユーザーが同じ名前のパイプを先に作る（squatting）と、SDK はそちらに接続してしまう。接続先サーバーのプロセス ID（`GetNamedPipeServerProcessId`）を確かめる手段が Node に無い。D の token はこれにも効く（token を持たないサーバーは応答できない）。サーバー側は libuv が `FILE_FLAG_FIRST_PIPE_INSTANCE` を付ける見込みで、二重起動は `EADDRINUSE` になる（要実機確認）。
-- **リモートからの接続**: libuv は `CreateNamedPipeW` に `PIPE_REJECT_REMOTE_CLIENTS` を付けない（付くのは `FILE_FLAG_FIRST_PIPE_INSTANCE` だけ）。**リモートからの接続が拒否されることを期待しない**。別ホストからの接続可否は V2 で確かめ、必要なら ACL（B）か認証（D）で防ぐ。
+- **クライアント側の先取り対策**: 他ユーザーが同じ名前のパイプを先に作る（squatting）と、SDK はそちらに接続してしまう。接続先サーバーのプロセス ID（`GetNamedPipeServerProcessId`）を確かめる手段が Node に無い。D の token はこれにも効く（token を持たないサーバーは応答できない）。サーバー側は libuv が `FILE_FLAG_FIRST_PIPE_INSTANCE` を付けており、同名のパイプを二重に作ると `EADDRINUSE` になる（実機で確認、§10.1 V3）。
+- **リモートからの接続**: libuv は `CreateNamedPipeW` に `PIPE_REJECT_REMOTE_CLIENTS` を付けない（付くのは `FILE_FLAG_FIRST_PIPE_INSTANCE` だけ）。**リモートからの接続が拒否されることを期待しない**。実機で、`\\127.0.0.1\pipe\<名前>` と `\\<ホスト名>\pipe\<名前>`（SMB 経由）から接続して JSON-RPC の応答まで得られることを確認した（§10.1 V2。別ホストからの実測は未実施）。防ぐには ACL（B）か認証（D）が要る。
 - **dataDir**: `%USERPROFILE%` 配下はプロファイルの既定 ACL（本人 / SYSTEM / 管理者）を継承する。Unix の 700 + uid 確認に当たる検証は、ACL を読む手段が Node に無いため未実装（シンボリックリンクとディレクトリであることだけ確認）。
 
 ## 3. 前面プロセス
 
-- 現状の問題（実装を読んで判明）: `foreground.ts` は Linux 以外で node-pty の `process` を使うが、node-pty 1.1.0 の `WindowsTerminal.process` は `opt.name`（misao は `xterm-256color`）を返す。Windows ではシェルやコマンドの名前ではなく**端末名が前面コマンドとして報告される**ところだった。
+- 現状の問題（実装を読んで判明）: `foreground.ts` は Linux 以外で node-pty の `process` を使うが、node-pty 1.1.0 の `WindowsTerminal.process` は `opt.name`（misao は `xterm-256color`）を返す。Windows ではシェルやコマンドの名前ではなく**端末名が前面コマンドとして報告される**ところだった（実機で `proc.process === "xterm-256color"` を確認、§10.1 V9）。
 - 試作: `readForegroundCommand(pid, ptyProcess, platform)` は win32 で常に `undefined`（`pane.info` の前面コマンドを省略）。稼働判定のプロファイル選択がこの値に依存するかは Phase 2 で確認する。
 - 実装案:
   1. node-pty の `conpty_console_list`（`WindowsPtyAgent._getConsoleProcessList`）が返す、コンソールに接続されたプロセス ID 一覧の末尾（最後に接続したもの）を前面とみなす。内部 API なので、同梱の `conpty_console_list_agent.js` の呼び出し方を真似るか、公開を上流へ提案する。
@@ -94,7 +94,7 @@ node-pty 1.1.0（`packages/daemon` の依存）を同梱物から確認した結
 - **spawn-helper**: Unix 専用（`UnixTerminal` が `fork` 時に使う補助バイナリで、macOS の prebuild に入っている）。Windows では使われず、何も要らない。
 - **conpty.dll**: `useConptyDll`（既定 false）で同梱の OpenConsole 系 DLL（`third_party/conpty/1.23.251008001`）を使える。既定は OS 標準の ConPTY。OS が古い場合や挙動差（後述の再描画）が問題になれば切り替え候補。
 - **API の差**（`lib/windowsTerminal.js` を読んで確認）:
-  - `kill(signal)` は `signal` を渡すと `Signals not supported on windows.` を投げる。`Pane.close()` は `process.kill(-pid, 'SIGHUP')` → 失敗で `process.kill(pid)`（Windows では強制終了、ツリーは対象外）の経路になる。Windows では `proc.kill()`（ConPTY のコンソールにつながるプロセスを終了）を使う分岐が要る。**この PR では未実装**で、確認項目 V4 で挙動を見る。
+  - `kill(signal)` は `signal` を渡すと `Signals not supported on windows.` を投げる。`Pane.close()` は `process.kill(-pid, 'SIGHUP')` → 失敗で `process.kill(pid)`（Windows では強制終了、ツリーは対象外）の経路になる。Windows では `proc.kill()`（ConPTY のコンソールにつながるプロセスを終了）を使う分岐が要る。**この PR では未実装**。実機では、現状の `close()` は閉じるまで約 4.7 秒かかり、シェルの子プロセス（孫）が残った。`proc.kill()` なら孫まで終了した（§10.1 V4）。
   - `encoding: null` は `opt.encoding` が偽なので警告は出ない。node-pty は Windows で出力ソケットに `setEncoding('utf8')` する（`windowsPtyAgent.js`）ので、出力は**常に文字列**で届く。`pane.ts` はその文字列を `Buffer.from(d)` で Buffer に変換して扱う。実機で確かめるのは、無効な UTF-8 や VT の再合成でバイト情報が失われないか（V11 で採取した生バイトと比べる）だけ。
   - 終了後の `resize` は例外になる（`Cannot resize a pty that has already exited`）。`pane.resize` が exit 競合で投げないか確認する。
   - `proc.process` は端末名（§3）。
@@ -143,6 +143,91 @@ ConPTY は、子プロセスの出力をそのまま通すのではなく、自�
 | V9 | 前面コマンド | `pane.info` の前面コマンドが空になること、`proc.process` の値 | 端末名が漏れていない |
 | V10 | AF_UNIX | `node -e "require('net').createServer().listen('C:\\\\Temp\\\\a.sock')"` | 失敗すれば E 案は不可 |
 | V11 | 生バイトの採取 | cmd / PowerShell / claude の出力をファイルへ保存 | §7 のフィクスチャにする |
+
+### 10.1 実機確認の結果（2026-10-17、Windows 11 25H2 ビルド 10.0.26200.9168、Node v24.22.0）
+
+- 環境: Windows 11（ロケールは日本語、コンソールのコードページは 932）、Windows PowerShell 5.1.26100.9168、ユーザー `ServerUser` のプロファイル配下（管理者権限は使っていない）。PowerShell 7（`pwsh.exe`）、`claude`、`git` は無い。
+- 手順: Node は公式のポータブル版 `node-v24.22.0-win-x64.zip`（`SHASUMS256.txt` の SHA-256 `f9683a19…f80c3` と一致を確認）を `%USERPROFILE%\misao-win-test\node` に展開し、PATH はプロセス内でのみ変更した。このブランチの作業ツリー（node_modules を除く）を `…\misao-win-test\misao` に置いて `npm ci`（npm 11.19.1）を実行した。インストーラ・レジストリ・サービス・管理者権限は使っていない。
+- `npm ci` は成功したが、npm 11 は `install-scripts`（esbuild の postinstall、node-pty の install）を「未承認」として実行しなかった。それでも node-pty は同梱の `prebuilds/win32-x64` で動いた（コンパイラ不要）。
+
+| ID | 結果 | 実測 |
+| --- | --- | --- |
+| V1 | 成功（A は不十分） | パイプ `\\.\pipe\misao-ServerUser-72bd07d30c339cae` の DACL は下記。`In` だけ・`Out` だけで開いた接続も成功した。read だけで接続して待ち、その間にペインを作ったが、5 秒間 1 バイトも届かなかった（イベントは購読した接続にだけ流れる）。書き込み権（`FILE_WRITE_DATA`）が Everyone には無いので、他ユーザーは要求を送れない見込み（他ユーザーでの実測は V2 の手作業） |
+| V2 | 一部のみ | 別ユーザー・別ホストは未実行（ユーザーの手作業）。代わりに同じユーザーで SMB 経由の UNC パスを試したところ、`\\.\pipe\…` と同じく `\\127.0.0.1\pipe\…` と `\\WIN-SERVER-001\pipe\…` から接続でき、`server.info` の応答まで得られた。パイプは SMB（LanmanServer）経由で到達できる |
+| V3 | 成功 | 同じ `MISAO_DIR` で 2 つ目の `serve`: 終了コード 1、`another daemon (pid 22920) holds …\daemon.pid`。別の `MISAO_DIR` で同じ `MISAO_SOCKET`: 終了コード 1、`another daemon is already listening on \\.\pipe\…`（`EADDRINUSE` を検出）。素の `net` で同名を listen しても `EADDRINUSE`。`Stop-Process -Force` で落とすとパイプは消え、pid ファイルは残り、再起動すると pid が置き換わった。ペインは `persistence.json` から `stopped` で復元された。強制終了ではペインの子（cmd.exe、powershell.exe）も孫（ping.exe）も一緒に終了した（ConPTY の拠点が閉じるため） |
+| V4 | 一部失敗 | `new`・`send`・`screen`・resize・終了検知は動いた。`attach` は ConPTY 内で起動した CLI から入力・resize（100x30 → 120x40）・`Ctrl-^ d` での detach まで動いた。`exit /b 7` は `pane.exited` の `exitCode` が 7、`signal` が `null`。日本語の入出力（コードページ 932）も正しい。**`kill --force`（`pane.close`）は閉じるまで約 4.7 秒かかり、cmd.exe は終了するが孫プロセス（`ping`）が残った**（powershell.exe でも同じ）。孫は記録した PID で止めた。`pty.kill()` を直接呼ぶと、cmd.exe と孫が両方終了し、`exit` イベントもすぐ届いた（`conpty_console_list_agent.js` が `AttachConsole failed` を stderr に出すが、終了は妨げない） |
+| V5 | 成功（誤判定なし） | cmd.exe と powershell.exe のペインを 25 秒放置、続けて attach から 5 回 resize（100x30、120x40、80x24、132x50、90x28 を 2.5 秒間隔）、さらに 15 秒放置: `pane.state` は `idle`（`decidedBy: bytes`）のまま一度も変わらなかった。resize のたびに画面全体の再描画（80x24 で約 2KB、132x50 で数 KB）が入るが、`byte-activity` の resize 後 800 ms の猶予に収まった。採取したフィクスチャで猶予を外して再生しても、idle のまま working にはならなかった。なお、`ping -n 14` の可視出力（1 秒に 1 行）では working にならなかった（閾値は 3 秒で 200 バイト）。`dir /s` のような短い一気出力は猶予（入力後 500 ms）の内に終わるため working にならない。いずれも Windows 固有の問題ではない |
+| V6 | 同等を確認 | CI のログは未確認。同じ内容のスモークを実機で実行: `conpty-ok` が出て終了コード 0（出力は下記） |
+| V7 | 失敗あり | 下記の一覧。protocol は 56/56 成功。sdk-node は 125 件中 77 件、daemon は 217 件中 82 件（skip 3）、cli は 137 件中 43 件失敗・11 件キャンセル（`serve` のテストが SIGINT / SIGTERM で終了しない）。**失敗はすべてテスト側の前提**（実装の不具合ではない）。e2e は未実行。`daemon` の `connection.test.ts` と `stream.test.ts` は、`.sock` のパスで待ち受けて失敗したあとデーモンを閉じず、テストランナーが止まらない（`--test-timeout` を付けると完走する） |
+| V8 | 一部失敗 | npm の shim `npm.cmd` で代用（この機に `claude.cmd` は無い）。**拡張子なし（`npm`、`node`）は失敗**（`spawn failed: Cannot create process, error code: 2` / `File not found: `。後者はファイル名が空で出る）。`npm.cmd`、`C:\…\npm.cmd`（フルパス）、`node.exe`、`powershell.exe`、`cmd.exe /c npm --version` は成功。`npm.ps1` は `error code: 193`（Win32 アプリケーションではない）。`pwsh.exe` は `File not found`。つまり AZITO が `cmd: ["claude"]` を送ると失敗し、`claude.cmd` と書くか `cmd.exe /c` で包む必要がある |
+| V9 | 成功 | `proc.process` は `"xterm-256color"`（端末名）。`pane.info`（`ls --json`）には前面コマンドの項目が無く、端末名は漏れない。`ls` の AGENT 列は `cmd.exe`（`cmd` の先頭から作られる表示） |
+| V10 | 成功（E 案は不可） | `net.createServer().listen('<profile>\\…\\a.sock')` は `EACCES: permission denied` |
+| V11 | 成功 | 6 シナリオの生バイトを採取し、`packages/daemon/test/fixtures/windows/` に保存（下記） |
+
+**V1 の DACL（SDDL と展開）**
+
+```
+O:S-1-5-21-…-1001G:S-1-5-21-…-513D:(A;;FR;;;WD)(A;;FR;;;AN)(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;S-1-5-21-…-1001)
+Everyone                      Allow  Read, Synchronize
+NT AUTHORITY\ANONYMOUS LOGON  Allow  Read, Synchronize
+NT AUTHORITY\SYSTEM           Allow  FullControl (2032127)
+BUILTIN\Administrators        Allow  FullControl (2032127)
+win-server-001\ServerUser     Allow  FullControl (2032127)   ← 起動したユーザー
+```
+
+**ACL の結論**: A（既定の DACL）は「起動したユーザーのみ」ではなく、不十分。ただし実害は想定より小さい（Everyone / 匿名は read だけで、要求を送れず、受け取れるものも無い）。それでも、(1) 誰でも接続して接続数を占有できる、(2) SMB 経由で別ホストから届く、(3) パイプ名の先取りを防げない、ので **D 案（`%LOCALAPPDATA%\misao` の token を接続直後に送らせる）を推奨**する。B 案（ネイティブアドオン）は、要件が「他ユーザーを接続させない」まで上がった場合のみ。E 案は不可。V2 の別ユーザー・別ホストの実測でこの判断を確認する。
+
+**V6 の出力**
+
+```
+"\u001b[?9001h\u001b[?1004h\u001b[?25l\u001b[2J\u001b[m\u001b[Hconpty-ok\r\n\u001b]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe\u0007\u001b[?25h"
+```
+
+**V7 の失敗の内訳（すべてテスト側）**
+
+| 原因 | 該当 |
+| --- | --- |
+| テストのヘルパーが一時ディレクトリの `*.sock` で待ち受ける（Windows ではパイプ名が必要）。`Daemon.start()` が `on Windows the daemon endpoint must be a named pipe` で失敗 | daemon: `daemon.test.ts`（42）、`daemon-limits.test.ts`（6）、`connection.test.ts`（7）、`stream.test.ts`（11）。cli: `test/helpers/daemon.ts` 経由の attach / loop / コマンド系（約 29）。sdk-node: `listen EACCES …fake.sock` の `client*.test.ts`、`rpc-connection.test.ts` |
+| POSIX の権限・所有者の検査（`not owned by the current user`、`mode 0600` が 438 = 0666、`ENOTSOCK` の判定、`EACCES` の期待） | daemon: `socket.test.ts`（10）、`endpoint.test.ts` の Unix 側、`persistence.test.ts`（1） |
+| シンボリックリンクの作成が `EPERM`（開発者モード / 権限が無い標準ユーザー） | `socket.test.ts`、`endpoint.test.ts` |
+| パスの前提（`/bin/bash`、`~/`、`/` 区切り）、`readLoginShell` の期待値 | cli: `cli-io.test.ts`、`config` 系（約 8）、`serve` の `buildDaemonOptions` |
+| SIGINT / SIGTERM で優雅に終了する前提（Windows の Node は受けられない、§5） | cli: `serve` のテスト 2 件（5 秒でタイムアウト） |
+| sdk-node の `socket-path.test.ts`（9） | 失敗の理由は未精査（パス形式の期待値と見られる） |
+
+**V11 のフィクスチャ**（`packages/daemon/test/fixtures/windows/`、1 行 1 JSON。先頭行が `meta`、以降は `{t, d}`（node-pty の `onData` が渡した文字列と、spawn からの経過 ms）、`{t, input}`、`{t, resize}`、`{t, exit}`）
+
+| ファイル | 内容 |
+| --- | --- |
+| `conpty-cmd-basic.jsonl` | cmd.exe の起動・`echo`・`dir`・日本語・`cls`・resize・`exit /b 5` |
+| `conpty-cmd-idle-resize.jsonl` | cmd.exe を放置したまま resize を 4 回 |
+| `conpty-ps-basic.jsonl` | powershell.exe の起動・`Get-Date`・複数行出力・日本語・resize・`exit` |
+| `conpty-ps-idle-resize.jsonl` | powershell.exe を放置したまま resize を 4 回 |
+| `conpty-cmd-flood.jsonl` | `dir /s` の大量出力（約 105 KB）と Ctrl-C |
+| `conpty-fake-agent.jsonl` | **合成**（`claude` はこの機に無い）。タイトルのグリフ（`✳` / `⠂`）を OSC 0 で更新しスピナーを再描画するスクリプト。実物の claude の採取ではない |
+
+観察できたこと（§7 の仮説の確認）:
+
+- 起動直後: `ESC[?9001h ESC[?1004h`、`ESC[?25l ESC[2J ESC[m ESC[H`、画面の内容、`OSC 0;<exe のパス> BEL`、`ESC[?25h`。cmd は実行中のコマンドに合わせて `OSC 0;…cmd.exe - ping …` のようにタイトルを更新し、終わると戻す。
+- 改行は `\r\n`。表示が進むときは `ESC[<行>;<桁>H` で位置を指定して書く（例: `\x1b[7;1HC:\…>`）。
+- **resize のたびに、画面全体を `ESC[8;<行>;<桁>t ESC[H` から `ESC[K\r\n` の連なりで再描画する**。`AnsiLineAssembler` に通すと、cmd の放置 + resize 4 回で、同じ行（バナー 2 行とプロンプト）が 4 回ずつ現れ、空行が約 110 行流れた（powershell は プロンプトが 3 回）。**行ストリームの重複は仮説どおり起きる**。
+- 日本語は文字列としてそのまま届く。ただし cmd は、タイトルの更新 OSC やエコーを文字ごとの細かい chunk に分けて送ることがある（`echo 日本語` が数 chunk）。
+- 終了時、powershell は `ESC[?25l`、`ESC[92mexit\r\n`、`ESC[?25h` を出して `exit` イベントが続く。
+
+**この結果で食い違っていた本文**: §2.2 の A（「不十分の見込み」→ 確定）、E（「見込み」→ 不可）、二重起動（「見込み」→ 確認済み）、§3 と §6 の `proc.process`・`close()` の挙動を上のとおり直した。そのほか、CI の「node-pty が `npm ci` で導入できる」は、npm 11 の `install-scripts` が未承認で実行されなくても prebuild で動くことを実機で確認した。
+
+**実機確認で見つかった、次の段で直すコード**
+
+1. `Pane.close()` の win32 分岐: `process.kill(-pid, 'SIGHUP')` ではなく `proc.kill()` を使う（孫が残り、閉じるまで約 4.7 秒かかる）。
+2. テストのヘルパー（`daemon/test/helpers`、`cli/test/helpers/daemon.ts`、sdk-node の `fake.sock` など）が一時ディレクトリの `*.sock` ではなく、`resolveSocketPath` 由来のパイプ名を使う。
+3. POSIX 前提のテストの `skip`（理由付き）または Windows 用の期待値: `socket.test.ts`、`endpoint.test.ts`（Unix 側）、`persistence.test.ts`（mode）、`cli-io.test.ts`、`config` 系、`serve` の SIGINT / SIGTERM、シンボリックリンク（`EPERM`）。
+4. `connection.test.ts` / `stream.test.ts` が `Daemon.start()` 失敗後に止まらない（`after` で `daemon` が `undefined` のときの後始末、または `--test-timeout`）。
+5. コマンド解決: 拡張子なしの名前（`claude`）を `PATHEXT` で解決する、または `cmd.exe /c` で包む。`spawn failed: File not found: ` はファイル名が空なので、名前を含めたメッセージにする。`.ps1` は `powershell.exe -File` 経由にする。
+6. 停止 RPC / `misao stop`（`serve` のテストが示すとおり、Windows では SIGINT / SIGTERM で優雅に止まらない）。
+7. アプリ層の token 認証（D 案、V1 の結論）。
+8. 再描画への対処: resize の再描画で行ストリームに重複・空行が入る。猶予が効くので `byte-activity` は変えなくてよいが、`AnsiLineAssembler` 以降（`tail` / `pane.line`）に Windows 用の重複除去が要る。`scrollback` / `screen` の挙動は別途確認する。
+9. `CI` の `Windows (experimental)` ジョブ: `--test-timeout` を付ける（止まるテストで上限の 12 分まで待たされる）。
+
+**ユーザーの手作業が必要な項目**: V2 の「別の標準ユーザーからの接続」と「別ホストからの接続」。手順: (1) `serve` を起動したまま、標準ユーザーを別に作り、`runas /user:<別ユーザー>` で `MISAO_SOCKET=\\.\pipe\<名前>` を指定して `node packages\cli\dist\main.js status` を実行し、接続できても応答が得られないこと（書き込み拒否）を確認する。(2) 別ホストから `\\<ホスト名>\pipe\<名前>` を開く（ファイアウォールと SMB の許可が要る）。結果が想定どおりなら D 案を採る。
 
 ## 11. 次の段（提案）
 

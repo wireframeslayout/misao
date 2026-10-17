@@ -1,0 +1,24 @@
+{"meta":{"name":"ps-basic","file":"powershell.exe","args":["-NoLogo","-NoProfile"],"cols":80,"rows":24,"platform":"win32","osRelease":"10.0.26200","node":"v24.22.0","nodePty":"1.1.0","steps":[[3500,"w","Get-Date\r"],[1500,"w","1..5 | % { \"line $_\" }\r"],[1500,"w","\"日本語\"\r"],[1500,"r",120,40],[2000,"w","exit\r"],[2000,"end"]],"note":"data は node-pty onData の文字列(utf8)。t は spawn からの経過ms"}}
+{"t":16,"d":"\u001b[?9001h\u001b[?1004h"}
+{"t":273,"d":"\u001b[?25l\u001b[2J\u001b[m\u001b[HPS C:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[1C\u001b]0;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\u0007\u001b[?25h"}
+{"t":3510,"input":"Get-Date\r"}
+{"t":3527,"d":"\u001b[?25l"}
+{"t":3542,"d":"\u001b[93mGet-Date\u001b[?25h"}
+{"t":3558,"d":"\u001b[m\r\n"}
+{"t":3633,"d":"\r\n"}
+{"t":3653,"d":"\u001b[?25l2026年10月17日 16:42:54\u001b[6;1HPS C:\\Users\\ServerUser\\misao-win-test\\misao> \u001b[?25h"}
+{"t":5012,"input":"1..5 | % { \"line $_\" }\r"}
+{"t":5013,"d":"\u001b[?25l"}
+{"t":5028,"d":"\u001b[6;44H> \u001b[97m1\u001b[90m..\u001b[97m5 \u001b[37m| \u001b[93m% \u001b[37m{ \u001b[36m\"line \u001b[92m$_\u001b[36m\" \u001b[37m}\r\n\u001b[?25h"}
+{"t":5050,"d":"\u001b[mline 1"}
+{"t":5060,"d":"\r\nline 2\r\nline 3\r\nline 4\r\nline 5\r\nPS C:\\Users\\ServerUser\\misao-win-test\\misao> "}
+{"t":6526,"input":"\"日本語\"\r"}
+{"t":6527,"d":"\u001b[?25l"}
+{"t":6541,"d":"\u001b[12;44H> \u001b[36m\"日本語\"\r\n\u001b[?25h"}
+{"t":6558,"d":"\u001b[m日本語\r\nPS C:\\Users\\ServerUser\\misao-win-test\\misao> "}
+{"t":8032,"resize":[120,40]}
+{"t":8033,"d":"\u001b[?25l\u001b[8;40;120t\u001b[HPS C:\\Users\\ServerUser\\misao-win-test\\misao> \u001b[93mGet-Date\u001b[K\u001b[m\r\n\u001b[K\r\n2026年10月17日 16:42:54\u001b[K\r\n\u001b[K\r\n\u001b[K\r\nPS C:\\Users\\ServerUser\\misao-win-test\\misao> \u001b[97m1\u001b[90m..\u001b[97m5 \u001b[37m| \u001b[93m% \u001b[37m{ \u001b[36m\"line \u001b[92m$_\u001b[36m\" \u001b[37m}\u001b[K\u001b[m\r\nline 1\u001b[K\r\nline 2\u001b[K\r\nline 3\u001b[K\r\nline 4\u001b[K\r\nline 5\u001b[K\r\nPS C:\\Users\\ServerUser\\misao-win-test\\misao> \u001b[36m\"日本語\"\u001b[K\u001b[m\r\n日本語\u001b[K\r\nPS C:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[14;46H\u001b[?25h"}
+{"t":10040,"input":"exit\r"}
+{"t":10041,"d":"\u001b[?25l"}
+{"t":10056,"d":"\u001b[92mexit\r\n\u001b[?25h"}
+{"t":11134,"exit":{"exitCode":0}}
