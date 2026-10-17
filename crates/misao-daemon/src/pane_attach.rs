@@ -60,7 +60,7 @@ impl Pane {
         let snapshot = (replay == Replay::Snapshot).then(|| self.observer.serialize_snapshot());
         let attachment = Attachment::new(&self.id, client_id, conn, head);
         lock(&self.attachments).push(Arc::clone(&attachment));
-        #[cfg(test)]
+        #[cfg(all(test, unix))]
         self.attach_pause();
         // 接続側の map に登録し、同じ接続の古い attach を外す。
         let previous = conn.replace_attachment(&self.id, Arc::clone(&attachment));
@@ -167,7 +167,7 @@ impl Pane {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 impl Pane {
     /// 次の attach を、pane 側に登録した後・接続側に登録する前で止める。`arrived` で止まったことを知らせ、`release` で再開する。
     pub(crate) fn pause_next_attach(
