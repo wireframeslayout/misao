@@ -224,7 +224,7 @@ fn sigterm_finishes_even_when_a_client_never_reads_its_responses() {
     let tmp = TempDir::new().unwrap();
     let dir = tmp.path();
     let mut child = serve(dir);
-    let mut stream = UnixStream::connect(dir.join("run/misao.sock")).unwrap();
+    let stream = UnixStream::connect(dir.join("run/misao.sock")).unwrap();
     // server.schema (数十 KB) の応答を読まずに溜めさせ、デーモン側の送信を詰まらせる。
     let req = r#"{"jsonrpc":"2.0","id":1,"method":"server.schema"}"#;
     // macOS など送受信バッファが小さい環境では、デーモンが読むのをやめた後の書き込みが止まるので、別スレッドで書く。
