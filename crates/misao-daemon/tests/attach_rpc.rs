@@ -412,8 +412,11 @@ async fn an_attach_with_a_size_during_a_close_fails_without_changing_size_events
     let state_path = tmp.path().join("persistence.json");
     let core = common::core_at(&state_path);
     let mut owner = connect(&core);
-    // SIGHUP を無視する子: close は猶予（3 秒）の間「始まっている」状態が続く
-    let pane_id = open(&mut owner, "trap '' HUP; sleep 30").await;
+    // SIGHUP を無視する子: close は猶予（3 秒）の間「始まっている」状態が続く。
+    // trap が効く前に close が始まると子が SIGHUP で死ぬので（起動の遅い macOS で起きる）、準備ができてから閉じ始める。
+    let ready = tmp.path().join("ready");
+    let pane_id = open(&mut owner, &format!("trap '' HUP; touch '{}'; sleep 30", ready.display())).await;
+    common::wait_until("the child to ignore SIGHUP", || async { ready.exists() }).await;
     let before = std::fs::read_to_string(&state_path).unwrap();
     let head = owner.ok("server.info", json!({})).await["eventHead"]
         .as_u64()

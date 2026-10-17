@@ -64,5 +64,14 @@ for _ in $(seq 1 40); do
   sleep 0.5
 done
 if "$BIN" status >/dev/null 2>&1; then echo "the daemon is still running after bootout" >&2; exit 1; fi
-if kill -0 "$PANE_PID" 2>/dev/null; then echo "the pane child $PANE_PID survived the daemon" >&2; exit 1; fi
+# ペインの子は、デーモンが片付けを終えるまでに消える。リスナーを閉じた直後 (status が失敗した時点) はまだ閉じ途中なので待つ。
+for _ in $(seq 1 40); do
+  if ! kill -0 "$PANE_PID" 2>/dev/null; then break; fi
+  sleep 0.5
+done
+if kill -0 "$PANE_PID" 2>/dev/null; then
+  echo "the pane child $PANE_PID survived the daemon:" >&2
+  ps -o pid,ppid,pgid,stat,command -p "$PANE_PID" >&2 || true
+  exit 1
+fi
 echo "launchd smoke ok"

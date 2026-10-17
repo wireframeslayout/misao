@@ -58,6 +58,7 @@ misao [options] <command> [args]
 | `events` | デーモンのイベントを追跡します |
 | `label` | ラベルを設定または削除します |
 | `status` | デーモンの状態を表示します |
+| `stop` | 稼働中のデーモンを止めます（Rust 版のみ）|
 | `schema` | プロトコルの JSON スキーマを出力します |
 | `serve` | デーモンをフォアグラウンドで実行します |
 
@@ -161,6 +162,18 @@ misao status [--json]
 
 プロトコルのバージョン、pid、epoch、稼働時間、ペイン数、ソケットを出力します。デーモンが動いていれば終了コード `0`、到達できなければ `1` です（`--json`: `{"running": false, "socket": ...}`）。
 
+### stop
+
+```text
+misao stop [--json]
+```
+
+稼働中のデーモンを止めます。デーモンはすべてのペインを閉じ、状態を保存し、ソケットと pid ファイルを消して終了します。
+デーモンの終了を待ってから（最大 15 秒）`[misao] 停止しました（pid N）` を出力します（`--json`: `{"stopped": true, "pid": N, "socket": ...}`）。
+デーモンが動いていなければ `daemon_unreachable` で失敗します。**Rust 版のみ**です（Node 版に `stop` はありません）。
+Linux と macOS は `server.info` が返した pid へ `SIGTERM` を送り、シグナルを持たない Windows は、起動したユーザーだけが開ける名前付きイベントを立てて伝えます
+（[Windows](ja/windows.md)）。プロトコルは使わないので、`PROTOCOL_VERSION` は `0.3.0` のままです。
+
 ### schema
 
 ```text
@@ -175,7 +188,7 @@ misao schema
 misao serve [--socket PATH] [--data DIR]
 ```
 
-`SIGINT`、`SIGTERM`、`SIGHUP` を受けるまでデーモンをフォアグラウンドで実行し、その後ペインを閉じて終了します。設定は `misao.json` から読み込まれます。`--socket` はソケットのパスを上書きし、`--data` は `daemon.pid` と `persistence.json` のディレクトリを上書きします（デフォルト: ソケットのあるディレクトリ）。サービスとして実行する方法は [deploy/README.md](../deploy/README.md) を参照してください。
+`SIGINT`、`SIGTERM`、`SIGHUP`（Windows は Ctrl+C、Ctrl+Break、コンソールを閉じる、ログオフ、シャットダウン）、または `misao stop`（Rust 版）を受けるまでデーモンをフォアグラウンドで実行し、その後ペインを閉じて終了します。設定は `misao.json` から読み込まれます。`--socket` はソケットのパスを上書きし、`--data` は `daemon.pid` と `persistence.json` のディレクトリを上書きします（デフォルト: ソケットのあるディレクトリ）。サービスとして実行する方法は [deploy/README.md](../deploy/README.md) を参照してください。
 
 ## attach 中のキー操作
 
