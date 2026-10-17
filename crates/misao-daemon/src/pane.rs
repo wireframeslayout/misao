@@ -15,9 +15,13 @@ use tokio::sync::watch;
 use crate::ansi::AnsiLineAssembler;
 use crate::child_env::build_child_env;
 use crate::event_log::EventLog;
+use crate::foreground::read_foreground_command;
 use crate::ids::new_pane_id;
 use crate::limits::{INPUT_QUEUE_BYTES, LINE_ENTRY_OVERHEAD};
 use crate::log::now_iso;
+use crate::pane_observer::PaneObserver;
+use crate::pane_view::{PaneView, ScreenSnapshot};
+use crate::profile::Profile;
 use crate::pty::{self, ExitInfo, GroupState, PtyProcess, SpawnRequest};
 use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
@@ -51,6 +55,12 @@ pub struct PaneOpenOptions<'a> {
     pub raw_ring_bytes: usize,
     /// 行ストリームリングの上限バイト数。
     pub lines_ring_bytes: usize,
+    /// 画面モデルのスクロールバック行数。
+    pub scrollback: usize,
+    /// この pane の稼働判定に使うプロファイル。無ければ title / bytes 段だけで判定する。
+    pub profile: Option<Arc<Profile>>,
+    /// `pane.title` / `pane.state` / `pane.exited` を出す先。
+    pub events: Arc<EventLog>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +129,9 @@ pub struct Pane {
     released: AtomicBool,
     /// 子のプロセスが終了した（残りの出力は待たずに読み切る）。
     exit_seen: AtomicBool,
+    /// 画面・タイトル・稼働判定（`pane.screen` / `pane.info` / `pane.title` / `pane.state`）。
+    observer: Arc<PaneObserver>,
+    events: Arc<EventLog>,
     /// 行ストリームの購読者の進み具合（送り手が遅い購読者を待つため）。
     line_subscribers: Mutex<Vec<Weak<Progress>>>,
     lines_ring_bytes: usize,
@@ -129,6 +142,7 @@ pub struct Pane {
 impl Drop for Pane {
     /// close されないまま捨てられても、終了済みのリーダーをゾンビで残さない。
     fn drop(&mut self) {
+        self.observer.close();
         self.reap_leader();
     }
 }
@@ -165,6 +179,11 @@ impl Pane {
             opts.rows.unwrap_or(DEFAULT_ROWS),
         );
         let id = new_pane_id();
+        let observer = PaneObserver::new(
+            id.clone(),
+            PaneView::new(cols, rows, opts.scrollback, opts.profile),
+            Arc::clone(&opts.events),
+        );
         let mut overrides = opts.env;
         overrides.extend(opts.ephemeral_env);
         let env = build_child_env(std::env::vars_os(), &id, opts.socket_path, &overrides);
@@ -217,12 +236,14 @@ impl Pane {
             line_subscribers: Mutex::new(Vec::new()),
             lines_ring_bytes: opts.lines_ring_bytes,
             wakeup: Arc::new(Wakeup::default()),
+            observer,
+            events: opts.events,
         }))
     }
 
     /// 出力の読み取り・入力の書き込み・終了の待機を始める。`pane.opened` を出した後に呼ぶ
     /// （`pane.exited` が `pane.opened` より先に出ないように）。2 回目以降は何もしない。
-    pub fn start(self: &Arc<Self>, events: Arc<EventLog>) {
+    pub fn start(self: &Arc<Self>) {
         let Some(Handoff {
             mut reader,
             mut writer,
@@ -245,6 +266,8 @@ impl Pane {
             // 送り口が閉じた（子が終了した）か、書けなくなった。writer はここで drop される
             // （portable-pty は drop のときに改行と EOF を pty へ書くが、子が居ない pty なので害はない）。
         });
+        let observer = Arc::clone(&self.observer);
+        std::thread::spawn(move || observer.run());
         let (drained_tx, drained_rx) = mpsc::channel::<()>();
         // reader はブロッキングの read の間 Pane を強参照しない。孫が pty を握って EOF が来なくても、
         // 持ち主が Pane を捨てれば `Drop`（リーダーの回収）が走る。
@@ -279,7 +302,7 @@ impl Pane {
             if let Err(RecvTimeoutError::Timeout) = drained_rx.recv_timeout(READER_DRAIN_TIMEOUT) {
                 // 孫が pty を握っていて EOF が来ない。ここまでに読めた分で打ち切る。
             }
-            pane.on_exit(exit, &events);
+            pane.on_exit(exit);
         });
     }
 
@@ -289,6 +312,7 @@ impl Pane {
             let mut inner = lock(&self.inner);
             inner.last_output_at = Some(ts.clone());
             inner.raw.push(data.to_vec(), data.len(), ts.clone());
+            self.observer.output(data);
             let lines = inner.assembler.push(data);
             let any = !lines.is_empty();
             for text in lines {
@@ -301,7 +325,7 @@ impl Pane {
         }
     }
 
-    fn on_exit(&self, exit: ExitInfo, events: &EventLog) {
+    fn on_exit(&self, exit: ExitInfo) {
         // 入力の送り口を閉じ、書き込みのスレッドと writer（master の複製）を終わらせる。
         lock(&self.input).take();
         let new_head = {
@@ -319,17 +343,14 @@ impl Pane {
         if let Some(head) = new_head {
             self.lines_tx.send_replace(head);
         }
-        events.emit(
-            "pane.exited",
-            json!({"exitCode": exit.exit_code, "signal": exit.signal}),
-            Some(&self.id),
-        );
-        // 稼働判定は後続の段。終了だけは確定的なので、exit 段の結果を出す。
-        events.emit(
-            "pane.state",
-            json!({"state": "exited", "decidedBy": "exit", "prev": "unknown"}),
-            Some(&self.id),
-        );
+        // pane.exited の直後に pane.state(exited)（exit 段）を確定する。
+        self.observer.exited(|| {
+            self.events.emit(
+                "pane.exited",
+                json!({"exitCode": exit.exit_code, "signal": exit.signal}),
+                Some(&self.id),
+            );
+        });
         self.exited_tx.send_replace(true);
     }
 
@@ -360,6 +381,7 @@ impl Pane {
             return Ok(());
         };
         self.check_input_room(data.len())?;
+        self.observer.input();
         self.input_queued.fetch_add(data.len(), Ordering::AcqRel);
         let _ = tx.send(data);
         Ok(())
@@ -385,6 +407,7 @@ impl Pane {
     fn apply(&self, inner: &mut Inner, decision: &SizeDecision) -> Result<(), String> {
         inner.cols = decision.cols;
         inner.rows = decision.rows;
+        self.observer.resize(decision.cols, decision.rows);
         if inner.state == RunState::Running {
             lock(&self.master)
                 .resize(pty::pty_size(decision.cols, decision.rows))
@@ -395,9 +418,13 @@ impl Pane {
 
     /// `pane.info` の本体（所属の workspace / window とラベルは Daemon が渡す。Pane は親もラベルも知らない）。
     pub fn info(&self, workspace: &str, window: &Value, labels: &Value) -> Value {
+        let observed = self.observer.info();
+        let fg_command = (self.state() == RunState::Running)
+            .then(|| read_foreground_command(self.pid, || self.pty_foreground_pgid()))
+            .flatten();
         let inner = lock(&self.inner);
         let exit = inner.exit;
-        json!({
+        let mut info = json!({
             "paneId": self.id,
             "pid": self.pid,
             "cmd": self.cmd,
@@ -408,15 +435,36 @@ impl Pane {
             "processState": inner.state.as_str(),
             "exitCode": exit.and_then(|e| e.exit_code),
             "signal": exit.and_then(|e| e.signal),
-            "agentState": if inner.state == RunState::Exited { "exited" } else { "unknown" },
-            "decidedBy": if inner.state == RunState::Exited { "exit" } else { "none" },
-            "title": "",
+            "agentState": observed.agent_state,
+            "decidedBy": observed.decided_by,
+            "title": observed.title,
             "lastOutputAt": inner.last_output_at,
             "cols": inner.cols,
             "rows": inner.rows,
             "clients": [],
             "sizeOwner": inner.sizes.owner(),
-        })
+        });
+        if let (Some(command), Some(map)) = (fg_command, info.as_object_mut()) {
+            map.insert("fgCommand".to_string(), json!(command));
+        }
+        info
+    }
+
+    /// pty の前面プロセスグループ（Linux 以外の Unix の `fgCommand` が使う。Windows の ConPTY には無い）。
+    fn pty_foreground_pgid(&self) -> Option<i32> {
+        #[cfg(unix)]
+        {
+            lock(&self.master).process_group_leader()
+        }
+        #[cfg(not(unix))]
+        {
+            None
+        }
+    }
+
+    /// `pane.screen` の本体。
+    pub fn screen(&self) -> ScreenSnapshot {
+        self.observer.snapshot()
     }
 
     /// SIGHUP → 3 秒 → SIGKILL（プロセスグループ全体）。リーダーの終了と、グループに残ったプロセスの
@@ -542,9 +590,12 @@ mod tests {
             socket_path: &socket,
             raw_ring_bytes: 4096,
             lines_ring_bytes: 1024,
+            scrollback: 100,
+            profile: None,
+            events: Arc::new(EventLog::new(10)),
         })
         .unwrap();
-        pane.start(Arc::new(EventLog::new(10)));
+        pane.start();
         let deadline = Instant::now() + Duration::from_secs(10);
         while pane.state() != RunState::Exited {
             assert!(Instant::now() < deadline, "the pane did not exit");
@@ -578,9 +629,12 @@ mod tests {
             socket_path: &socket,
             raw_ring_bytes: 1024,
             lines_ring_bytes: 1024,
+            scrollback: 100,
+            profile: None,
+            events: Arc::new(EventLog::new(10)),
         })
         .unwrap();
-        pane.start(Arc::new(EventLog::new(10)));
+        pane.start();
         (pane, pid_file)
     }
 
@@ -615,6 +669,9 @@ mod tests {
             socket_path: &socket,
             raw_ring_bytes: 1024,
             lines_ring_bytes: 1024,
+            scrollback: 100,
+            profile: None,
+            events: Arc::new(EventLog::new(10)),
         })
         .unwrap();
         // 待ち行列が空なら、上限より大きい入力も受ける。
@@ -709,9 +766,12 @@ mod tests {
             socket_path: &socket,
             raw_ring_bytes: 1024,
             lines_ring_bytes: 1024,
+            scrollback: 100,
+            profile: None,
+            events: Arc::new(EventLog::new(10)),
         })
         .unwrap();
-        pane.start(Arc::new(EventLog::new(10)));
+        pane.start();
         wait_for("the trap", || ready.exists());
         let started = Instant::now();
         let first = tokio::spawn({

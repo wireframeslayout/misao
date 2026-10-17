@@ -359,4 +359,4 @@ await daemon.start();
 ```
 
 `misao serve` does not take profiles; it runs with the generic title and bytes rules. Profiles for
-Claude Code and Codex are not shipped yet.
+Claude Code and Codex are not shipped yet. (The Rust build, which is being developed to replace this one, bundles them as data rules and uses them by default; see [Rust implementation](en/rust.md).)

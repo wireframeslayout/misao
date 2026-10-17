@@ -256,4 +256,4 @@ const daemon = new Daemon({
 await daemon.start();
 ```
 
-`misao serve` はプロファイルを受け取りません。汎用のタイトルとバイトのルールで動作します。Claude Code と Codex のプロファイルはまだ同梱されていません。
+`misao serve` はプロファイルを受け取りません。汎用のタイトルとバイトのルールで動作します。Claude Code と Codex のプロファイルはまだ同梱されていません（この実装を置き換える Rust 版は、規則をデータとして同梱し、既定で使います。[Rust 版](ja/rust.md)を参照）。

@@ -1,0 +1,562 @@
+{
+ "scrollback": 20,
+ "name": "fuzz-5",
+ "cmd": [
+  "bash"
+ ],
+ "cols": 30,
+ "rows": 10,
+ "steps": [
+  {
+   "at": 10,
+   "op": "output",
+   "data": "\u001b[u\u001b[6D\r\n\u001b[3b\u001b[4@\u001b[8;23H"
+  },
+  {
+   "at": 20,
+   "op": "output",
+   "data": "\u001b[2@"
+  },
+  {
+   "at": 30,
+   "op": "output",
+   "data": "\u001b[s\u001b[?6h\u001b7"
+  },
+  {
+   "at": 40,
+   "op": "output",
+   "data": "\b\u001b]0;a\u0007\r\n"
+  },
+  {
+   "at": 50,
+   "op": "output",
+   "data": "\u001b[3M\u001b[4d\u001b[8D"
+  },
+  {
+   "at": 60,
+   "op": "output",
+   "data": "\u001b[3T\u001b[2;7r\u001b[1Z\u001b7\u001b[0g\u001b(0qxlk\u001b(B\u001b[0J\u001bE"
+  },
+  {
+   "at": 61,
+   "op": "screen"
+  },
+  {
+   "at": 70,
+   "op": "output",
+   "data": "\u001bM\u001b[10d"
+  },
+  {
+   "at": 75,
+   "op": "resize",
+   "cols": 14,
+   "rows": 13
+  },
+  {
+   "at": 85,
+   "op": "output",
+   "data": "\u001b[1;1r\u001b[s\u001b[1T"
+  },
+  {
+   "at": 95,
+   "op": "output",
+   "data": "\u001b[s"
+  },
+  {
+   "at": 105,
+   "op": "output",
+   "data": "\u001b[3T\u001bD\u001b[3b"
+  },
+  {
+   "at": 115,
+   "op": "output",
+   "data": "\r\n\u001b[2E\u001b[2A\u001b[u\u001b[1A"
+  },
+  {
+   "at": 125,
+   "op": "output",
+   "data": "\u001b[31m\r\n\u001b[3E\u001b[3F\u001b[s\r\n\u001b7"
+  },
+  {
+   "at": 126,
+   "op": "screen"
+  },
+  {
+   "at": 135,
+   "op": "output",
+   "data": "\b\u001b[1M\u001b[3M\u001b[3F😀"
+  },
+  {
+   "at": 140,
+   "op": "resize",
+   "cols": 20,
+   "rows": 14
+  },
+  {
+   "at": 150,
+   "op": "output",
+   "data": "\u001b[1b\u001b[1K"
+  },
+  {
+   "at": 160,
+   "op": "output",
+   "data": "\u001b[3;30H\u001b[31m\u001b[s| |\u001b[1;2r\u001b[0J"
+  },
+  {
+   "at": 170,
+   "op": "output",
+   "data": "\u001b[3b\u001b[u\u001b[1d\u001b[1B\u001b[9;14H😀\u001b[1b\u001bH"
+  },
+  {
+   "at": 180,
+   "op": "output",
+   "data": "\u001b[3C\u001b8\u001b[3d\u001b[u═══\u001b[1T\u001b[7;25H\u001b[2Z"
+  },
+  {
+   "at": 190,
+   "op": "output",
+   "data": "\u001b[1Z\r\n\u001b[0K| |"
+  },
+  {
+   "at": 191,
+   "op": "screen"
+  },
+  {
+   "at": 200,
+   "op": "output",
+   "data": "\u001b[2L\u001b[0K\u001b[3P\u001b[4;3r"
+  },
+  {
+   "at": 210,
+   "op": "output",
+   "data": "\u001b[1K"
+  },
+  {
+   "at": 220,
+   "op": "output",
+   "data": "\u001b]0;a\u0007\u001b[2T"
+  },
+  {
+   "at": 230,
+   "op": "output",
+   "data": "\u001b]0;build\u0007| |"
+  },
+  {
+   "at": 240,
+   "op": "output",
+   "data": "\u001b[1T\u001b[8C\u001b[!p\u001b[1S\u001b[r\u001b[1S\r\n"
+  },
+  {
+   "at": 250,
+   "op": "output",
+   "data": "\u001b[1T\u001b[10;7H\u001b7\u001b[?7h\u001b[4P😀\u001b[2S\u001b[2P"
+  },
+  {
+   "at": 251,
+   "op": "screen"
+  },
+  {
+   "at": 260,
+   "op": "output",
+   "data": "\u001b[4dx\u001b8\u001b[3S\u001b]0;⠋ job\u0007\u001b[1;2r\u001b[2S"
+  },
+  {
+   "at": 270,
+   "op": "output",
+   "data": "\u001b[1M\u001b[3Z\r\n\u001b[2A\u001bE\u000f"
+  },
+  {
+   "at": 280,
+   "op": "output",
+   "data": "\u001b[u"
+  },
+  {
+   "at": 290,
+   "op": "output",
+   "data": "\u001b[4l\u001bD\u001b[!p\u001b[1@\u001b[20l\u001b[6D\u001b[1K"
+  },
+  {
+   "at": 300,
+   "op": "output",
+   "data": "\u001b[2A\u001b[1L\u001b[2F\u001b[u"
+  },
+  {
+   "at": 310,
+   "op": "output",
+   "data": "\u001b[7;9H\u001b8"
+  },
+  {
+   "at": 311,
+   "op": "screen"
+  },
+  {
+   "at": 320,
+   "op": "output",
+   "data": "\u001b[3b"
+  },
+  {
+   "at": 330,
+   "op": "output",
+   "data": "\u001b[3Z\u001b[2S\u001bD\u001b[1S\r\nx"
+  },
+  {
+   "at": 340,
+   "op": "output",
+   "data": "\u001b[1;9r\u001b[3A\u001b[2I\u001b[3;22H"
+  },
+  {
+   "at": 350,
+   "op": "output",
+   "data": "\u001b[0J\u001b[4;27H\u001b[u\u001b[3P\u001bE\u001b[12G"
+  },
+  {
+   "at": 360,
+   "op": "output",
+   "data": "\u001b[1Z"
+  },
+  {
+   "at": 365,
+   "op": "resize",
+   "cols": 33,
+   "rows": 15
+  },
+  {
+   "at": 375,
+   "op": "output",
+   "data": "\u001b[3S\u001b[3;19H\u001b[8d\u001b[K"
+  },
+  {
+   "at": 376,
+   "op": "screen"
+  },
+  {
+   "at": 385,
+   "op": "output",
+   "data": "\u001b7\u001b7\u001b[2T\u001b[0K\u001b[u\u001b(0qxlk\u001b(B"
+  },
+  {
+   "at": 395,
+   "op": "output",
+   "data": "\u001b[ubeta"
+  },
+  {
+   "at": 405,
+   "op": "output",
+   "data": "\u001b[r\u001b[2T\u001b[2L\u001b[!pgamma \u001b[0gg\u001b[7C\u001bE"
+  },
+  {
+   "at": 410,
+   "op": "resize",
+   "cols": 31,
+   "rows": 13
+  },
+  {
+   "at": 420,
+   "op": "output",
+   "data": "\u001b[2P\u001b[3A\u001b[2E\u001b[s\u001b[8D\u001b[8C\u001bM"
+  },
+  {
+   "at": 430,
+   "op": "output",
+   "data": "\u001b[1C\u001b8"
+  },
+  {
+   "at": 440,
+   "op": "output",
+   "data": "\u000e"
+  },
+  {
+   "at": 441,
+   "op": "screen"
+  },
+  {
+   "at": 450,
+   "op": "output",
+   "data": "\u001b[2Xalphax"
+  },
+  {
+   "at": 460,
+   "op": "output",
+   "data": "\u001b[2M\u000e"
+  },
+  {
+   "at": 470,
+   "op": "output",
+   "data": "\u001bE\u001b[2S\u001b[3b\u001b[9D\u001b[2B\u001b[2D\u001b[0g"
+  },
+  {
+   "at": 480,
+   "op": "output",
+   "data": "\u001b[?6l\u001b[2M\u001b[?45l\u001b[u\u001b[?6l"
+  },
+  {
+   "at": 490,
+   "op": "output",
+   "data": "\u001b(0qxlk\u001b(B\u001b[!p\u001b[21G\u001b[u\u001b[2@"
+  },
+  {
+   "at": 500,
+   "op": "output",
+   "data": "\u001b[2T\u001b[2@\u001b[2M\u001b[2K"
+  },
+  {
+   "at": 501,
+   "op": "screen"
+  },
+  {
+   "at": 510,
+   "op": "output",
+   "data": "\u001bD"
+  },
+  {
+   "at": 520,
+   "op": "output",
+   "data": "\u001b7\u001b]0;build\u00070123456789\u001b[3X\u001b[10G"
+  },
+  {
+   "at": 530,
+   "op": "output",
+   "data": "\u001b[3@\u001b8\u001b[u\u001b[3@\u001b[0gg\u001b[20l\u001b[3M"
+  },
+  {
+   "at": 540,
+   "op": "output",
+   "data": "\u001b[!p"
+  },
+  {
+   "at": 550,
+   "op": "output",
+   "data": "\u000f\r  \u001b[?6h"
+  },
+  {
+   "at": 560,
+   "op": "output",
+   "data": "\u001b[42m\r\n\u001b[0J\u001b[7C\u001b[r"
+  },
+  {
+   "at": 561,
+   "op": "screen"
+  },
+  {
+   "at": 570,
+   "op": "output",
+   "data": "テスト\u001b8\u001b[K\u001b[K"
+  },
+  {
+   "at": 580,
+   "op": "output",
+   "data": "\u001b[1P"
+  },
+  {
+   "at": 590,
+   "op": "output",
+   "data": "\u001b7\u001b[0J\u001b[4l\u001b[1T"
+  },
+  {
+   "at": 600,
+   "op": "output",
+   "data": "\u001b[2Z\u001b[5A"
+  },
+  {
+   "at": 610,
+   "op": "output",
+   "data": "\u001b[1P\u001b(0qxlk\u001b(B"
+  },
+  {
+   "at": 615,
+   "op": "resize",
+   "cols": 36,
+   "rows": 7
+  },
+  {
+   "at": 625,
+   "op": "output",
+   "data": "\u000e\u001b[1X\u001b[3@\u001b[1I═══\u001b[5A\u001b[K"
+  },
+  {
+   "at": 626,
+   "op": "screen"
+  },
+  {
+   "at": 725,
+   "op": "screen"
+  }
+ ],
+ "end": 1125,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "title",
+    "at": 40,
+    "title": "a"
+   },
+   {
+    "kind": "screen",
+    "at": 61,
+    "text": "\n─│┌┐\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 2
+    },
+    "altScreen": false,
+    "title": "a",
+    "activity": 6
+   },
+   {
+    "kind": "screen",
+    "at": 126,
+    "text": "\n\n\n\n\n─│┌┐\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 7
+    },
+    "altScreen": false,
+    "title": "a",
+    "activity": 13
+   },
+   {
+    "kind": "screen",
+    "at": 191,
+    "text": "             😀😀    ═\n| |\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 3,
+     "y": 1
+    },
+    "altScreen": false,
+    "title": "a",
+    "activity": 20
+   },
+   {
+    "kind": "title",
+    "at": 220,
+    "title": "a"
+   },
+   {
+    "kind": "title",
+    "at": 230,
+    "title": "build"
+   },
+   {
+    "kind": "screen",
+    "at": 251,
+    "text": "\n\n\n\n\n\n\n      😀\n\n\n\n\n\n",
+    "cursor": {
+     "x": 7,
+     "y": 9
+    },
+    "altScreen": false,
+    "title": "build",
+    "activity": 26
+   },
+   {
+    "kind": "state",
+    "at": 260,
+    "state": "working",
+    "decidedBy": "title",
+    "prev": "unknown"
+   },
+   {
+    "kind": "title",
+    "at": 260,
+    "title": "⠋ job"
+   },
+   {
+    "kind": "screen",
+    "at": 311,
+    "text": "\n\n\n\n      😀\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "⠋ job",
+    "activity": 32
+   },
+   {
+    "kind": "screen",
+    "at": 376,
+    "text": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 18,
+     "y": 7
+    },
+    "altScreen": false,
+    "title": "⠋ job",
+    "activity": 39
+   },
+   {
+    "kind": "screen",
+    "at": 441,
+    "text": "gamma g\n\n\n\n\n\n\n\n\n\n\n                  beta\n",
+    "cursor": {
+     "x": 0,
+     "y": 2
+    },
+    "altScreen": false,
+    "title": "⠋ job",
+    "activity": 46
+   },
+   {
+    "kind": "screen",
+    "at": 501,
+    "text": "\n\n\n\n\n                  beta\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "⠋ job",
+    "activity": 52
+   },
+   {
+    "kind": "state",
+    "at": 520,
+    "state": "idle",
+    "decidedBy": "title",
+    "prev": "working"
+   },
+   {
+    "kind": "title",
+    "at": 520,
+    "title": "build"
+   },
+   {
+    "kind": "screen",
+    "at": 561,
+    "text": "\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "build",
+    "activity": 58
+   },
+   {
+    "kind": "screen",
+    "at": 626,
+    "text": "─│┌┐    ═══\n\n\n\n\n\n",
+    "cursor": {
+     "x": 11,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "build",
+    "activity": 65
+   },
+   {
+    "kind": "screen",
+    "at": 725,
+    "text": "─│┌┐    ═══\n\n\n\n\n\n",
+    "cursor": {
+     "x": 11,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "build",
+    "activity": 65
+   }
+  ]
+ }
+}

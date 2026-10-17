@@ -1,0 +1,104 @@
+{
+  "name": "claude",
+  "programs": ["claude"],
+  "rules": [
+    {
+      "id": "transcript_viewer",
+      "verdict": "skip",
+      "priority": 100,
+      "region": "all",
+      "when": { "last_lines": { "n": 3, "when": { "contains": "showing detailed transcript" } } }
+    },
+    {
+      "id": "blocked_form",
+      "verdict": "blocked",
+      "priority": 90,
+      "region": "all",
+      "when": {
+        "all": [
+          { "contains": "esc to cancel" },
+          { "any": [{ "contains": "enter to confirm" }, { "contains": "enter to select" }] }
+        ]
+      }
+    },
+    {
+      "id": "permission_prompt",
+      "verdict": "blocked",
+      "priority": 85,
+      "region": "all",
+      "when": {
+        "any": [
+          { "contains": "do you want to proceed?" },
+          { "contains": "requires approval" },
+          { "all": [{ "matches": "(❯|1\\.)\\s*yes" }, { "matches": "2\\.\\s*no" }] }
+        ]
+      }
+    },
+    {
+      "id": "api_error",
+      "verdict": "error",
+      "priority": 60,
+      "region": "above",
+      "when": {
+        "last_lines": {
+          "n": 4,
+          "when": {
+            "all": [
+              { "not": { "contains": "retrying in" } },
+              { "contains": "api error" },
+              {
+                "any": [
+                  { "contains": "request timed out" },
+                  { "contains": "overloaded" },
+                  { "contains": "connection error" },
+                  { "contains": "service unavailable" }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "interrupt_line",
+      "verdict": "working",
+      "priority": 70,
+      "region": "all",
+      "when": { "line_matches": { "regex": "^\\s*[⏸⏵].*esc to interrupt(?:\\s|·|$)", "ignore_case": true } }
+    },
+    {
+      "id": "spinner_line",
+      "verdict": "working",
+      "priority": 70,
+      "region": "above",
+      "when": { "line_matches": { "regex": "^\\s*[*·✢✳✶✻✽]\\s+\\S+.*…(?:\\s+\\([0-9]+[smh](?:\\s|·)|\\s*$)" } }
+    },
+    {
+      "id": "background_work",
+      "verdict": "working",
+      "priority": 65,
+      "region": "above",
+      "when": {
+        "any": [
+          { "matches": "waiting for [0-9]+ background agents" },
+          { "matches": "[0-9]+ mcp tasks? still running" },
+          { "matches": "\\(\\S*[0-9]+\\S*\\s*tokens\\s*\\)" }
+        ]
+      }
+    },
+    {
+      "id": "prompt_box_idle",
+      "verdict": "idle",
+      "priority": 50,
+      "region": "prompt_box",
+      "when": {
+        "all": [
+          { "line_matches": { "regex": "^\\s*❯" } },
+          { "not": { "line_matches": { "regex": "^\\s*❯\\s*[0-9]+\\." } } },
+          { "not": { "contains": "enter to select" } },
+          { "not": { "contains": "esc to cancel" } }
+        ]
+      }
+    }
+  ]
+}

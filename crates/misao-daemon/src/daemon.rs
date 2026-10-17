@@ -10,6 +10,7 @@ use tokio::task::JoinSet;
 
 use crate::connection::serve_connection;
 use crate::core::{Core, CoreOptions};
+use crate::profile::Profile;
 use crate::socket::{ensure_socket_dir, listen_unix_socket, lock_socket_start, remove_stale_socket};
 use crate::{DaemonError, Limits, Logger, acquire_pid_file};
 
@@ -22,6 +23,8 @@ pub struct DaemonOptions {
     pub pid_path: PathBuf,
     pub limits: Limits,
     pub log: Logger,
+    /// pane の稼働判定に使うプロファイル。
+    pub profiles: Vec<Arc<Profile>>,
 }
 
 pub struct Daemon {
@@ -45,6 +48,7 @@ impl Daemon {
             pid_path,
             limits,
             log,
+            profiles,
         } = opts;
         ensure_socket_dir(&socket_path)?;
         acquire_pid_file(&pid_path, std::process::id())?;
@@ -67,6 +71,7 @@ impl Daemon {
             socket_path: socket_path.clone(),
             limits,
             log: log.clone(),
+            profiles,
         });
         Ok(Self {
             start_lock,

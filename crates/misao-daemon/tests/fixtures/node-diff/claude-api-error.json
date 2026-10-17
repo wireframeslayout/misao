@@ -1,0 +1,80 @@
+{
+ "scrollback": 5000,
+ "name": "claude-api-error",
+ "cmd": [
+  "claude"
+ ],
+ "cols": 80,
+ "rows": 24,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "\u001b]0;✳ Claude Code\u0007"
+  },
+  {
+   "at": 200,
+   "op": "output",
+   "data": "\u001b[G⏺ working on it\n  ⎿  API Error: Request timed out.\n────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────\n  ? for shortcuts\n"
+  },
+  {
+   "at": 500,
+   "op": "info"
+  },
+  {
+   "at": 510,
+   "op": "screen"
+  },
+  {
+   "at": 1000,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G⏺ working on it\n  ⎿  API Error: Request timed out. Retrying in 4 seconds…\n────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────\n  ? for shortcuts\n"
+  },
+  {
+   "at": 1300,
+   "op": "info"
+  }
+ ],
+ "end": 8000,
+ "expect": {
+  "profile": "claude",
+  "log": [
+   {
+    "kind": "title",
+    "at": 0,
+    "title": "✳ Claude Code"
+   },
+   {
+    "kind": "info",
+    "at": 500,
+    "agentState": "unknown",
+    "decidedBy": "none"
+   },
+   {
+    "kind": "screen",
+    "at": 510,
+    "text": "⏺ working on it\n                 ⎿  API Error: Request timed out.\n                                                 ───────────────────────────────\n─────────────────────────────────────────────────\n                                                 ❯ \n                                                   ─────────────────────────────\n───────────────────────────────────────────────────\n                                                     ? for shortcuts\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 68,
+     "y": 8
+    },
+    "altScreen": false,
+    "title": "✳ Claude Code",
+    "activity": 2
+   },
+   {
+    "kind": "state",
+    "at": 1120,
+    "state": "idle",
+    "decidedBy": "claude",
+    "prev": "unknown"
+   },
+   {
+    "kind": "info",
+    "at": 1300,
+    "agentState": "idle",
+    "decidedBy": "claude"
+   }
+  ]
+ }
+}

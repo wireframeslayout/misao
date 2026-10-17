@@ -1,0 +1,167 @@
+{
+ "scrollback": 5000,
+ "name": "bytes-only",
+ "cmd": [
+  "bash"
+ ],
+ "cols": 80,
+ "rows": 24,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "$ "
+  },
+  {
+   "at": 1100,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 1800,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 2500,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 3200,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 3900,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 4600,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 5600,
+   "op": "info"
+  },
+  {
+   "at": 9000,
+   "op": "input"
+  },
+  {
+   "at": 9100,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 9700,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 11000,
+   "op": "resize",
+   "cols": 120,
+   "rows": 30
+  },
+  {
+   "at": 11200,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 12000,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 12700,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 13400,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 14000,
+   "op": "info"
+  },
+  {
+   "at": 14010,
+   "op": "screen"
+  },
+  {
+   "at": 21500,
+   "op": "output",
+   "data": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\r\n"
+  },
+  {
+   "at": 22500,
+   "op": "info"
+  },
+  {
+   "at": 30000,
+   "op": "info"
+  }
+ ],
+ "end": 40000,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "state",
+    "at": 3000,
+    "state": "working",
+    "decidedBy": "bytes",
+    "prev": "unknown"
+   },
+   {
+    "kind": "info",
+    "at": 5600,
+    "agentState": "working",
+    "decidedBy": "bytes"
+   },
+   {
+    "kind": "info",
+    "at": 14000,
+    "agentState": "working",
+    "decidedBy": "bytes"
+   },
+   {
+    "kind": "screen",
+    "at": 14010,
+    "text": "$ abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefgh\nijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\nabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 28
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 14
+   },
+   {
+    "kind": "state",
+    "at": 15000,
+    "state": "idle",
+    "decidedBy": "bytes",
+    "prev": "working"
+   },
+   {
+    "kind": "info",
+    "at": 22500,
+    "agentState": "idle",
+    "decidedBy": "bytes"
+   },
+   {
+    "kind": "info",
+    "at": 30000,
+    "agentState": "idle",
+    "decidedBy": "bytes"
+   }
+  ]
+ }
+}

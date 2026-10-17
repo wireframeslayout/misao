@@ -1,0 +1,113 @@
+{
+ "scrollback": 5000,
+ "name": "alt-screen-resize",
+ "cmd": [
+  "vim"
+ ],
+ "cols": 80,
+ "rows": 24,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "main line\r\n"
+  },
+  {
+   "at": 10,
+   "op": "output",
+   "data": "\u001b[?1049h\u001b[H alt top\u001b[5;3Hmiddle"
+  },
+  {
+   "at": 20,
+   "op": "screen"
+  },
+  {
+   "at": 30,
+   "op": "resize",
+   "cols": 100,
+   "rows": 40
+  },
+  {
+   "at": 40,
+   "op": "screen"
+  },
+  {
+   "at": 50,
+   "op": "output",
+   "data": "\u001b[30;1Hlow"
+  },
+  {
+   "at": 60,
+   "op": "resize",
+   "cols": 30,
+   "rows": 6
+  },
+  {
+   "at": 70,
+   "op": "screen"
+  },
+  {
+   "at": 80,
+   "op": "output",
+   "data": "\u001b[?1049l"
+  },
+  {
+   "at": 90,
+   "op": "screen"
+  }
+ ],
+ "end": 500,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "screen",
+    "at": 20,
+    "text": " alt top\n\n\n\n  middle\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 8,
+     "y": 4
+    },
+    "altScreen": true,
+    "title": "",
+    "activity": 2
+   },
+   {
+    "kind": "screen",
+    "at": 40,
+    "text": " alt top\n\n\n\n  middle\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 8,
+     "y": 4
+    },
+    "altScreen": true,
+    "title": "",
+    "activity": 3
+   },
+   {
+    "kind": "screen",
+    "at": 70,
+    "text": "\n\n\n\n\nlow",
+    "cursor": {
+     "x": 3,
+     "y": 5
+    },
+    "altScreen": true,
+    "title": "",
+    "activity": 5
+   },
+   {
+    "kind": "screen",
+    "at": 90,
+    "text": "main line\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 1
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 6
+   }
+  ]
+ }
+}

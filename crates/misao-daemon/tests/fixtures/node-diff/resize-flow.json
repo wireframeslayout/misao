@@ -1,0 +1,130 @@
+{
+ "scrollback": 5000,
+ "name": "resize-flow",
+ "cmd": [
+  "bash"
+ ],
+ "cols": 80,
+ "rows": 24,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "one\r\ntwo two two two two two two two two two two two two two\r\nthree\r\n"
+  },
+  {
+   "at": 50,
+   "op": "screen"
+  },
+  {
+   "at": 100,
+   "op": "resize",
+   "cols": 120,
+   "rows": 30
+  },
+  {
+   "at": 150,
+   "op": "screen"
+  },
+  {
+   "at": 200,
+   "op": "output",
+   "data": "after-resize\r\n"
+  },
+  {
+   "at": 300,
+   "op": "resize",
+   "cols": 40,
+   "rows": 10
+  },
+  {
+   "at": 350,
+   "op": "screen"
+  },
+  {
+   "at": 400,
+   "op": "output",
+   "data": "tail-line\r\n"
+  },
+  {
+   "at": 450,
+   "op": "screen"
+  },
+  {
+   "at": 500,
+   "op": "resize",
+   "cols": 80,
+   "rows": 24
+  },
+  {
+   "at": 550,
+   "op": "screen"
+  }
+ ],
+ "end": 1000,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "screen",
+    "at": 50,
+    "text": "one\ntwo two two two two two two two two two two two two two\nthree\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 3
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 1
+   },
+   {
+    "kind": "screen",
+    "at": 150,
+    "text": "one\ntwo two two two two two two two two two two two two two\nthree\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 3
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 2
+   },
+   {
+    "kind": "screen",
+    "at": 350,
+    "text": "one\ntwo two two two two two two two two two \ntwo two two two\nthree\nafter-resize\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 5
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 4
+   },
+   {
+    "kind": "screen",
+    "at": 450,
+    "text": "one\ntwo two two two two two two two two two \ntwo two two two\nthree\nafter-resize\ntail-line\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 6
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 5
+   },
+   {
+    "kind": "screen",
+    "at": 550,
+    "text": "one\ntwo two two two two two two two two two two two two two\nthree\nafter-resize\ntail-line\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 5
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 6
+   }
+  ]
+ }
+}

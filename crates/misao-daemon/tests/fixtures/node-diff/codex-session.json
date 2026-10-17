@@ -1,0 +1,226 @@
+{
+ "scrollback": 5000,
+ "name": "codex-session",
+ "cmd": [
+  "/usr/local/bin/codex"
+ ],
+ "cols": 100,
+ "rows": 30,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "\u001b]0;codex\u0007"
+  },
+  {
+   "at": 300,
+   "op": "output",
+   "data": " OpenAI Codex\r\n\r\n ▌ Ask Codex to do anything\r\n"
+  },
+  {
+   "at": 400,
+   "op": "info"
+  },
+  {
+   "at": 410,
+   "op": "screen"
+  },
+  {
+   "at": 1500,
+   "op": "input"
+  },
+  {
+   "at": 2000,
+   "op": "output",
+   "data": "\u001b[2K\r  Working (0s • esc to interrupt) \r\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n"
+  },
+  {
+   "at": 2900,
+   "op": "output",
+   "data": "\u001b[2K\r  Working (1s • esc to interrupt) .\r\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n"
+  },
+  {
+   "at": 3800,
+   "op": "output",
+   "data": "\u001b[2K\r  Working (2s • esc to interrupt) ..\r\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n"
+  },
+  {
+   "at": 4700,
+   "op": "output",
+   "data": "\u001b[2K\r  Working (3s • esc to interrupt) ...\r\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n"
+  },
+  {
+   "at": 5600,
+   "op": "output",
+   "data": "\u001b[2K\r  Working (4s • esc to interrupt) ....\r\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n"
+  },
+  {
+   "at": 6500,
+   "op": "output",
+   "data": "\u001b[2K\r  Working (5s • esc to interrupt) .....\r\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n"
+  },
+  {
+   "at": 7200,
+   "op": "info"
+  },
+  {
+   "at": 8000,
+   "op": "output",
+   "data": "\u001b]0;Action Required - codex\u0007"
+  },
+  {
+   "at": 8200,
+   "op": "info"
+  },
+  {
+   "at": 8300,
+   "op": "output",
+   "data": "\u001b]0;codex\u0007"
+  },
+  {
+   "at": 8400,
+   "op": "output",
+   "data": "\r\n Allow command? [y/n]\r\n"
+  },
+  {
+   "at": 8700,
+   "op": "info"
+  },
+  {
+   "at": 8710,
+   "op": "screen"
+  },
+  {
+   "at": 9500,
+   "op": "input"
+  },
+  {
+   "at": 9600,
+   "op": "output",
+   "data": "\u001b[2J\u001b[H ▌ Ask Codex to do anything\r\n"
+  },
+  {
+   "at": 9900,
+   "op": "info"
+  },
+  {
+   "at": 9910,
+   "op": "screen"
+  }
+ ],
+ "end": 18000,
+ "expect": {
+  "profile": "codex",
+  "log": [
+   {
+    "kind": "title",
+    "at": 0,
+    "title": "codex"
+   },
+   {
+    "kind": "info",
+    "at": 400,
+    "agentState": "unknown",
+    "decidedBy": "none"
+   },
+   {
+    "kind": "screen",
+    "at": 410,
+    "text": " OpenAI Codex\n\n ▌ Ask Codex to do anything\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 3
+    },
+    "altScreen": false,
+    "title": "codex",
+    "activity": 2
+   },
+   {
+    "kind": "state",
+    "at": 2120,
+    "state": "working",
+    "decidedBy": "codex",
+    "prev": "unknown"
+   },
+   {
+    "kind": "info",
+    "at": 7200,
+    "agentState": "working",
+    "decidedBy": "codex"
+   },
+   {
+    "kind": "title",
+    "at": 8000,
+    "title": "Action Required - codex"
+   },
+   {
+    "kind": "state",
+    "at": 8120,
+    "state": "blocked",
+    "decidedBy": "codex",
+    "prev": "working"
+   },
+   {
+    "kind": "info",
+    "at": 8200,
+    "agentState": "blocked",
+    "decidedBy": "codex"
+   },
+   {
+    "kind": "title",
+    "at": 8300,
+    "title": "codex"
+   },
+   {
+    "kind": "info",
+    "at": 8700,
+    "agentState": "blocked",
+    "decidedBy": "codex"
+   },
+   {
+    "kind": "screen",
+    "at": 8710,
+    "text": " OpenAI Codex\n\n ▌ Ask Codex to do anything\n  Working (0s • esc to interrupt) \nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  Working (1s • esc to interrupt) .\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  Working (2s • esc to interrupt) ..\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  Working (3s • esc to interrupt) ...\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  Working (4s • esc to interrupt) ....\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  Working (5s • esc to interrupt) .....\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n Allow command? [y/n]\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 23
+    },
+    "altScreen": false,
+    "title": "codex",
+    "activity": 11
+   },
+   {
+    "kind": "state",
+    "at": 9720,
+    "state": "working",
+    "decidedBy": "bytes",
+    "prev": "blocked"
+   },
+   {
+    "kind": "info",
+    "at": 9900,
+    "agentState": "working",
+    "decidedBy": "bytes"
+   },
+   {
+    "kind": "screen",
+    "at": 9910,
+    "text": " ▌ Ask Codex to do anything\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 1
+    },
+    "altScreen": false,
+    "title": "codex",
+    "activity": 12
+   },
+   {
+    "kind": "state",
+    "at": 14000,
+    "state": "idle",
+    "decidedBy": "bytes",
+    "prev": "working"
+   }
+  ]
+ }
+}

@@ -16,6 +16,7 @@ use crate::params::{
     self, InputSource, PaneListParams, PaneOpenParams, PaneRefParams, PaneResizeParams, PaneSetLabelParams,
     PaneWriteParams, SubscribeLinesParams,
 };
+use crate::profile::select_profile;
 use crate::registry::{PaneEntry, PaneRegistry};
 use crate::rpc::RequestContext;
 use crate::rpc_error::{RpcFailure, RpcResult};
@@ -76,6 +77,7 @@ impl Core {
                 .layout
                 .resolve_window(p.window_id.as_ref().map(params::WindowId::as_str))
                 .and_then(|target| {
+                    let profile = select_profile(&self.profiles, &p.cmd);
                     let pane = Pane::spawn(PaneOpenOptions {
                         cmd: p.cmd,
                         cwd: p.cwd,
@@ -87,6 +89,9 @@ impl Core {
                         socket_path: &self.socket_path,
                         raw_ring_bytes: self.limits.raw_ring_bytes,
                         lines_ring_bytes: self.limits.lines_ring_bytes,
+                        scrollback: self.limits.scrollback,
+                        profile,
+                        events: Arc::clone(&self.events),
                     })
                     .map_err(|e| RpcFailure::invalid_params(format!("spawn failed: {e}")))?;
                     Ok((pane, target))
@@ -108,7 +113,7 @@ impl Core {
                 }
             }
         };
-        pane.start(Arc::clone(&self.events));
+        pane.start();
         Ok(json!({"paneId": pane.id}))
     }
 
@@ -216,6 +221,19 @@ impl Core {
             Some(&pane.id),
         );
         Ok(ok())
+    }
+
+    pub(crate) fn pane_screen(&self, raw: Raw<'_>) -> RpcResult<Value> {
+        let p: PaneRefParams = params::parse("pane.screen", raw)?;
+        let pane = live_pane(&self.state().registry, p.pane_id.as_str())?;
+        let screen = pane.screen();
+        Ok(json!({
+            "text": screen.text,
+            "cursor": {"x": screen.cursor.x, "y": screen.cursor.y},
+            "altScreen": screen.alt_screen,
+            "title": screen.title,
+            "activity": screen.activity,
+        }))
     }
 
     pub(crate) fn pane_subscribe_lines(&self, raw: Raw<'_>, ctx: &mut RequestContext) -> RpcResult<Value> {

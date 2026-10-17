@@ -1,0 +1,532 @@
+{
+ "scrollback": 8,
+ "name": "fuzz-4",
+ "cmd": [
+  "bash"
+ ],
+ "cols": 12,
+ "rows": 6,
+ "steps": [
+  {
+   "at": 10,
+   "op": "output",
+   "data": "\u001b[J\r\n\u001b[4;1H\u001b[!p\u001b[38;5;99m\u001b7\u001b[1K\u001bH"
+  },
+  {
+   "at": 20,
+   "op": "output",
+   "data": "\u001b[u\u001b[2P\u001b[s\u000f\u001b[2X"
+  },
+  {
+   "at": 30,
+   "op": "output",
+   "data": "\u001b[5d\u001b[2I\u001b[1@\u001b[2S\u001b7\r\n\u001bM"
+  },
+  {
+   "at": 40,
+   "op": "output",
+   "data": "\u001b[2J| |\u001b[4d\u001b[5A"
+  },
+  {
+   "at": 50,
+   "op": "output",
+   "data": "\u000e\u001b[6C\u001b[1S\u001b7\u001b[!p0123456789\u001b(0qxlk\u001b(B"
+  },
+  {
+   "at": 60,
+   "op": "output",
+   "data": "\u001b[3Z\u001b[3E\u001b[0K\u001b[?6h\u001b[3T\u001bE"
+  },
+  {
+   "at": 61,
+   "op": "screen"
+  },
+  {
+   "at": 70,
+   "op": "output",
+   "data": "\u001b[3X"
+  },
+  {
+   "at": 80,
+   "op": "output",
+   "data": "\u001b[1m\u001b[?45h\u001b[?1048h\u001b[9C\u001b[3L\u000e\rbeta"
+  },
+  {
+   "at": 90,
+   "op": "output",
+   "data": "\f\u001b[?1048h\u001b[0K\u001b[r\u001b(0qxlk\u001b(B\u001b[8G"
+  },
+  {
+   "at": 100,
+   "op": "output",
+   "data": "\u001b[0gg\u001b[?1048h\t\u001bD\u001b[2A\u001b[s"
+  },
+  {
+   "at": 110,
+   "op": "output",
+   "data": "\u001b]0;x y\u0007✅\u001b[3M\u001b[1T"
+  },
+  {
+   "at": 120,
+   "op": "output",
+   "data": "  \u001b[42m\u001b[4@\u001b[1L\u001b[?1048l\u001b[J"
+  },
+  {
+   "at": 121,
+   "op": "screen"
+  },
+  {
+   "at": 130,
+   "op": "output",
+   "data": "\r\n\u001bD\u001b[2F\u001b[0m\u001bE\u001b[4P\u001b7"
+  },
+  {
+   "at": 140,
+   "op": "output",
+   "data": "\u001b(0qxlk\u001b(B\u001b[0J\u001b[2Z\u001b[2P\u001b[3X\u001b[38;5;99m\u001b[4A"
+  },
+  {
+   "at": 150,
+   "op": "output",
+   "data": "\u001b[0g\u001b[1K\u001b[2L\u001b[3I\u001b[3X\u001b[3M\u001b[4C\u001bH"
+  },
+  {
+   "at": 160,
+   "op": "output",
+   "data": "\r\n"
+  },
+  {
+   "at": 170,
+   "op": "output",
+   "data": "\u001b[3B\u001b[4;5r"
+  },
+  {
+   "at": 180,
+   "op": "output",
+   "data": "\u001b[u\u001b[1;1r"
+  },
+  {
+   "at": 181,
+   "op": "screen"
+  },
+  {
+   "at": 190,
+   "op": "output",
+   "data": "\u001b[?47lgamma \u000f\u001bH\u001bH"
+  },
+  {
+   "at": 200,
+   "op": "output",
+   "data": "\u001b[7m\u001b[s\u001b7\u001b[!p  \u001b]0;⠋ job\u0007\u001b7\u001b[7m"
+  },
+  {
+   "at": 210,
+   "op": "output",
+   "data": "\u001b[s\u001b7"
+  },
+  {
+   "at": 220,
+   "op": "output",
+   "data": "\u001bM\u001b[2C\u001b[1b\u001b[3J\u001bD\u001b[?47h"
+  },
+  {
+   "at": 230,
+   "op": "output",
+   "data": "\u001b[5A\u001b[6;6r\u001bM\u001b[20l"
+  },
+  {
+   "at": 240,
+   "op": "output",
+   "data": "😀\u001b[?6h\u001b[0J\u001b[3d\u001b[3M\u001b[?1049l"
+  },
+  {
+   "at": 241,
+   "op": "screen"
+  },
+  {
+   "at": 250,
+   "op": "output",
+   "data": "\u001b[4X\r\u001b[?1048l\r\n\u001b[u\u001b[5;4H"
+  },
+  {
+   "at": 260,
+   "op": "output",
+   "data": "\u001b[5G\u001b[?45h\u001b[4X"
+  },
+  {
+   "at": 270,
+   "op": "output",
+   "data": "\u001b[10;4r\u001b[2T\u001bH\u001b[20l\u001b[1S\u001b[!p\u001b[5A\u001b[1M"
+  },
+  {
+   "at": 280,
+   "op": "output",
+   "data": "\u001b[1P😀\u001b[2K"
+  },
+  {
+   "at": 290,
+   "op": "output",
+   "data": "\u001b[2I\u001b[3b"
+  },
+  {
+   "at": 300,
+   "op": "output",
+   "data": "\u001b[s\r\n\u001b]0;⠋ job\u0007\u001bE\u001b[3F\u001b[2S\u001b[!p\u001b[u"
+  },
+  {
+   "at": 301,
+   "op": "screen"
+  },
+  {
+   "at": 310,
+   "op": "output",
+   "data": "\u001b[0K\u001b[r\u001b[4d\u001b]0;a\u0007\u001b[!p"
+  },
+  {
+   "at": 320,
+   "op": "output",
+   "data": "\u001b[4X\u001b(0qxlk\u001b(B"
+  },
+  {
+   "at": 330,
+   "op": "output",
+   "data": "é\u001bE"
+  },
+  {
+   "at": 340,
+   "op": "output",
+   "data": "\u001b[0gg"
+  },
+  {
+   "at": 350,
+   "op": "output",
+   "data": "--\f\u001b[1E\u001b[2d\u001b[2A日本"
+  },
+  {
+   "at": 360,
+   "op": "output",
+   "data": "\u001b[1S\u001b[9;5r\u001bD\u001bM  "
+  },
+  {
+   "at": 361,
+   "op": "screen"
+  },
+  {
+   "at": 370,
+   "op": "output",
+   "data": "\u001b[38;5;99m\u001b[3B\u000f\u001b[4A\u001b[1K\u001b[u"
+  },
+  {
+   "at": 380,
+   "op": "output",
+   "data": "\u001b[1;1r\u001b[3L\r\n"
+  },
+  {
+   "at": 390,
+   "op": "output",
+   "data": "\u001b[!p\u001b8\r\n\u001b[s\u001b[r"
+  },
+  {
+   "at": 400,
+   "op": "output",
+   "data": "\u001b(0qxlk\u001b(B\u001bH"
+  },
+  {
+   "at": 410,
+   "op": "output",
+   "data": "\r\n\u001b[?47h\u001b[!p\u001b[8G"
+  },
+  {
+   "at": 420,
+   "op": "output",
+   "data": "\u001b[20l\u001b[?47l\u001bM"
+  },
+  {
+   "at": 421,
+   "op": "screen"
+  },
+  {
+   "at": 430,
+   "op": "output",
+   "data": "\u001b[4P\u001bM"
+  },
+  {
+   "at": 440,
+   "op": "output",
+   "data": "\u001b8\u001bH\u001b[9D"
+  },
+  {
+   "at": 450,
+   "op": "output",
+   "data": "\u001b[1Z\r\n\r\n\u001b]0;x y\u0007"
+  },
+  {
+   "at": 460,
+   "op": "output",
+   "data": "\u001b[2b\u001b[4B\u001b[4A\u001b[10G"
+  },
+  {
+   "at": 470,
+   "op": "output",
+   "data": "\u001bE\u001b[3Z"
+  },
+  {
+   "at": 480,
+   "op": "output",
+   "data": "\u001b[u"
+  },
+  {
+   "at": 481,
+   "op": "screen"
+  },
+  {
+   "at": 490,
+   "op": "output",
+   "data": "\u001bM\u001b[s"
+  },
+  {
+   "at": 500,
+   "op": "output",
+   "data": "\u001b[3;11H\r\n\u001b[s--\u001b[r\u001bE"
+  },
+  {
+   "at": 510,
+   "op": "output",
+   "data": "\u001b[?1049h\u001b[2Cx\u001b[1m\u001b[s\u001b[?1048h"
+  },
+  {
+   "at": 520,
+   "op": "output",
+   "data": "\u001b[31m\u001b[4d\r\n"
+  },
+  {
+   "at": 530,
+   "op": "output",
+   "data": "\u001b[1L"
+  },
+  {
+   "at": 540,
+   "op": "output",
+   "data": "\u001b[1;1H\u001b8\r\n\u001b[u\b\u001bE"
+  },
+  {
+   "at": 541,
+   "op": "screen"
+  },
+  {
+   "at": 550,
+   "op": "output",
+   "data": "\u001b[2X\u001b[3I"
+  },
+  {
+   "at": 560,
+   "op": "output",
+   "data": "\u001b[2;4H\u001b[u\u001b[6D\u001b[3d\u001b[3F\r\n\u001b[?6l"
+  },
+  {
+   "at": 570,
+   "op": "output",
+   "data": "\u001b[4C\u001b[3B\u001b[K\u000e\r\n\u001b[3M"
+  },
+  {
+   "at": 580,
+   "op": "output",
+   "data": "\u001b[6;8H\u001b[4@\u001bD"
+  },
+  {
+   "at": 590,
+   "op": "output",
+   "data": "\u001b[u\u001b(0qxlk\u001b(B\u001b[6C\u001b[u\u001b[0g\u001b[3J"
+  },
+  {
+   "at": 600,
+   "op": "output",
+   "data": "\u001b[u\u001b[r"
+  },
+  {
+   "at": 601,
+   "op": "screen"
+  },
+  {
+   "at": 700,
+   "op": "screen"
+  }
+ ],
+ "end": 1100,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "screen",
+    "at": 61,
+    "text": "\n\n\n         012\n3456789─│┌┐\n",
+    "cursor": {
+     "x": 0,
+     "y": 1
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 6
+   },
+   {
+    "kind": "title",
+    "at": 110,
+    "title": "x y"
+   },
+   {
+    "kind": "screen",
+    "at": 121,
+    "text": "\n\n\n\n\n",
+    "cursor": {
+     "x": 11,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "x y",
+    "activity": 12
+   },
+   {
+    "kind": "screen",
+    "at": 181,
+    "text": "\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 3
+    },
+    "altScreen": false,
+    "title": "x y",
+    "activity": 18
+   },
+   {
+    "kind": "state",
+    "at": 200,
+    "state": "working",
+    "decidedBy": "title",
+    "prev": "unknown"
+   },
+   {
+    "kind": "title",
+    "at": 200,
+    "title": "⠋ job"
+   },
+   {
+    "kind": "screen",
+    "at": 241,
+    "text": "\n\n\ngamma   \n\n",
+    "cursor": {
+     "x": 8,
+     "y": 3
+    },
+    "altScreen": false,
+    "title": "⠋ job",
+    "activity": 24
+   },
+   {
+    "kind": "title",
+    "at": 300,
+    "title": "⠋ job"
+   },
+   {
+    "kind": "screen",
+    "at": 301,
+    "text": "\ngamma   \n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "⠋ job",
+    "activity": 30
+   },
+   {
+    "kind": "state",
+    "at": 310,
+    "state": "idle",
+    "decidedBy": "title",
+    "prev": "working"
+   },
+   {
+    "kind": "title",
+    "at": 310,
+    "title": "a"
+   },
+   {
+    "kind": "screen",
+    "at": 361,
+    "text": "gamm    \n\n─│┌┐é\ng--\n\n",
+    "cursor": {
+     "x": 6,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "a",
+    "activity": 36
+   },
+   {
+    "kind": "screen",
+    "at": 421,
+    "text": "─│┌┐\n\n\n        \n\n─│┌┐é",
+    "cursor": {
+     "x": 7,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "a",
+    "activity": 42
+   },
+   {
+    "kind": "title",
+    "at": 450,
+    "title": "x y"
+   },
+   {
+    "kind": "screen",
+    "at": 481,
+    "text": "\n─│┌┐\n\n\n        \n",
+    "cursor": {
+     "x": 0,
+     "y": 1
+    },
+    "altScreen": false,
+    "title": "x y",
+    "activity": 48
+   },
+   {
+    "kind": "screen",
+    "at": 541,
+    "text": "\n  x\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 2
+    },
+    "altScreen": true,
+    "title": "x y",
+    "activity": 54
+   },
+   {
+    "kind": "screen",
+    "at": 601,
+    "text": "  x\n   qxlk\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": true,
+    "title": "x y",
+    "activity": 60
+   },
+   {
+    "kind": "screen",
+    "at": 700,
+    "text": "  x\n   qxlk\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": true,
+    "title": "x y",
+    "activity": 60
+   }
+  ]
+ }
+}

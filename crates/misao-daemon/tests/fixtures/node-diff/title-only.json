@@ -1,0 +1,241 @@
+{
+ "scrollback": 5000,
+ "name": "title-only",
+ "cmd": [
+  "bash"
+ ],
+ "cols": 80,
+ "rows": 24,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "\u001b]0;~ shell\u0007"
+  },
+  {
+   "at": 1000,
+   "op": "output",
+   "data": "\u001b]0;⠋ build\u0007"
+  },
+  {
+   "at": 1100,
+   "op": "info"
+  },
+  {
+   "at": 2200,
+   "op": "output",
+   "data": "\u001b]0;⠙ build\u0007"
+  },
+  {
+   "at": 2300,
+   "op": "info"
+  },
+  {
+   "at": 5500,
+   "op": "info"
+  },
+  {
+   "at": 6000,
+   "op": "output",
+   "data": "\u001b]0;done\u0007"
+  },
+  {
+   "at": 6100,
+   "op": "info"
+  },
+  {
+   "at": 7000,
+   "op": "output",
+   "data": "\u001b]0;\u0007"
+  },
+  {
+   "at": 7100,
+   "op": "info"
+  },
+  {
+   "at": 7500,
+   "op": "output",
+   "data": "\u001b]0;◐ spin\u0007"
+  },
+  {
+   "at": 7600,
+   "op": "output",
+   "data": "\u001b]0;plain\u0007"
+  },
+  {
+   "at": 7700,
+   "op": "info"
+  },
+  {
+   "at": 8000,
+   "op": "output",
+   "data": "\u001b]2;two;parts\u0007"
+  },
+  {
+   "at": 8010,
+   "op": "screen"
+  },
+  {
+   "at": 9000,
+   "op": "output",
+   "data": "\u001b]0;longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong\u001b\\"
+  },
+  {
+   "at": 9010,
+   "op": "screen"
+  }
+ ],
+ "end": 20000,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "title",
+    "at": 0,
+    "title": "~ shell"
+   },
+   {
+    "kind": "state",
+    "at": 1000,
+    "state": "working",
+    "decidedBy": "title",
+    "prev": "unknown"
+   },
+   {
+    "kind": "title",
+    "at": 1000,
+    "title": "⠋ build"
+   },
+   {
+    "kind": "info",
+    "at": 1100,
+    "agentState": "working",
+    "decidedBy": "title"
+   },
+   {
+    "kind": "title",
+    "at": 2200,
+    "title": "⠙ build"
+   },
+   {
+    "kind": "info",
+    "at": 2300,
+    "agentState": "working",
+    "decidedBy": "title"
+   },
+   {
+    "kind": "info",
+    "at": 5500,
+    "agentState": "working",
+    "decidedBy": "title"
+   },
+   {
+    "kind": "state",
+    "at": 6000,
+    "state": "idle",
+    "decidedBy": "bytes",
+    "prev": "working"
+   },
+   {
+    "kind": "state",
+    "at": 6000,
+    "state": "idle",
+    "decidedBy": "title",
+    "prev": "idle"
+   },
+   {
+    "kind": "title",
+    "at": 6000,
+    "title": "done"
+   },
+   {
+    "kind": "info",
+    "at": 6100,
+    "agentState": "idle",
+    "decidedBy": "title"
+   },
+   {
+    "kind": "state",
+    "at": 7000,
+    "state": "idle",
+    "decidedBy": "bytes",
+    "prev": "idle"
+   },
+   {
+    "kind": "title",
+    "at": 7000,
+    "title": ""
+   },
+   {
+    "kind": "info",
+    "at": 7100,
+    "agentState": "idle",
+    "decidedBy": "bytes"
+   },
+   {
+    "kind": "state",
+    "at": 7500,
+    "state": "working",
+    "decidedBy": "title",
+    "prev": "idle"
+   },
+   {
+    "kind": "title",
+    "at": 7500,
+    "title": "◐ spin"
+   },
+   {
+    "kind": "state",
+    "at": 7600,
+    "state": "idle",
+    "decidedBy": "title",
+    "prev": "working"
+   },
+   {
+    "kind": "title",
+    "at": 7600,
+    "title": "plain"
+   },
+   {
+    "kind": "info",
+    "at": 7700,
+    "agentState": "idle",
+    "decidedBy": "title"
+   },
+   {
+    "kind": "title",
+    "at": 8000,
+    "title": "two;parts"
+   },
+   {
+    "kind": "screen",
+    "at": 8010,
+    "text": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "two;parts",
+    "activity": 8
+   },
+   {
+    "kind": "title",
+    "at": 9000,
+    "title": "longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong"
+   },
+   {
+    "kind": "screen",
+    "at": 9010,
+    "text": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong",
+    "activity": 9
+   }
+  ]
+ }
+}
