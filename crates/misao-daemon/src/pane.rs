@@ -15,7 +15,7 @@ use tokio::sync::watch;
 use crate::ansi::AnsiLineAssembler;
 use crate::child_env::build_child_env;
 use crate::event_log::EventLog;
-use crate::foreground::read_foreground_command;
+use crate::foreground::ForegroundQuery;
 use crate::ids::new_pane_id;
 use crate::limits::{INPUT_QUEUE_BYTES, LINE_ENTRY_OVERHEAD};
 use crate::log::now_iso;
@@ -419,11 +419,17 @@ impl Pane {
     }
 
     /// `pane.info` の本体（所属の workspace / window とラベルは Daemon が渡す。Pane は親もラベルも知らない）。
-    pub fn info(&self, workspace: &str, window: &Value, labels: &Value) -> Value {
+    /// 前面プロセスの問い合わせ（走行中の pane だけ）。
+    pub fn foreground_query(&self) -> Option<ForegroundQuery> {
+        (self.state() == RunState::Running).then(|| ForegroundQuery {
+            pid: self.pid,
+            pty_pgid: self.pty_foreground_pgid(),
+        })
+    }
+
+    /// `pane.info` の本体（所属の workspace / window とラベル、前面プロセス名は呼び出し側が渡す。Pane は親もラベルも知らない）。
+    pub fn info(&self, workspace: &str, window: &Value, labels: &Value, fg_command: Option<String>) -> Value {
         let observed = self.observer.info();
-        let fg_command = (self.state() == RunState::Running)
-            .then(|| read_foreground_command(self.pid, || self.pty_foreground_pgid()))
-            .flatten();
         let inner = lock(&self.inner);
         let exit = inner.exit;
         let mut info = json!({
@@ -452,13 +458,13 @@ impl Pane {
         info
     }
 
-    /// pty の前面プロセスグループ（Linux 以外の Unix の `fgCommand` が使う。Windows の ConPTY には無い）。
+    /// pty の前面プロセスグループ（Linux 以外の Unix の `fgCommand` が使う。Linux は `/proc` から引くので pty を触らない）。
     fn pty_foreground_pgid(&self) -> Option<i32> {
-        #[cfg(unix)]
+        #[cfg(all(unix, not(target_os = "linux")))]
         {
             lock(&self.master).process_group_leader()
         }
-        #[cfg(not(unix))]
+        #[cfg(not(all(unix, not(target_os = "linux"))))]
         {
             None
         }

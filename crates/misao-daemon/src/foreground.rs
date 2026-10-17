@@ -197,43 +197,78 @@ fn script_name<'a>(command: &'a str, args: &'a [String], syntax: &InterpreterSyn
     command
 }
 
-/// 前面プロセスのコマンド名。`pty_foreground_pgid` は pty の前面プロセスグループ（Linux 以外の Unix で使う）。
-pub fn read_foreground_command(
-    pid: u32,
-    pty_foreground_pgid: impl FnOnce() -> Option<i32>,
-) -> Option<String> {
+/// 前面プロセスのコマンド名を知りたい pane。`pty_pgid` は pty の前面プロセスグループ（Linux 以外の Unix で使う。Linux は `/proc` から引く）。
+#[derive(Debug, Clone, Copy)]
+pub struct ForegroundQuery {
+    pub pid: u32,
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub pty_pgid: Option<i32>,
+}
+
+/// 前面プロセスのコマンド名を、問い合わせの順に返す。取れなければ None。
+/// Linux は pane ごとに `/proc` を読む。他の Unix は、まとめて `ps` を 1 回だけ起動する（pane が多い一覧で pane ごとに起動しない）。
+pub fn read_foreground_commands(queries: &[ForegroundQuery]) -> Vec<Option<String>> {
     #[cfg(target_os = "linux")]
     {
-        let _ = pty_foreground_pgid;
-        let pgid = parse_foreground_pgid(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)?;
-        let raw = std::fs::read(format!("/proc/{pgid}/cmdline")).ok()?;
-        let mut argv: Vec<String> = raw
-            .split(|&b| b == 0)
-            .map(|part| String::from_utf8_lossy(part).into_owned())
-            .collect();
-        if argv.last().is_some_and(String::is_empty) {
-            argv.pop();
-        }
-        command_name_from_argv(&argv)
+        queries.iter().map(|q| linux_foreground_command(q.pid)).collect()
     }
     #[cfg(all(unix, not(target_os = "linux")))]
     {
-        let _ = pid;
-        let pgid = pty_foreground_pgid().filter(|&pgid| pgid > 0)?;
-        let output = std::process::Command::new("ps")
-            .args(["-o", "comm=", "-p", &pgid.to_string()])
-            .output()
-            .ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        sanitize_command_name(basename(String::from_utf8_lossy(&output.stdout).trim()))
+        ps_foreground_commands(queries)
     }
     #[cfg(not(unix))]
     {
-        let _ = (pid, pty_foreground_pgid);
-        None
+        vec![None; queries.len()]
     }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_foreground_command(pid: u32) -> Option<String> {
+    let pgid = parse_foreground_pgid(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)?;
+    let raw = std::fs::read(format!("/proc/{pgid}/cmdline")).ok()?;
+    let mut argv: Vec<String> = raw
+        .split(|&b| b == 0)
+        .map(|part| String::from_utf8_lossy(part).into_owned())
+        .collect();
+    if argv.last().is_some_and(String::is_empty) {
+        argv.pop();
+    }
+    command_name_from_argv(&argv)
+}
+
+/// `ps -o pid=,comm= -p a,b,c` の出力から pid -> 実行ファイル名の表を作る。comm は空白を含みうるので、最初の空白で分ける。
+#[cfg(any(all(unix, not(target_os = "linux")), test))]
+fn parse_ps_output(output: &str) -> std::collections::HashMap<i32, String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let (pid, comm) = line.trim().split_once(char::is_whitespace)?;
+            Some((pid.parse().ok()?, sanitize_command_name(basename(comm.trim()))?))
+        })
+        .collect()
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn ps_foreground_commands(queries: &[ForegroundQuery]) -> Vec<Option<String>> {
+    let pgids: Vec<i32> = queries
+        .iter()
+        .filter_map(|q| q.pty_pgid.filter(|&p| p > 0))
+        .collect();
+    if pgids.is_empty() {
+        return vec![None; queries.len()];
+    }
+    let list = pgids.iter().map(i32::to_string).collect::<Vec<_>>().join(",");
+    let names = std::process::Command::new("ps")
+        .args(["-o", "pid=,comm=", "-p", &list])
+        .output()
+        .ok()
+        .filter(|output| output.status.success() || !output.stdout.is_empty())
+        .map(|output| parse_ps_output(&String::from_utf8_lossy(&output.stdout)))
+        .unwrap_or_default();
+    queries
+        .iter()
+        .map(|q| q.pty_pgid.and_then(|pgid| names.get(&pgid).cloned()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -260,6 +295,14 @@ mod tests {
         ] {
             assert!(!is_python(no), "{no}");
         }
+    }
+
+    #[test]
+    fn ps_output_is_parsed_per_pid_and_keeps_names_with_spaces() {
+        let names = parse_ps_output("  101 /usr/bin/vim\n  102 /Applications/My App/tool\nbad line\n  x y\n");
+        assert_eq!(names.get(&101).map(String::as_str), Some("vim"));
+        assert_eq!(names.get(&102).map(String::as_str), Some("tool"));
+        assert_eq!(names.len(), 2);
     }
 
     #[test]

@@ -10,6 +10,7 @@ use serde_json::{Map, Value, json};
 use tokio::task::JoinSet;
 
 use crate::core::{Core, State, to_value};
+use crate::foreground::{ForegroundQuery, read_foreground_commands};
 use crate::layout::ResolvedWindow;
 use crate::pane::{LinesSource, Pane, PaneOpenOptions, RunState};
 use crate::params::{
@@ -45,14 +46,42 @@ fn pane_exited() -> RpcFailure {
     RpcFailure::new(ErrorCode::PANE_EXITED, "pane has exited")
 }
 
-/// `pane.info` の本体。所属の window が消えていれば WindowNotFound。
-fn pane_info(state: &State, entry: &PaneEntry) -> RpcResult<Value> {
+/// `pane.info` を作るのに必要なもの。全体の lock の中で取っておき、lock を離してから info（前面プロセスの取得を含む）を作る。
+struct PaneSnapshot {
+    pane: Arc<Pane>,
+    workspace: String,
+    window: Value,
+    labels: Value,
+}
+
+/// 所属の window が消えていれば WindowNotFound。
+fn snapshot(state: &State, entry: &PaneEntry) -> RpcResult<PaneSnapshot> {
     let location = state.layout.window_ref(&entry.window_id)?;
-    Ok(entry.pane.info(
-        &location.workspace,
-        &to_value(&location.window)?,
-        &to_value(&entry.labels)?,
-    ))
+    Ok(PaneSnapshot {
+        pane: Arc::clone(&entry.pane),
+        workspace: location.workspace.clone(),
+        window: to_value(&location.window)?,
+        labels: to_value(&entry.labels)?,
+    })
+}
+
+/// スナップショットから `pane.info` の結果を作る。前面プロセスは、全 pane ぶんをまとめて取る。
+fn render_infos(snapshots: &[PaneSnapshot]) -> Vec<Value> {
+    let queries: Vec<(usize, ForegroundQuery)> = snapshots
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| s.pane.foreground_query().map(|q| (i, q)))
+        .collect();
+    let names = read_foreground_commands(&queries.iter().map(|&(_, q)| q).collect::<Vec<_>>());
+    let mut fg: Vec<Option<String>> = vec![None; snapshots.len()];
+    for ((i, _), name) in queries.iter().zip(names) {
+        fg[*i] = name;
+    }
+    snapshots
+        .iter()
+        .zip(fg)
+        .map(|(s, fg)| s.pane.info(&s.workspace, &s.window, &s.labels, fg))
+        .collect()
 }
 
 fn live_pane(registry: &PaneRegistry, pane_id: &str) -> RpcResult<Arc<Pane>> {
@@ -147,25 +176,30 @@ impl Core {
 
     pub(crate) fn pane_info(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: PaneRefParams = params::parse("pane.info", raw)?;
-        let state = self.state();
-        pane_info(&state, state.registry.get_or_throw(p.pane_id.as_str())?)
+        let snapshot = {
+            let state = self.state();
+            snapshot(&state, state.registry.get_or_throw(p.pane_id.as_str())?)?
+        };
+        Ok(render_infos(&[snapshot]).remove(0))
     }
 
     pub(crate) fn pane_list(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: PaneListParams = params::parse("pane.list", raw)?;
         let filter = p.filter.unwrap_or_default();
-        let state = self.state();
-        let window_ids: Option<HashSet<String>> = filter
-            .workspace
-            .as_ref()
-            .map(|w| state.layout.window_ids(w.as_str()).into_iter().collect());
-        let infos = state
-            .registry
-            .filter(filter.state, filter.labels.as_ref(), window_ids.as_ref())
-            .into_iter()
-            .map(|entry| pane_info(&state, entry))
-            .collect::<RpcResult<Vec<_>>>()?;
-        Ok(Value::Array(infos))
+        let snapshots = {
+            let state = self.state();
+            let window_ids: Option<HashSet<String>> = filter
+                .workspace
+                .as_ref()
+                .map(|w| state.layout.window_ids(w.as_str()).into_iter().collect());
+            state
+                .registry
+                .filter(filter.state, filter.labels.as_ref(), window_ids.as_ref())
+                .into_iter()
+                .map(|entry| snapshot(&state, entry))
+                .collect::<RpcResult<Vec<_>>>()?
+        };
+        Ok(Value::Array(render_infos(&snapshots)))
     }
 
     pub(crate) fn pane_write(&self, raw: Raw<'_>) -> RpcResult<Value> {
