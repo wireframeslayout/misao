@@ -112,6 +112,10 @@ pub struct Pane {
     /// 入力を pty へ書くスレッドへの送り口（pty の書き込みは詰まりうるので、RPC のスレッドでは書かない）。
     /// 子が終了すると外す（送り口を閉じて入力のスレッドと writer を終わらせる）。
     input: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
+    /// 出力の取り込み（リングへの格納と端末の解析）と resize を、受け取った順に画面へ反映するための順序づけ。
+    /// 解析は `inner` の外で行うので、これが無いと、格納済みの出力の解析の前に resize が入り、古い出力が新しいサイズで解析される。
+    /// ロックの順序: order -> inner -> observer。
+    order: Mutex<()>,
     /// 入力の待ち行列に溜まっているバイト数（上限は `INPUT_QUEUE_BYTES`）。
     input_queued: Arc<AtomicUsize>,
     /// 子のプロセス（リーダー）が終了し、`pane.exited` を出し終えたら true。
@@ -232,6 +236,7 @@ impl Pane {
                 child,
             })),
             input: Mutex::new(None),
+            order: Mutex::new(()),
             input_queued: Arc::new(AtomicUsize::new(0)),
             lines_tx: watch::Sender::new(0),
             exited_tx: watch::Sender::new(false),
@@ -321,6 +326,7 @@ impl Pane {
     }
 
     fn on_output(&self, data: &[u8]) {
+        let _order = lock(&self.order);
         let ts = now_iso();
         let new_head = {
             let mut inner = lock(&self.inner);
@@ -405,6 +411,7 @@ impl Pane {
 
     /// client のサイズを記録し、そのクライアントをサイズ所有者にして pty へ適用する。
     pub fn resize(&self, cols: u64, rows: u64, client: Option<&str>) -> Result<(), String> {
+        let _order = lock(&self.order);
         let mut inner = lock(&self.inner);
         let decision = inner.sizes.record(client, cols, rows);
         self.apply(&mut inner, &decision)
@@ -412,6 +419,7 @@ impl Pane {
 
     /// client が所有者でなく、サイズを記録済みなら、そのサイズへ戻す。変更したら true。
     pub fn claim_size(&self, client: &str) -> Result<bool, String> {
+        let _order = lock(&self.order);
         let mut inner = lock(&self.inner);
         let Some(decision) = inner.sizes.claim(client) else {
             return Ok(false);

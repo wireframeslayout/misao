@@ -247,3 +247,86 @@ async fn a_cancelled_close_does_not_restart_the_clean_up_for_the_next_close() {
     assert_eq!(pane.state(), RunState::Exited);
     assert_eq!(crate::pty::group_state(pane.pid), GroupState::Empty);
 }
+
+fn quiet_pane() -> Arc<Pane> {
+    let socket = PathBuf::from("/tmp/unused.sock");
+    Pane::spawn(PaneOpenOptions {
+        cmd: vec!["sleep".into(), "30".into()],
+        cwd: None,
+        env: BTreeMap::new(),
+        ephemeral_env: BTreeMap::new(),
+        cols: Some(10),
+        rows: Some(3),
+        socket_path: &socket,
+        raw_ring_bytes: 1024,
+        lines_ring_bytes: 1024,
+        scrollback: 10,
+        profiles: Vec::new(),
+        events: Arc::new(EventLog::new(10)),
+    })
+    .unwrap()
+}
+
+/// 出力の取り込みと resize は、受け取った順に画面へ反映される（取り込み中に resize が割り込まない）。
+#[test]
+fn a_resize_waits_for_the_output_being_ingested_and_the_output_waits_for_a_resize() {
+    let pane = quiet_pane();
+    let done = Arc::new(AtomicBool::new(false));
+    let order = lock(&pane.order);
+    let resizing = {
+        let (pane, done) = (Arc::clone(&pane), Arc::clone(&done));
+        std::thread::spawn(move || {
+            pane.resize(20, 3, None).unwrap();
+            done.store(true, Ordering::Release);
+        })
+    };
+    std::thread::sleep(Duration::from_millis(150));
+    assert!(
+        !done.load(Ordering::Acquire),
+        "resize must not overtake the output being ingested"
+    );
+    drop(order);
+    resizing.join().unwrap();
+    assert_eq!(pane.size(), (20, 3));
+
+    // 逆に、resize の途中では出力の取り込みも待つ
+    let order = lock(&pane.order);
+    let ingesting = {
+        let pane = Arc::clone(&pane);
+        std::thread::spawn(move || pane.on_output(b"x"))
+    };
+    std::thread::sleep(Duration::from_millis(150));
+    assert_eq!(
+        pane.screen().text.trim(),
+        "",
+        "the output must wait for the ordering lock"
+    );
+    drop(order);
+    ingesting.join().unwrap();
+    assert_eq!(pane.screen().text.trim(), "x");
+    crate::pty::kill_tree(pane.pid);
+}
+
+/// 出力と resize を別のスレッドから並行させても、画面は壊れない（順序そのものは上のテストが保証する）。
+#[test]
+fn concurrent_output_and_resize_leave_a_consistent_screen() {
+    for _ in 0..30 {
+        let pane = quiet_pane();
+        let (a, b) = (Arc::clone(&pane), Arc::clone(&pane));
+        let writer = std::thread::spawn(move || {
+            for _ in 0..20 {
+                a.on_output(b"0123456789abcdef\r\n");
+            }
+        });
+        let resizer = std::thread::spawn(move || {
+            for cols in [4_u64, 30, 6, 12] {
+                b.resize(cols, 3, None).unwrap();
+            }
+        });
+        writer.join().unwrap();
+        resizer.join().unwrap();
+        let text = pane.screen().text;
+        assert_eq!(text.split('\n').count(), 3);
+        crate::pty::kill_tree(pane.pid);
+    }
+}
