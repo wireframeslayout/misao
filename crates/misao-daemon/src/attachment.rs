@@ -13,6 +13,9 @@ use serde_json::{Value, json};
 
 use crate::connection::ConnHandle;
 
+/// 応答前に溜める出力の上限（送信キューの上限と同じ）。
+const MAX_PENDING_BYTES: usize = crate::connection::MAX_WRITABLE_BYTES;
+
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// `pane.output` 通知の 1 行（NDJSON）。`replay` は snapshot の再生だけに付く。
@@ -39,8 +42,12 @@ enum State {
         replay: Vec<Vec<u8>>,
         head: u64,
         queue: Vec<Queued>,
+        /// `queue` に溜めたバイト数。応答が遅れても無制限には溜めない。
+        queued_bytes: usize,
     },
     Live,
+    /// 溜めすぎて接続を切った。以後は何も届けない。
+    Dropped,
 }
 
 pub struct Attachment {
@@ -67,6 +74,7 @@ impl Attachment {
                 replay: Vec::new(),
                 head,
                 queue: Vec::new(),
+                queued_bytes: 0,
             }),
         })
     }
@@ -84,12 +92,28 @@ impl Attachment {
 
     /// 1 回の出力を届ける。`line` は同じ pane の全 attach で共通の通知（ライブで送る形）。
     pub fn deliver(&self, seq: u64, ts: &str, data: &[u8], line: &[u8]) {
-        match &mut *lock(&self.state) {
-            State::Pending { queue, .. } => queue.push(Queued {
-                seq,
-                ts: ts.to_string(),
-                data: data.to_vec(),
-            }),
+        let mut state = lock(&self.state);
+        match &mut *state {
+            State::Pending {
+                queue, queued_bytes, ..
+            } => {
+                if *queued_bytes + data.len() > MAX_PENDING_BYTES {
+                    // 応答前にこれ以上は溜められない。attach を諦めて接続を切る（接続の後始末が pane から外す）。
+                    *state = State::Dropped;
+                    drop(state);
+                    if let Some(conn) = self.conn.upgrade() {
+                        conn.destroy();
+                    }
+                    return;
+                }
+                *queued_bytes += data.len();
+                queue.push(Queued {
+                    seq,
+                    ts: ts.to_string(),
+                    data: data.to_vec(),
+                });
+            }
+            State::Dropped => {}
             State::Live => {
                 if let Some(conn) = self.conn.upgrade() {
                     conn.send_bytes(line.to_vec());
@@ -101,7 +125,13 @@ impl Attachment {
     /// 応答を送った後に呼ぶ。再生 → 溜めた出力 → ライブの順に切り替える。
     pub fn go_live(&self) {
         let mut state = lock(&self.state);
-        let State::Pending { replay, head, queue } = std::mem::replace(&mut *state, State::Live) else {
+        if !matches!(*state, State::Pending { .. }) {
+            return;
+        }
+        let State::Pending {
+            replay, head, queue, ..
+        } = std::mem::replace(&mut *state, State::Live)
+        else {
             return;
         };
         let Some(conn) = self.conn.upgrade() else {

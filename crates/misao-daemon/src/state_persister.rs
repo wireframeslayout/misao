@@ -61,7 +61,12 @@ impl StatePersister {
     /// 壊れた状態（存在しない window を指す pane など）は書かずに Err にする。成功したら遅らせていた保存を取り消す
     /// （失敗したとき、またはスナップショットの後に `save_soon` が呼ばれていたときは予約を残し、次の `flush` で保存する）。
     /// `generation` はスナップショットを取る前の `generation()`。
-    pub fn save(&self, _guard: &MutexGuard<'_, ()>, generation: u64, state: &PersistedState) -> Result<(), String> {
+    pub fn save(
+        &self,
+        _guard: &MutexGuard<'_, ()>,
+        generation: u64,
+        state: &PersistedState,
+    ) -> Result<(), String> {
         let issues = state.consistency_issues();
         if !issues.is_empty() {
             return Err(format!(
@@ -155,7 +160,11 @@ mod tests {
         let snapshot_taken = Arc::new(Barrier::new(2));
         let resized = Arc::new(Barrier::new(2));
         let saver = {
-            let (persister, snapshot_taken, resized) = (Arc::clone(&persister), Arc::clone(&snapshot_taken), Arc::clone(&resized));
+            let (persister, snapshot_taken, resized) = (
+                Arc::clone(&persister),
+                Arc::clone(&snapshot_taken),
+                Arc::clone(&resized),
+            );
             std::thread::spawn(move || {
                 let guard = persister.write_guard();
                 let generation = persister.generation();
@@ -169,11 +178,16 @@ mod tests {
         persister.save_soon();
         resized.wait();
         saver.join().unwrap();
-        assert!(persister.has_pending(), "the resize after the snapshot must still be saved later");
+        assert!(
+            persister.has_pending(),
+            "the resize after the snapshot must still be saved later"
+        );
         // 新しいスナップショットで保存すれば予約は消える
         let guard = persister.write_guard();
         let generation = persister.generation();
-        persister.save(&guard, generation, &PersistedState::empty()).unwrap();
+        persister
+            .save(&guard, generation, &PersistedState::empty())
+            .unwrap();
         assert!(!persister.has_pending());
     }
 }

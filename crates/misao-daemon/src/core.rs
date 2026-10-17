@@ -166,7 +166,9 @@ impl Core {
                 panes: state.registry.to_persisted().map_err(RpcFailure::internal)?,
             }
         };
-        persister.save(&guard, generation, &snapshot).map_err(RpcFailure::internal)
+        persister
+            .save(&guard, generation, &snapshot)
+            .map_err(RpcFailure::internal)
     }
 
     /// サイズのような、再起動後の表示用の付帯情報の保存を遅らせて予約する。

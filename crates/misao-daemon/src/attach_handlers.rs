@@ -110,7 +110,9 @@ impl Core {
                 self.persist_soon();
             }
             Ok(None) => {}
-            Err(e) => self.log.error(&format!("cannot restore the pane size after detach: {e}")),
+            Err(e) => self
+                .log
+                .error(&format!("cannot restore the pane size after detach: {e}")),
         }
     }
 
