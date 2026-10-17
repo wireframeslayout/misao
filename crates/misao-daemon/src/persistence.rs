@@ -347,9 +347,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().join("real.json");
         fs::write(&real, sample()).unwrap();
-        let link = dir.path().join("persistence.json");
         #[cfg(unix)]
         {
+            let link = dir.path().join("persistence.json");
             std::os::unix::fs::symlink(&real, &link).unwrap();
             assert!(
                 load_persisted_state(&link)
