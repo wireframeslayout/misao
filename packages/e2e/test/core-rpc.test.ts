@@ -8,6 +8,7 @@ import type { MisaoClient } from '@misao/sdk';
 import { MisaoRpcError } from '@misao/sdk';
 import { startDaemonProcess } from './helpers/daemon-process.js';
 import type { DaemonProcess } from './helpers/daemon-process.js';
+import { IS_WINDOWS, nodeEval, sleepCmd } from './helpers/platform.js';
 import { sleep, waitFor } from './helpers/wait.js';
 
 // Node 版と Rust 版 (MISAO_DAEMON_BIN) の両方で通る、第 2 段の範囲（作業場所 / 窓 / ペイン、PTY、行の記録、イベント）の契約。
@@ -33,6 +34,9 @@ async function rpcCode(promise: Promise<unknown>): Promise<number> {
 }
 
 const sh = (script: string): string[] => ['sh', '-c', script];
+
+/** Windows ではシェルの代わりに node で同じことをする（ConPTY の中で動く）。JSON.stringify でパスを安全に埋め込む。 */
+const js = (script: string): string[] => nodeEval(script);
 
 async function waitForExit(paneId: string): Promise<Awaited<ReturnType<typeof client.request<'pane.info'>>>> {
   await waitFor(async () => (await client.request('pane.info', { paneId })).processState === 'exited', `pane ${paneId} to exit`);
@@ -79,8 +83,9 @@ describe('作業場所と窓', () => {
 describe('ペイン', () => {
   test('起動・env の継承と ephemeralEnv・cwd・終了コード', async () => {
     const out = path.join(daemon.dir, 'env.out');
+    const winScript = `const e = process.env; require('fs').writeFileSync(${JSON.stringify(out)}, process.cwd() + '\\n' + [e.KEPT, e.SECRET, e.MISAO_PANE_ID, e.TERM, e.MISAO_SOCKET].join('|') + '\\n'); process.exit(4)`;
     const { paneId } = await client.request('pane.open', {
-      cmd: sh(`pwd > ${out}; echo "$KEPT|$SECRET|$MISAO_PANE_ID|$TERM|$MISAO_SOCKET" >> ${out}; exit 4`),
+      cmd: IS_WINDOWS ? js(winScript) : sh(`pwd > ${out}; echo "$KEPT|$SECRET|$MISAO_PANE_ID|$TERM|$MISAO_SOCKET" >> ${out}; exit 4`),
       cwd: daemon.dir,
       env: { KEPT: 'env-value', SECRET: 'persisted' },
       ephemeralEnv: { SECRET: 'ephemeral' },
@@ -100,8 +105,11 @@ describe('ペイン', () => {
 
   test('入力と resize', async () => {
     const out = path.join(daemon.dir, 'tty.out');
+    // stty size は「行 列」。Windows は node が端末の大きさ（getWindowSize は [列, 行]）を同じ形で書く。
+    const winScript = `const fs = require('fs'); const size = () => { const [c, r] = process.stdout.getWindowSize(); return r + ' ' + c; };
+      fs.appendFileSync(${JSON.stringify(out)}, size() + '\\n'); process.stdin.once('data', (d) => { fs.appendFileSync(${JSON.stringify(out)}, 'got:' + String(d).trim() + '\\n' + size() + '\\n'); process.exit(0); })`;
     const { paneId } = await client.request('pane.open', {
-      cmd: sh(`stty size > ${out}; read a; echo "got:$a" >> ${out}; stty size >> ${out}`),
+      cmd: IS_WINDOWS ? js(winScript) : sh(`stty size > ${out}; read a; echo "got:$a" >> ${out}; stty size >> ${out}`),
       cols: 100,
       rows: 30,
     });
@@ -118,7 +126,9 @@ describe('ペイン', () => {
 
   test('close はバックグラウンドの子も含めて止める', async () => {
     const pidFile = path.join(daemon.dir, 'bg.pid');
-    const { paneId } = await client.request('pane.open', { cmd: sh(`sleep 300 & echo $! > ${pidFile}; wait`) });
+    // Windows: 孫プロセス（node が起動した、さらに別の node）が Job Object で止まること
+    const winScript = `const c = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 300000)'], { stdio: 'ignore' }); require('fs').writeFileSync(${JSON.stringify(pidFile)}, c.pid + '\\n'); setTimeout(() => {}, 300000)`;
+    const { paneId } = await client.request('pane.open', { cmd: IS_WINDOWS ? js(winScript) : sh(`sleep 300 & echo $! > ${pidFile}; wait`) });
     const child = Number(await readLines(pidFile, 1));
     assert.ok(isAlive(child));
     await client.request('pane.close', { paneId });
@@ -128,7 +138,7 @@ describe('ペイン', () => {
   test('窓・作業場所を閉じると配下のペインも閉じる', async () => {
     await client.request('workspace.create', { name: 'doomed' });
     const window = await client.request('window.create', { workspace: 'doomed', name: 'w' });
-    const { paneId } = await client.request('pane.open', { cmd: ['sleep', '300'], windowId: window.windowId });
+    const { paneId } = await client.request('pane.open', { cmd: sleepCmd(), windowId: window.windowId });
     await client.request('workspace.close', { name: 'doomed' });
     assert.equal(await rpcCode(client.request('pane.info', { paneId })), ErrorCode.PaneNotFound);
   });
@@ -137,7 +147,9 @@ describe('ペイン', () => {
 describe('行の記録', () => {
   test('ANSI を除いた行が since=0 から届き、最後の改行なしの行も流れる', async () => {
     const { epoch } = await client.request('server.info', {});
-    const { paneId } = await client.request('pane.open', { cmd: sh(String.raw`printf '\033[31mred\033[0m a\r\n\033]0;t\007b\nlast'`) });
+    const printed = String.raw`printf '\033[31mred\033[0m a\r\n\033]0;t\007b\nlast'`;
+    const winPrint = `process.stdout.write('\\x1b[31mred\\x1b[0m a\\r\\n\\x1b]0;t\\x07b\\nlast')`;
+    const { paneId } = await client.request('pane.open', { cmd: IS_WINDOWS ? js(winPrint) : sh(printed) });
     const lines: Array<{ seq: number; text: string }> = [];
     const sub = await daemon.connect();
     await sub.subscribeLines(paneId, (l) => lines.push({ seq: l.seq, text: l.text }), { since: 0, epoch });
@@ -156,7 +168,8 @@ describe('行の記録', () => {
     try {
       const c = await small.connect();
       const { epoch } = await c.request('server.info', {});
-      const { paneId } = await c.request('pane.open', { cmd: sh('for i in 1 2 3 4 5; do echo line $i; done') });
+      const winLines = `for (let i = 1; i <= 5; i++) process.stdout.write('line ' + i + '\\r\\n')`;
+      const { paneId } = await c.request('pane.open', { cmd: IS_WINDOWS ? js(winLines) : sh('for i in 1 2 3 4 5; do echo line $i; done') });
       await waitFor(async () => (await c.request('pane.info', { paneId })).processState === 'exited', 'exit');
       const sub = (since: number, e: string = epoch) => c.request('pane.subscribe_lines', { paneId, since, epoch: e });
       assert.deepEqual({ ...(await sub(3)), epoch: undefined }, { gap: false, head: 5, epoch: undefined });
@@ -181,7 +194,8 @@ describe('イベント', () => {
     assert.equal(events[0]!.seq, 1);
 
     const mark = events.length;
-    const { paneId } = await client.request('pane.open', { cmd: sh('read x; exit 0'), labels: { k: 'v' } });
+    const winRead = `process.stdin.once('data', () => process.exit(0))`;
+    const { paneId } = await client.request('pane.open', { cmd: IS_WINDOWS ? js(winRead) : sh('read x; exit 0'), labels: { k: 'v' } });
     await client.request('pane.write', { paneId, data: 'secret-input\n', source: 'terminal' });
     await waitForExit(paneId);
     await client.request('pane.close', { paneId });

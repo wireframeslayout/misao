@@ -156,12 +156,27 @@ pub async fn read_file_when_ready(path: &std::path::Path) -> String {
 }
 
 /// pid のプロセスが生きているか（`kill -0`）。
+#[cfg(unix)]
 pub fn is_alive(pid: &str) -> bool {
     std::process::Command::new("kill")
         .args(["-0", pid])
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok_and(|s| s.success())
+}
+
+/// pid のプロセスが生きているか（`tasklist` の絞り込みに現れるか）。
+#[cfg(windows)]
+pub fn is_alive(pid: &str) -> bool {
+    std::process::Command::new("tasklist")
+        .args(["/NH", "/FI", &format!("PID eq {pid}")])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .is_ok_and(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .split_whitespace()
+                .any(|w| w == pid)
+        })
 }
 
 impl Client {

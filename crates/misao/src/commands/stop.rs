@@ -36,16 +36,19 @@ mod sys {
             .ok_or_else(|| CliError::runtime(&format!("デーモンの pid が正しくありません: {pid}")))
     }
 
-    /// プロセスが無くなるまで待つ。
-    pub async fn wait_exit(pid: u32, timeout: Duration) -> Result<bool, CliError> {
+    /// デーモンが片付けを終えるのを待つ。ペインを閉じ終えたデーモンは、最後にソケットを消して終わる。
+    /// デーモンの親が回収しないとゾンビのままプロセスが残るので、プロセスの有無だけでは判定しない。
+    pub async fn wait_exit(endpoint: &str, pid: u32, timeout: Duration) -> Result<bool, CliError> {
         let pid = to_pid(pid)?;
         let deadline = Instant::now() + timeout;
         loop {
-            match kill(pid, None) {
-                Err(Errno::ESRCH) => return Ok(true),
-                _ if Instant::now() >= deadline => return Ok(false),
-                _ => tokio::time::sleep(Duration::from_millis(50)).await,
+            if !std::path::Path::new(endpoint).exists() || kill(pid, None) == Err(Errno::ESRCH) {
+                return Ok(true);
             }
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 }
@@ -69,7 +72,7 @@ mod sys {
         }
     }
 
-    pub async fn wait_exit(pid: u32, timeout: Duration) -> Result<bool, CliError> {
+    pub async fn wait_exit(_endpoint: &str, pid: u32, timeout: Duration) -> Result<bool, CliError> {
         tokio::task::spawn_blocking(move || misao_daemon::wait_process_exit(pid, timeout))
             .await
             .map_err(|e| CliError::runtime(&e))?
@@ -96,7 +99,7 @@ pub async fn run(ctx: CommandContext<'_>) -> Result<i32, CliError> {
     })
     .await?;
     sys::request_stop(&endpoint, pid)?;
-    if !sys::wait_exit(pid, EXIT_TIMEOUT).await? {
+    if !sys::wait_exit(&endpoint, pid, EXIT_TIMEOUT).await? {
         return Err(CliError::runtime(&format!(
             "デーモン（pid {pid}）が {} 秒以内に終了しませんでした",
             EXIT_TIMEOUT.as_secs()

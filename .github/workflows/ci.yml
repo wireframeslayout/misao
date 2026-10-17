@@ -72,6 +72,7 @@ jobs:
       - run: node scripts/verify-release.mjs --tag v0.0.0-ci
 
   # Rust 版 (crates/)。Node 版の必須チェックとは別名にして、Rust 版が正式版になるまで必須にしない。
+  # macOS は arm64 (macos-14) と x64 (macos-15-intel)、Windows は x64。
   rust:
     name: Rust (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
@@ -81,6 +82,7 @@ jobs:
         include:
           - { name: linux, os: ubuntu-24.04 }
           - { name: macos, os: macos-14 }
+          - { name: macos-x64, os: macos-15-intel }
           - { name: windows, os: windows-2025 }
     steps:
       - uses: actions/checkout@v4
@@ -112,10 +114,20 @@ jobs:
 
   # 既存の e2e (packages/e2e) の全部と CLI のテスト (packages/cli/test) を Rust 版のバイナリ (デーモンと CLI の両方) に向けて流す。
   # オプトイン (claude / codex / systemd) は除く。大量出力のテスト (v3) は処理速度に左右されるので release ビルドで動かす。
+  # Windows は POSIX 前提のテスト (vim / bash / systemd) を分岐して skip し、CLI のテスト (packages/cli/test) は流さない
+  # (Node の内部のテストと POSIX の疑似端末に頼るため。同等のものは cargo test が持つ)。
   rust-e2e:
-    name: Rust (e2e)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    name: Rust e2e (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, os: ubuntu-24.04, bin: target/release/misao }
+          - { name: macos, os: macos-14, bin: target/release/misao }
+          - { name: macos-x64, os: macos-15-intel, bin: target/release/misao }
+          - { name: windows, os: windows-2025, bin: target/release/misao.exe }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -124,16 +136,44 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get install -y --no-install-recommends vim
+      - if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends vim
       - run: npm ci
       - run: cargo build --release --locked -p misao
-      - run: npm run test:e2e:rust -w @misao/e2e
+      - uses: actions/upload-artifact@v4
+        with:
+          name: misao-${{ matrix.name }}
+          path: ${{ matrix.bin }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: e2e
+        shell: bash
+        working-directory: packages/e2e
         env:
-          MISAO_DAEMON_BIN: ${{ github.workspace }}/target/release/misao
-      - run: npm run test:rust -w misao
+          MISAO_DAEMON_BIN: ${{ github.workspace }}/${{ matrix.bin }}
+          MISAO_CLI_BIN: ${{ github.workspace }}/${{ matrix.bin }}
+        run: node --conditions=@misao/source --import tsx --test --test-force-exit --test-concurrency=1 "test/**/*.test.ts"
+      - name: CLI tests
+        if: runner.os != 'Windows'
+        run: npm run test:rust -w misao
         env:
-          MISAO_CLI_BIN: ${{ github.workspace }}/target/release/misao
-          MISAO_DAEMON_BIN: ${{ github.workspace }}/target/release/misao
+          MISAO_CLI_BIN: ${{ github.workspace }}/${{ matrix.bin }}
+          MISAO_DAEMON_BIN: ${{ github.workspace }}/${{ matrix.bin }}
+
+  # launchd の配布用テンプレートで、実際に macOS のユーザーエージェントとして起動・停止できるか。
+  # ランナーに GUI セッションが無いと bootstrap できないので、結果を必須にはしない (continue-on-error)。
+  launchd:
+    name: macOS launchd
+    runs-on: macos-14
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p misao
+      - run: plutil -lint deploy/com.misao.daemon.binary.plist
+      - run: bash scripts/smoke-launchd.sh "$GITHUB_WORKSPACE/target/release/misao"
 
   # 試験的 (Issue #37): Windows ネイティブで型検査と単体テストが通るか、node-pty のネイティブ導入が通るかを見る。
   # 結果は必須チェックにしない（continue-on-error）。POSIX 前提のテストが落ちるうちは赤のままで構わない。

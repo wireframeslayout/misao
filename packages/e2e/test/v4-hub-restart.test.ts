@@ -8,6 +8,7 @@ import type { DaemonProcess } from './helpers/daemon-process.js';
 import { assertHubLogComplete, assertPaneSurvived, snapshotPane } from './helpers/hub-survival.js';
 import { startHubProcess, waitForHubSubscribed } from './helpers/hub-process.js';
 import type { HubProcess } from './helpers/hub-process.js';
+import { IS_WINDOWS, interactiveShell } from './helpers/platform.js';
 import { scale } from './helpers/scale.js';
 import { waitFor } from './helpers/wait.js';
 
@@ -16,7 +17,10 @@ type Restart = 'restart' | 'kill9';
 const ROUNDS = scale(60, 400);
 const DELAY_MS = 300;
 const AGENT_ID = 'V4';
-const PLAN = scale<Restart[]>(['restart', 'kill9', 'restart'], ['restart', 'restart', 'restart', 'restart', 'restart', 'kill9', 'kill9']);
+// Windows には SIGTERM が無く、hub の停止はどれも強制終了になる（hub の「きれいな再起動」は確かめられない）。
+const PLAN = IS_WINDOWS
+  ? scale<Restart[]>(['kill9', 'kill9'], ['kill9', 'kill9', 'kill9', 'kill9'])
+  : scale<Restart[]>(['restart', 'kill9', 'restart'], ['restart', 'restart', 'restart', 'restart', 'restart', 'kill9', 'kill9']);
 
 let daemon: DaemonProcess;
 let client: MisaoClient;
@@ -37,7 +41,7 @@ test('v4: hub を再起動 / kill -9 してもデーモンと pane は生き残�
   const summaryFile = path.join(daemon.dir, 'agent.summary');
   const startHub = (): HubProcess => startHubProcess({ socket: daemon.socket, stateFile, logFile });
 
-  const bash = await openPane(client, ['bash', '--norc']);
+  const bash = await openPane(client, interactiveShell());
   const agent = await openPane(client, fakeAgentCmd('markers', '--count', String(ROUNDS), '--id', AGENT_ID, '--delay', String(DELAY_MS), '--out', summaryFile));
   await typeKeys(client, bash, 'echo BASH_ALIVE_V4\r');
   await waitFor(async () => (await screenText(client, bash)).includes('BASH_ALIVE_V4'), 'bash to echo');

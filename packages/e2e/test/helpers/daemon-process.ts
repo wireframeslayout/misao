@@ -1,14 +1,16 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { MisaoClient } from '@misao/sdk';
 import { stopChild } from './child.js';
 import { nodeCmd } from './node-cmd.js';
-import { waitFor } from './wait.js';
+import { IS_WINDOWS, filePath } from './platform.js';
+import { sleep, waitFor } from './wait.js';
 
-const CLI_MAIN = new URL('../../../cli/src/main.ts', import.meta.url).pathname;
+const CLI_MAIN = filePath('../../../cli/src/main.ts', import.meta.url);
 
 /** どちらの実装のデーモンか。省略時は `MISAO_DAEMON_BIN` があれば Rust 版、無ければ Node 版。 */
 export type DaemonImpl = 'node' | 'rust';
@@ -59,10 +61,40 @@ function daemonCmd(configPath: string, socket: string, dir: string, impl: Daemon
   return (impl ?? (hasBin ? 'rust' : 'node')) === 'rust' ? [bin!, ...serveArgs] : nodeCmd(CLI_MAIN, ...serveArgs);
 }
 
+/** 接続口の名前。Unix はディレクトリの中のソケット、Windows は一意な名前付きパイプ。 */
+function endpointName(dir: string): string {
+  return IS_WINDOWS ? `\\\\.\\pipe\\misao-e2e-${process.pid}-${path.basename(dir)}` : path.join(dir, 'misao.sock');
+}
+
+/** 接続口に接続できるか（Windows のパイプにはファイルとしての存在確認が使えない）。 */
+function canConnect(socket: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const connection = net.connect(socket);
+    connection.once('connect', () => {
+      connection.destroy();
+      resolve(true);
+    });
+    connection.once('error', () => resolve(false));
+  });
+}
+
+/**
+ * デーモンを止める。Unix は SIGTERM。Windows には届けられるシグナルが無いので、`misao stop`（デーモンのバイナリ自身）で止める
+ * （ペインを閉じ、状態を保存して終わる）。終わらなければ強制終了する。
+ */
+async function stopDaemon(child: ChildProcess, socket: string, env: Record<string, string>): Promise<void> {
+  const bin = process.env['MISAO_DAEMON_BIN'];
+  if (IS_WINDOWS && bin !== undefined && bin !== '' && child.exitCode === null) {
+    await new Promise<void>((resolve) => execFile(bin, ['stop'], { env: { ...env, MISAO_SOCKET: socket }, timeout: 20_000 }, () => resolve()));
+    await Promise.race([new Promise<void>((resolve) => child.once('exit', () => resolve())), sleep(5000)]);
+  }
+  await stopChild(child);
+}
+
 /** 一時ディレクトリに misao.json を置き、`misao serve` を子プロセスで起動する。 */
 export async function startDaemonProcess(config: DaemonConfig = {}, options: DaemonOptions = {}): Promise<DaemonProcess> {
   const dir = options.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'misao-e2e-'));
-  const socket = path.join(dir, 'misao.sock');
+  const socket = endpointName(dir);
   const configPath = path.join(dir, 'misao.json');
   fs.writeFileSync(configPath, JSON.stringify({ ...config, logLevel: 'warn' }));
   const log = fs.openSync(path.join(dir, 'daemon.log'), 'a');
@@ -74,14 +106,15 @@ export async function startDaemonProcess(config: DaemonConfig = {}, options: Dae
   const clients: MisaoClient[] = [];
   const stop = async (): Promise<void> => {
     for (const client of clients) client.close();
-    await stopChild(child);
+    await stopDaemon(child, socket, cleanEnv());
     if (options.dir === undefined) fs.rmSync(dir, { recursive: true, force: true });
   };
   try {
     const earlyExit = new Promise<never>((_, reject) =>
       child.once('exit', (code) => reject(new Error(`daemon exited early (code ${code}): ${fs.readFileSync(path.join(dir, 'daemon.log'), 'utf8')}`))),
     );
-    await Promise.race([waitFor(() => fs.existsSync(socket), 'the daemon socket', { timeoutMs: 15_000 }), earlyExit]);
+    const isUp = IS_WINDOWS ? () => canConnect(socket) : () => fs.existsSync(socket);
+    await Promise.race([waitFor(isUp, 'the daemon socket', { timeoutMs: 15_000 }), earlyExit]);
   } catch (error) {
     await stop();
     throw error;

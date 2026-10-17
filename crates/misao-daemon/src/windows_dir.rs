@@ -158,3 +158,56 @@ unsafe fn find_broad_writer(dacl: *mut ACL) -> std::io::Result<Option<String>> {
     }
     Ok(None)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::process::Command;
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn a_fresh_directory_owned_by_the_user_is_accepted_and_created_when_missing() {
+        let tmp = TempDir::new().unwrap();
+        let state = tmp.path().join("new/data/persistence.json");
+        ensure_data_dir(&state).unwrap();
+        assert!(tmp.path().join("new/data").is_dir());
+        ensure_data_dir(&state).unwrap();
+    }
+
+    #[test]
+    fn a_file_in_place_of_the_directory_is_rejected() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("data");
+        std::fs::write(&file, "").unwrap();
+        let err = ensure_data_dir(&file.join("persistence.json")).unwrap_err();
+        assert!(
+            matches!(err, DaemonError::DataDirNotDirectory(_) | DaemonError::Io { .. }),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_directory_that_everyone_can_write_to_is_rejected() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("shared");
+        std::fs::create_dir(&dir).unwrap();
+        let granted = Command::new("icacls")
+            .arg(&dir)
+            .args(["/grant", "*S-1-1-0:(OI)(CI)(M)"])
+            .output()
+            .unwrap();
+        assert!(
+            granted.status.success(),
+            "{}",
+            String::from_utf8_lossy(&granted.stdout)
+        );
+        let err = ensure_data_dir(&dir.join("persistence.json")).unwrap_err();
+        assert!(
+            matches!(&err, DaemonError::DataDirWritableByPrincipal { principal, .. } if principal == "Everyone"),
+            "{err}"
+        );
+    }
+}

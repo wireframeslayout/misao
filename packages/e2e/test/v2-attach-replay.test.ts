@@ -8,11 +8,15 @@ import { ClientView } from './helpers/client-view.js';
 import type { Replay } from './helpers/client-view.js';
 import { startDaemonProcess } from './helpers/daemon-process.js';
 import type { DaemonProcess } from './helpers/daemon-process.js';
+import { IS_WINDOWS, interactiveShell, skipOnWindows } from './helpers/platform.js';
 import { sleep, waitFor, waitQuiet } from './helpers/wait.js';
 
 const REPLAYS: Replay[] = ['raw', 'snapshot'];
 const RAW_RING_BYTES = 1024 * 1024;
-const BULK_COMMAND = `seq 1 40000 | sed 's/$/ padding-text-to-lengthen-the-line-0123456789abcdef/'\r`;
+const PADDING = ' padding-text-to-lengthen-the-line-0123456789abcdef';
+const BULK_COMMAND = IS_WINDOWS
+  ? `node -e "for (let i = 1; i <= 40000; i++) process.stdout.write(i + '${PADDING}\\r\\n')"\r`
+  : `seq 1 40000 | sed 's/$/${PADDING}/'\r`;
 
 let daemon: DaemonProcess;
 let client: MisaoClient;
@@ -44,8 +48,8 @@ async function assertJoinsConverge(paneId: string, tag: string): Promise<void> {
 }
 
 describe('v2: 途中参加の画面再構成', () => {
-  test('bash の大量出力 (raw リング超過) の後に参加しても画面が一致する', { timeout: 120_000 }, async () => {
-    const paneId = await openPane(client, ['bash', '--norc']);
+  test('対話シェルの大量出力 (raw リング超過) の後に参加しても画面が一致する', { timeout: 120_000 }, async () => {
+    const paneId = await openPane(client, interactiveShell());
     const monitor = await observe(paneId, 'monitor-a');
     try {
       await typeKeys(client, paneId, BULK_COMMAND);
@@ -57,7 +61,7 @@ describe('v2: 途中参加の画面再構成', () => {
     await client.request('pane.close', { paneId });
   });
 
-  test('vim (alt screen) 編集中に参加しても画面が一致する。リング超過後も一致する', { timeout: 180_000 }, async () => {
+  test('vim (alt screen) 編集中に参加しても画面が一致する。リング超過後も一致する', { timeout: 180_000, ...skipOnWindows('vim が要る') }, async () => {
     const big = path.join(daemon.dir, 'big.txt');
     fs.writeFileSync(big, Array.from({ length: 5000 }, (_, i) => `line ${i} ` + 'x'.repeat(50)).join('\n') + '\n');
     const paneId = await openPane(client, ['bash', '--norc']);

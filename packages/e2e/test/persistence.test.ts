@@ -8,10 +8,12 @@ import { MisaoRpcError } from '@misao/sdk';
 import { paneInfo } from './helpers/agents.js';
 import { startDaemonProcess } from './helpers/daemon-process.js';
 import type { DaemonImpl } from './helpers/daemon-process.js';
+import { IS_WINDOWS, sleepCmd } from './helpers/platform.js';
 import { waitFor } from './helpers/wait.js';
 
 /** 実装をまたぐ確認は、Rust 版（`MISAO_DAEMON_BIN`）を指定したときだけ行う。 */
-const CROSS = (process.env['MISAO_DAEMON_BIN'] ?? '') !== '' ? {} : { skip: 'MISAO_DAEMON_BIN を指定したときだけ（Rust 版が要る）' };
+const CROSS =
+  (process.env['MISAO_DAEMON_BIN'] ?? '') === '' ? { skip: 'MISAO_DAEMON_BIN を指定したときだけ（Rust 版が要る）' } : IS_WINDOWS ? { skip: 'Node 版のデーモンは Windows の CI では動かさない（Windows (experimental) が見る）' } : {};
 
 /** 1 回目のデーモンで状態を作って止め、2 回目のデーモン（同じディレクトリ）で復元を確かめる。 */
 async function restartScenario(first: DaemonImpl | undefined, second: DaemonImpl | undefined): Promise<void> {
@@ -22,7 +24,7 @@ async function restartScenario(first: DaemonImpl | undefined, second: DaemonImpl
     await client.request('workspace.create', { name: 'ws' });
     const { windowId } = await client.request('window.create', { workspace: 'ws', name: 'main' });
     const { paneId } = await client.request('pane.open', {
-      cmd: ['sleep', '300'],
+      cmd: sleepCmd(),
       windowId,
       cols: 90,
       rows: 33,

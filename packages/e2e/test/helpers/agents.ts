@@ -2,11 +2,12 @@ import * as fs from 'node:fs';
 import type { MisaoClient } from '@misao/sdk';
 import type { PaneInfo } from '@misao/protocol';
 import { nodeCmd } from './node-cmd.js';
+import { filePath } from './platform.js';
 import { sleep, waitFor } from './wait.js';
 
-const FAKE_AGENT = new URL('../../src/fixtures/fake-agent.ts', import.meta.url).pathname;
+const FAKE_AGENT = filePath('../../src/fixtures/fake-agent.ts', import.meta.url);
 
-export const REPO_ROOT = new URL('../../../..', import.meta.url).pathname;
+export const REPO_ROOT = filePath('../../../..', import.meta.url);
 
 export const MARKER_RE = /AZITO_DONE_[A-Za-z0-9]+_[A-Za-z0-9]+/g;
 
