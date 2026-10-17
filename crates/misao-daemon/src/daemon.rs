@@ -54,6 +54,8 @@ impl Daemon {
             profiles,
         } = opts;
         ensure_socket_dir(&socket_path)?;
+        // 保存した状態の置き場所も、ソケットのディレクトリと同じ規則（所有者・mode・シンボリックリンク）で検証する。
+        ensure_socket_dir(&state_path)?;
         acquire_pid_file(&pid_path, std::process::id())?;
         // pid ファイルで排他を取った後に、保存した状態を読む。壊れていれば起動を止める（pid ファイルは残さない）。
         let core = match Core::new(CoreOptions {

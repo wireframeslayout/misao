@@ -2,13 +2,22 @@
 //! 保存するのは workspace / window の定義と pane のメタだけ。`ephemeralEnv` は保存しない（`env` は `pane.open` の env のみ）。
 
 use std::collections::{BTreeMap, HashSet};
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::params::{Dimension, Labels, Name, PaneId, WindowId};
+
+/// 読み込む `persistence.json` の最大サイズ。これを超えるファイルは起動エラーにする（読む前に長さで弾く）。
+pub const MAX_STATE_BYTES: u64 = 32 * 1024 * 1024;
+/// workspace・window・pane それぞれの最大数。
+const MAX_ENTRIES: usize = 10_000;
+/// 配列（`cmd`）と map（`env`・`labels`）の最大要素数。
+const MAX_ITEMS: usize = 4096;
+/// 文字列（名前・`cwd`・引数・env・ラベルのキーと値）の最大の長さ（バイト）。プロトコルの 1 行（8 MiB）より十分小さい。
+const MAX_STRING_BYTES: usize = 1024 * 1024;
 
 /// `version` は 1 だけを受ける。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,9 +86,41 @@ impl PersistedState {
         }
     }
 
-    /// workspace 名・window ID・pane ID の重複と、存在しない window への所属。問題が無ければ空。
-    pub fn consistency_issues(&self) -> Vec<String> {
+    /// 数と長さの上限の違反。保存するときも同じ上限で断る（読み込めないファイルを作らない）。
+    fn limit_issues(&self) -> Vec<String> {
         let mut issues = Vec::new();
+        let window_count: usize = self.workspaces.iter().map(|w| w.windows.len()).sum();
+        for (what, count) in [("workspaces", self.workspaces.len()), ("windows", window_count), ("panes", self.panes.len())] {
+            if count > MAX_ENTRIES {
+                issues.push(format!("too many {what}: {count} (max {MAX_ENTRIES})"));
+            }
+        }
+        let long = |s: &str| s.len() > MAX_STRING_BYTES;
+        for w in &self.workspaces {
+            if long(w.name.as_str()) || w.windows.iter().any(|win| long(win.name.as_str())) {
+                issues.push(format!("workspace {}: a name is too long", w.name.as_str().chars().take(32).collect::<String>()));
+            }
+        }
+        for p in &self.panes {
+            let id = p.pane_id.as_str();
+            let too_many = p.cmd.len() > MAX_ITEMS || p.env.len() > MAX_ITEMS || p.labels.len() > MAX_ITEMS;
+            let too_long = p.cmd.iter().any(|a| long(a))
+                || long(&p.cwd)
+                || p.env.iter().any(|(k, v)| long(k) || long(v))
+                || p.labels.iter().any(|(k, v)| long(k) || long(v));
+            if too_many {
+                issues.push(format!("pane {id}: too many cmd / env / labels entries (max {MAX_ITEMS})"));
+            }
+            if too_long {
+                issues.push(format!("pane {id}: a string is longer than {MAX_STRING_BYTES} bytes"));
+            }
+        }
+        issues
+    }
+
+    /// workspace 名・window ID・pane ID の重複と、存在しない window への所属、上限の違反。問題が無ければ空。
+    pub fn consistency_issues(&self) -> Vec<String> {
+        let mut issues = self.limit_issues();
         let window_ids: HashSet<&str> = self
             .workspaces
             .iter()
@@ -112,14 +153,31 @@ impl PersistedState {
     }
 }
 
-/// ファイルが無ければ空の状態。壊れていたり未知の version なら Err（起動を止める）。
+/// ファイルが無ければ空の状態。壊れていたり未知の version、通常のファイルでない（シンボリックリンクを含む）、
+/// 大きすぎる、上限を超えている場合は Err（起動を止める）。
 pub fn load_persisted_state(path: &Path) -> Result<PersistedState, String> {
-    let text = match fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(PersistedState::empty()),
-        Err(e) => return Err(e.to_string()),
-    };
     let invalid = |detail: String| format!("invalid persistence file {}: {detail}", path.display());
+    let mut file = match open_for_read(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(PersistedState::empty()),
+        Err(e) => return Err(invalid(e.to_string())),
+    };
+    let meta = file.metadata().map_err(|e| invalid(e.to_string()))?;
+    if !meta.is_file() {
+        return Err(invalid("not a regular file".to_string()));
+    }
+    if meta.len() > MAX_STATE_BYTES {
+        return Err(invalid(format!("file is too large: {} bytes (max {MAX_STATE_BYTES})", meta.len())));
+    }
+    // 読んでいる間に伸びても上限を超えて読まない。
+    let mut text = String::new();
+    (&mut file)
+        .take(MAX_STATE_BYTES + 1)
+        .read_to_string(&mut text)
+        .map_err(|e| invalid(e.to_string()))?;
+    if text.len() as u64 > MAX_STATE_BYTES {
+        return Err(invalid(format!("file is too large (max {MAX_STATE_BYTES} bytes)")));
+    }
     let state: PersistedState = serde_json::from_str(&text).map_err(|e| invalid(e.to_string()))?;
     let issues = state.consistency_issues();
     if !issues.is_empty() {
@@ -128,28 +186,55 @@ pub fn load_persisted_state(path: &Path) -> Result<PersistedState, String> {
     Ok(state)
 }
 
-/// 一時ファイルに書いて fsync してから rename する（途中で落ちても、電源断でも、元のファイルは壊れない）。
+/// シンボリックリンクは辿らない（O_NOFOLLOW）。
+fn open_for_read(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, nix::fcntl::OFlag::O_NOFOLLOW.bits());
+    options.open(path)
+}
+
+/// 同じディレクトリにランダムな名前の一時ファイルを排他的に（O_EXCL、シンボリックリンクを辿らない）作り、
+/// 書く -> ファイルを fsync -> rename -> 親ディレクトリを fsync する（途中で落ちても、電源断でも、元のファイルは壊れない）。
 pub fn save_persisted_state(path: &Path, state: &PersistedState) -> io::Result<()> {
-    let mut tmp = path.as_os_str().to_os_string();
-    tmp.push(format!(".tmp-{}", std::process::id()));
-    let tmp = std::path::PathBuf::from(tmp);
+    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let tmp = dir.join(format!(".{name}.{}.tmp", crate::ids::new_ulid()));
     let written = write_synced(&tmp, state).and_then(|()| fs::rename(&tmp, path));
     if written.is_err() {
         let _ = fs::remove_file(&tmp);
+        return written;
     }
-    written
+    sync_dir(dir)
 }
 
 fn write_synced(tmp: &Path, state: &PersistedState) -> io::Result<()> {
     let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits());
+    }
     let mut file = options.open(tmp)?;
     let mut text = serde_json::to_string_pretty(state).map_err(io::Error::other)?;
     text.push('\n');
     file.write_all(text.as_bytes())?;
     file.sync_all()
+}
+
+/// rename を電源断の後も残す。ディレクトリを開いて fsync できない環境（Windows）では何もしない。
+fn sync_dir(dir: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        File::open(dir)?.sync_all()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -231,6 +316,46 @@ mod tests {
         );
         assert!(issues.contains(&"duplicate window id".to_string()));
         assert!(issues.contains(&"duplicate pane id".to_string()));
+    }
+
+    #[test]
+    fn a_symlink_a_directory_and_an_oversized_file_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real.json");
+        fs::write(&real, sample()).unwrap();
+        let link = dir.path().join("persistence.json");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&real, &link).unwrap();
+            assert!(load_persisted_state(&link).unwrap_err().starts_with("invalid persistence file"));
+        }
+        let as_dir = dir.path().join("dir.json");
+        fs::create_dir(&as_dir).unwrap();
+        assert!(load_persisted_state(&as_dir).is_err());
+        let big = dir.path().join("big.json");
+        fs::write(&big, vec![b' '; usize::try_from(MAX_STATE_BYTES).unwrap() + 1]).unwrap();
+        let message = load_persisted_state(&big).unwrap_err();
+        assert!(message.contains("too large"), "{message}");
+    }
+
+    #[test]
+    fn counts_and_lengths_are_limited_on_load_and_on_save() {
+        let mut state: PersistedState = serde_json::from_str(&sample()).unwrap();
+        assert!(state.consistency_issues().is_empty());
+        let pane = state.panes[0].clone();
+        state.panes = (0..=MAX_ENTRIES)
+            .map(|i| PersistedPane { pane_id: PaneId::try_from(format!("p_{i:026}").replace('8', "7").replace('9', "7")).unwrap(), ..pane.clone() })
+            .collect();
+        assert!(state.limit_issues().iter().any(|m| m.starts_with("too many panes")));
+        let mut state: PersistedState = serde_json::from_str(&sample()).unwrap();
+        state.panes[0].cwd = "x".repeat(MAX_STRING_BYTES + 1);
+        state.panes[0].cmd = vec!["a".to_string(); MAX_ITEMS + 1];
+        let issues = state.limit_issues();
+        assert!(issues.iter().any(|m| m.contains("longer than")) && issues.iter().any(|m| m.contains("too many cmd")), "{issues:?}");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("persistence.json");
+        fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+        assert!(load_persisted_state(&path).unwrap_err().contains("state:"));
     }
 
     #[test]
