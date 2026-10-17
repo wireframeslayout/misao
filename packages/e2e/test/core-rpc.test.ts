@@ -108,11 +108,15 @@ describe('ペイン', () => {
 
   test('入力と resize', async () => {
     const out = path.join(daemon.dir, 'tty.out');
-    // stty size は「行 列」。Windows は node が端末の大きさ（getWindowSize は [列, 行]）を同じ形で書く。
-    const winScript = `const fs = require('fs'); const size = () => { const [c, r] = process.stdout.getWindowSize(); return r + ' ' + c; };
-      fs.appendFileSync(${JSON.stringify(out)}, size() + '\\n'); process.stdin.once('data', (d) => { fs.appendFileSync(${JSON.stringify(out)}, 'got:' + String(d).trim() + '\\n' + size() + '\\n'); process.exit(0); })`;
+    // stty size は「行 列」。Windows は PowerShell が窓の大きさを同じ形で書く
+    // (node の getWindowSize は ConPTY の resize を反映しない: libuv が窓の大きさを更新するイベントを受けられないため)。
+    const q = out.replaceAll("'", "''");
+    const winScript = `$size = { $w = $Host.UI.RawUI.WindowSize; "$($w.Height) $($w.Width)" };
+      [IO.File]::AppendAllText('${q}', (& $size) + "\`n");
+      $a = Read-Host;
+      [IO.File]::AppendAllText('${q}', "got:$a\`n" + (& $size) + "\`n")`;
     const { paneId } = await client.request('pane.open', {
-      cmd: IS_WINDOWS ? js(winScript) : sh(`stty size > ${out}; read a; echo "got:$a" >> ${out}; stty size >> ${out}`),
+      cmd: IS_WINDOWS ? ['powershell.exe', '-NoProfile', '-Command', winScript] : sh(`stty size > ${out}; read a; echo "got:$a" >> ${out}; stty size >> ${out}`),
       cols: 100,
       rows: 30,
     });
@@ -205,7 +209,8 @@ describe('イベント', () => {
     await waitFor(() => events.some((e) => e.type === 'pane.closed' && e.paneId === paneId), 'pane.closed');
     const mine = events.slice(mark).filter((e) => e.paneId === paneId);
     const types = mine.map((e) => e.type);
-    assert.deepEqual(types.filter((t) => t !== 'pane.state'), ['pane.opened', 'input', 'pane.exited', 'pane.closed']);
+    // ConPTY は子が始まる前に、実行ファイルのパスを自分のタイトルとして出す (pane.title)。
+    assert.deepEqual(types.filter((t) => t !== 'pane.state' && !(IS_WINDOWS && t === 'pane.title')), ['pane.opened', 'input', 'pane.exited', 'pane.closed']);
     assert.deepEqual(mine.find((e) => e.type === 'input')!.data, { source: 'terminal', bytes: 13 });
     assert.ok(!JSON.stringify(events).includes('secret-input'));
     assert.ok(events.every((e, i) => i === 0 || e.seq === events[i - 1]!.seq + 1), 'seq は連続する');
