@@ -89,10 +89,13 @@ Error codes and numbers, ordinal renumbering, `ephemeralEnv` (never stored), the
 - **`pane.close` leaves no child behind.** On Unix it sends SIGHUP to the process group, then SIGKILL after
   3 seconds (as the Node build does). In addition, if the leader exits on SIGHUP while other processes in
   the group survive (children that ignore SIGHUP, say), they are killed with SIGKILL after the grace period
-  before the call returns. On Windows the whole tree is stopped with `taskkill /T /F` (containment with a
-  Job Object is stage 5).
+  before the call returns. The same steps apply to a pane whose leader has already exited but whose group still has survivors (on
+  `pane.close` and on daemon shutdown). On Windows the whole tree is stopped with `taskkill /T /F`, run through
+  `spawn_blocking`: there is no SIGHUP-style grace period (it is a forced kill from the start), and survivors of an
+  already exited pane are not chased (containment with a Job Object is stage 5).
+- **The input queue is bounded.** `pane.write` input is written to the pty by a dedicated thread, so it piles up when the child does not read. Once more than 4 MiB is pending, the Rust build refuses further input immediately with `-32603` (`pane input queue is full ...`) instead of waiting (one write into an empty queue is accepted even if it is larger). The Node build (node-pty) queues without limit and has no equivalent error.
 - **`dataB64` in `pane.write`**: invalid base64 is `InvalidParams` (Node's `Buffer.from` silently drops it).
-- **Size**: there is no upper bound on cols / rows (as with Zod); values above 65535 are clamped when applied to the pty.
+- **Size**: cols / rows keep the whole range Zod allows (safe integers) and `pane.info` and events report the original values; only the value passed to the pty is clamped to 65535.
 - **Not yet (later stages)**: `fgCommand` in `pane.info`, activity detection (`agentState` is `unknown`
   while running and `exited` / `exit` afterwards), the title, persistence (restoring `stopped` panes after a
   restart), and `preplace` (unimplemented in the Node build too).

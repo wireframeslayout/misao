@@ -79,11 +79,13 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
 - **動いている行の購読者を待つ**: Rust 版は出力の処理が速く、読んではいるが子より遅い購読者（SDK など）が、4 MiB のリングに追い越されて
   切断されます。購読者の遅れがリング容量の半分を超えている間は、pty を読まずに子の書き込みを詰まらせます。1 秒以上カーソルが進まない
   購読者は待たず、従来どおりリングに追い越されたら切断して gap で知らせます。閉じている途中と子の終了後は待ちません。
+- **入力の待ち行列に上限がある**: `pane.write` の入力は専用スレッドで pty へ書くため、子が読まないと溜まります。Rust 版は溜まったバイト数が 4 MiB を超えると、待たずに `-32603`（`pane input queue is full ...`）で断ります（待ち行列が空のときの 1 回の入力は、これより大きくても受けます）。Node 版（node-pty）は無制限に溜め、対応するエラーはありません。
 - **`pane.close` は子を残さない**: Unix ではプロセスグループへ SIGHUP → 3 秒 → SIGKILL を送ります（Node 版と同じ）。さらに、
   リーダーが SIGHUP で終わっても、グループに残ったプロセス（SIGHUP を無視する子など）がいれば、猶予の後に SIGKILL してから戻ります。
-  Windows は `taskkill /T /F` でツリーごと止めます（Job Object による封じ込めは第 5 段）。
+  終了済みの pane でも、グループに残ったプロセスがいれば（`pane.close` とデーモンの終了で）同じ手順で止めます。
+  Windows は `taskkill /T /F` でツリーごと止めます（`spawn_blocking` で実行。SIGHUP 相当の猶予は無く、最初から強制終了で、終了済みの pane の残りは追いません。Job Object による封じ込めは第 5 段）。
 - **`pane.write` の `dataB64`**: 不正な base64 は `InvalidParams` にします（Node の `Buffer.from` は黙って読み捨てる）。
-- **サイズ**: cols / rows の上限は設けません（Zod と同じ）。pty へは 65535 に丸めて渡します。
+- **サイズ**: cols / rows は Zod と同じ範囲（安全な整数）をそのまま保持し、`pane.info` とイベントには元の値を返します。pty へ渡すときだけ 65535 に丸めます。
 - **未対応（後続の段）**: `pane.info` の `fgCommand`、稼働判定（`agentState` は走行中は `unknown`、終了後は `exited` / `exit` だけ）、
   タイトル、状態の保存（再起動後の `stopped` の復元）、`preplace`（Node 版も未実装）。
 - 子に `SHELL` が付く場合がある（portable-pty が `SHELL` を補う）。
