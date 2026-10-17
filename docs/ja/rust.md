@@ -122,6 +122,9 @@ Node 版（xterm.js）と違う点:
 - **大きさの上限**: プロトコルは安全な整数まで受けますが、画面モデルは 1024 x 1024 に丸めます（セルごとにメモリを使うため）。`pane.info` とイベントには元の値を返します。下限は xterm.js と同じ 2 桁 x 1 行です。
 - **扱わない列**: `CSI Ps SP @` / `A`（横スクロール）、`CSI Ps ' }` / `~`（桁の挿入・削除）、`CSI t`（既定で無効）、DCS、色・属性・マウス・ハイパーリンクの列。画面の文字には効かないか、xterm.js でも既定で無効です。8 ビットの C1 制御文字（U+0080-009F）は制御として扱わず、文字として扱います。OSC のパラメータは 16 個までです（vte の上限）。
 - **再現しない xterm.js の内部状態の食い違い**: `ED 1` を最終行の行末で受けると xterm.js は例外を投げます（Rust 版は何もしません）。空の代替画面を `resize` してから使うと、xterm.js は行リストと `ybase` が食い違った状態になり、画面の外の古い行を読みます。スクロールバックが満杯のとき、狭くする再配置が行リストの上限を超えると、結果が行リストの内部の回転位置に依存します（Rust 版は古い行から捨てます）。いずれも、差分テストの乱数入力の 0.1% 程度で見つかる、小さなスクロールバックと幅 5 桁前後の端の動きです。
+- **結合文字と REP の上限**: 1 つのセルに付けられる結合文字は 32 個までです（超えたぶんは捨てる。xterm.js は無制限ですが、長い結合列で行の更新が遅くなるのを防ぎます）。`CSI Ps b`（REP）の繰り返しは、画面のセル数までです（それ以上は同じ画面になります）。
+- **OSC の長さの上限**: `vte` は `std` 機能のとき OSC の中身を上限なしに貯めます。`std` を外さず、パーサーに渡す前に OSC の長さを数えます（`screen_osc.rs`）。1 MiB に達したら CAN を差し込んで中止し、終端までの残りを捨てます。中止された OSC は何も起こしません（xterm.js が上限を超えた OSC を捨てるのと同じ）。切り詰めたタイトルにはなりません。xterm.js の上限は 10 MB ですが、実際の OSC（タイトルなど）は数 KB です。
+- **行リストの食い違いの補正**: 通常と違う操作の組み合わせで行リストが見えている行に足りなくなったとき、空行で補います（上の「再現しない xterm.js の内部状態の食い違い」の後始末。画面の操作が常に成り立つようにするため）。
 - 画面の行は、xterm.js と同じく「明示的に書かれた空白は残し、消去されたセルは行末から除く」です。
 
 ### 稼働判定
@@ -138,8 +141,12 @@ profile の画面判定（出力が落ち着くまで 120ms 待ち、最初の�
 
 Node 版の `AgentProfile` は差し込み口だけで、Claude Code / Codex の規則は同梱していません（`misao serve` は汎用の title / bytes だけで判定）。
 Rust 版は規則をデータ（`crates/misao-daemon/src/profiles/*.json`）として持ち、AZITO の画面規則（`agentScreenRules`）を移植して同梱します。
-**`misao serve` は同梱の profile を既定で使います**（Node 版との意図的な違い）。`pane.open` の `cmd` の実行ファイル名（先頭が `env` ならその
-オプションと `NAME=VALUE` を飛ばした次の語。`.exe` は除く）が `claude` / `codex` のとき、`decidedBy` は `claude` / `codex` になり、`blocked` を出せます。
+**`misao serve` は同梱の profile を既定で使います**（Node 版との意図的な違い）。profile は pane の起動コマンドと、前面のプログラムで選びます。
+`decidedBy` は `claude` / `codex` になり、`blocked` を出せます。
+
+- **起動コマンド**: 実行ファイル名（先頭が `env` ならそのオプションと `NAME=VALUE` を飛ばした次の語。`.exe` は大文字小文字を問わず除く）が `claude` / `codex`。`sh -lc "cd d && claude --x"` のようにシェルへ文字列で渡したときは、その文字列の各コマンド（`&&` `||` `;` `|` `&` で区切った先頭の語。`exec` や `NAME=VALUE` は飛ばす）。
+- **前面のプログラム（`fgCommand`）**: 判定のスレッドが一定間隔（Linux は 1 秒、`ps` を使う他の Unix は 5 秒）で前面のプログラムを調べ、使う profile が**変わったときだけ**切り替えます。対話シェルを起動してから `claude` を始めると、`claude` が前面に来た時点で claude の profile が付き、終わってシェルに戻ると外れます。前面が profile のプログラムならそれを使い、そうでなければ起動コマンドで選びます。ただし、起動コマンドがシェルで前面が別のプログラム（`claude` が終わって `git` が前面、など）なら profile なしです。
+- **切り替えたときの state-tracker**: profile が付くと、いまの状態のまま画面の判定を予約します（結果は 120ms 以内）。title / bytes 段の履歴は残ります。profile が外れると、profile の意見を捨てて title / bytes 段だけで決め直し、どの段も意見を持たなければ `unknown` / `none` に戻します（`pane.state` イベントが出ます）。
 
 規則は `{id, verdict, priority, region, when}` です。画面は Claude Code の入力欄（`─` の罫線 2 本とその間）で「上 / 入力欄 / 下」に分け、
 `region`（`above` / `prompt_box` / `below` / `all` / `title`）で読む範囲を指定し、`when` は `all` / `any` / `not` / `contains`（小文字の部分文字列）/
@@ -153,6 +160,8 @@ Codex のタイトル `Action Required` は `region: title` の規則です。
 走行中の pane だけに付きます。Linux は pty の前面プロセスグループのリーダーの `/proc/<pgid>/cmdline` から（インタプリタ経由ならスクリプト名かモジュール名。
 解釈は Node 版と同じ）。macOS は前面プロセスグループのリーダーの実行ファイル名を `ps -o comm=` で得ます（Node 版の node-pty の `process` と同じで、スクリプト名にはしません）。
 Windows は ConPTY に前面プロセスグループが無く、誤った名前を報告するより報告しないことを選ぶので、付きません（Node 版と同じ）。
+
+`pane.info` / `pane.list` の組み立て（前面プロセスの取得を含む）は、全体の lock を離してから行います。lock の中では所属・ラベル・`Arc<Pane>` のスナップショットだけを取ります。`pane.list` の前面プロセスは、macOS では一覧ぶんをまとめて `ps -o pid=,comm= -p a,b,c` を 1 回だけ起動して引きます。
 
 ## Node 版との差分テスト
 
@@ -176,6 +185,8 @@ cargo test -p misao-daemon node_diff               # 突き合わせ
 ```
 
 `packages/daemon/test/rust-fixtures-sync.test.ts`（`npm test`）が、コミット済みのファイルが Node 版の出力と一致するかを確かめます。
+Rust 単独では、何を食わせても panic しないことを確かめるファズ（`src/panic_fuzz_tests.rs`: 固定の種で、極端な大きさの resize、代替画面、カーソルの保存と復元、極端な引数、壊れた UTF-8 を混ぜ、画面の行数などの不変条件も確かめる）も `cargo test` で動きます。
+
 調査用に、コミットしない乱数シナリオを多めに作れます: `node scripts/gen-rust-diff-fixtures.mjs --out /tmp/fz --extra-fuzz 3000`、
 `MISAO_NODE_DIFF_DIR=/tmp/fz cargo test -p misao-daemon node_diff`（`MISAO_FUZZ_EVERY=1` で全チャンクの後に画面を読む）。3000 本のうち 99.8% 以上が一致し、
 残りは上の「再現しない xterm.js の内部状態の食い違い」です。

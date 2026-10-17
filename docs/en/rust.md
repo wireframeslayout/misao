@@ -135,6 +135,9 @@ Differences from the Node build (xterm.js):
 - **Size cap**: the protocol accepts safe integers, but the screen model clamps to 1024 x 1024 (each cell costs memory). `pane.info` and events report the original values. The lower bound is xterm.js's 2 columns x 1 row.
 - **Sequences not handled**: `CSI Ps SP @` / `A` (horizontal scroll), `CSI Ps ' }` / `~` (insert / delete columns), `CSI t` (off by default), DCS, and colour / attribute / mouse / hyperlink sequences. They do not affect the screen text, or are off by default in xterm.js too. 8-bit C1 controls (U+0080-009F) are treated as characters, not controls. OSC takes at most 16 parameters (a vte limit).
 - **xterm.js internal inconsistencies that are not reproduced**: xterm.js throws on `ED 1` at the end of the last line (the Rust build does nothing). After resizing an empty alternate screen and then using it, xterm.js's line list and `ybase` disagree and it reads stale lines outside the screen. When the scrollback is full and a narrowing reflow needs more lines than the list can hold, the result depends on the internal rotation of xterm.js's ring buffer (the Rust build drops the oldest lines). All of these were found in about 0.1% of the differential test's random inputs, in edge behaviour with tiny scrollbacks and widths around 5.
+- **Limits on combining marks and REP**: a cell takes at most 32 combining marks (extra ones are dropped; xterm.js has no limit, but a long run of marks would slow row updates down). `CSI Ps b` (REP) repeats at most as many times as the screen has cells (more gives the same screen).
+- **OSC length limit**: `vte` buffers an OSC without limit when its `std` feature is on. The `std` feature stays, and OSC length is counted before the bytes reach the parser (`screen_osc.rs`). At 1 MiB it injects CAN to abort the OSC and drops the rest up to the terminator. An aborted OSC does nothing (as xterm.js discards an over-long OSC); the title is never truncated. xterm.js's limit is 10 MB, but real OSCs (titles and so on) are a few KB.
+- **Repair of a line list that is too short**: when an unusual sequence of operations leaves the line list shorter than the visible rows, it is padded with blank lines (the clean-up after "xterm.js internal inconsistencies that are not reproduced" above, so that screen operations always hold).
 - Screen rows follow xterm.js: spaces that were written are kept, erased cells are dropped from the end of the row.
 
 ### Activity detection
@@ -154,8 +157,12 @@ update). Differences:
 
 The Node build's `AgentProfile` is only a plug-in point and ships no Claude Code / Codex rules (`misao serve` judges with the generic title / bytes rules only).
 The Rust build keeps rules as data (`crates/misao-daemon/src/profiles/*.json`), ported from AZITO's screen rules (`agentScreenRules`).
-**`misao serve` uses the bundled profiles by default** (an intentional difference from the Node build). When the executable name of `pane.open`'s `cmd` (after
-skipping a leading `env` and its options and `NAME=VALUE` words; `.exe` is dropped) is `claude` or `codex`, `decidedBy` is `claude` / `codex` and `blocked` is possible.
+**`misao serve` uses the bundled profiles by default** (an intentional difference from the Node build). A profile is chosen from the pane's start command and the foreground program;
+`decidedBy` is then `claude` / `codex` and `blocked` is possible.
+
+- **Start command**: the executable name (after skipping a leading `env` and its options and `NAME=VALUE` words; `.exe` is dropped case-insensitively) is `claude` or `codex`. When the command is handed to a shell as a string, as in `sh -lc "cd d && claude --x"`, each command in that string (the first word after splitting on `&&` `||` `;` `|` `&`, skipping `exec` and `NAME=VALUE`).
+- **Foreground program (`fgCommand`)**: the detection thread checks the foreground program at an interval (1 s on Linux, 5 s on other Unixes, which use `ps`) and switches the profile **only when the chosen profile changes**. If you start an interactive shell and then run `claude`, the claude profile is attached as soon as `claude` is in the foreground and dropped when the shell is back. A foreground program that has a profile wins; otherwise the start command decides. When the start command is a shell and the foreground is some other program (for example `git` after `claude` exited), there is no profile.
+- **What the state-tracker does on a switch**: gaining a profile keeps the current state and schedules a screen judgement (the result arrives within 120 ms); the title / bytes history is kept. Losing it discards the profile's opinion and re-decides from the title / bytes stages only; if none has an opinion the state returns to `unknown` / `none` (a `pane.state` event is emitted).
 
 A rule is `{id, verdict, priority, region, when}`. The screen is split into above / prompt box / below by Claude Code's input box (two `─` rules and what is between them),
 `region` (`above` / `prompt_box` / `below` / `all` / `title`) names what a rule reads, and `when` combines `all` / `any` / `not` / `contains` (a lower-case substring) /
@@ -169,6 +176,8 @@ Codex's `Action Required` title is a rule with `region: title`.
 Only running panes have it. On Linux it comes from `/proc/<pgid>/cmdline` of the pty's foreground process group leader (the script or module name for an interpreter, as in the Node build).
 On macOS it is the executable name of that leader from `ps -o comm=` (like node-pty's `process` in the Node build; never a script name). On Windows ConPTY has no foreground process group and
 reporting nothing beats reporting a wrong name, so it is absent (as in the Node build).
+
+`pane.info` / `pane.list` are assembled (including the foreground process lookup) after the global lock is released; under the lock only a snapshot of location, labels and `Arc<Pane>` is taken. On macOS the foreground names for a `pane.list` are fetched with one `ps -o pid=,comm= -p a,b,c` call for the whole list.
 
 ## Differential tests against the Node build
 
@@ -191,7 +200,9 @@ node scripts/gen-unicode-width.mjs                 # the width table
 cargo test -p misao-daemon node_diff               # compare
 ```
 
-`packages/daemon/test/rust-fixtures-sync.test.ts` (`npm test`) checks that the committed files match the Node build's output. For investigation you can generate many more
+`packages/daemon/test/rust-fixtures-sync.test.ts` (`npm test`) checks that the committed files match the Node build's output. On the Rust side alone, a fuzz test (`src/panic_fuzz_tests.rs`) also runs under `cargo test`: fixed seeds, resizes including extreme sizes, the alternate screen, cursor save / restore, extreme arguments and broken UTF-8, checking that nothing panics and that invariants such as the row count hold.
+
+For investigation you can generate many more
 uncommitted random scenarios: `node scripts/gen-rust-diff-fixtures.mjs --out /tmp/fz --extra-fuzz 3000` and
 `MISAO_NODE_DIFF_DIR=/tmp/fz cargo test -p misao-daemon node_diff` (`MISAO_FUZZ_EVERY=1` reads the screen after every chunk). More than 99.8% of 3000 scenarios agree; the rest are the
 "xterm.js internal inconsistencies that are not reproduced" above.
