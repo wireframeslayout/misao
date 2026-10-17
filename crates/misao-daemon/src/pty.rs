@@ -41,7 +41,31 @@ pub fn pty_size(cols: u64, rows: u64) -> PtySize {
     }
 }
 
+/// 起動した子が、`spawn` の後続の失敗で孤児にならないための番人。破棄されるとプロセスツリーごと止めて回収する。
+struct ChildGuard(Option<Box<dyn Child + Send + Sync>>);
+
+impl ChildGuard {
+    fn disarm(mut self) -> Option<Box<dyn Child + Send + Sync>> {
+        self.0.take()
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            match child.process_id() {
+                Some(pid) => kill_tree(pid),
+                None => {
+                    let _ = child.kill();
+                }
+            }
+            let _ = child.wait();
+        }
+    }
+}
+
 /// 子プロセスを擬似端末で起動する。失敗の文字列は `pane.open` の InvalidParams（`spawn failed: ...`）に使う。
+/// reader と writer は子を起動する前に用意するので、起動後に失敗しうるのは pid の取得だけで、そのときも子を止めて回収する。
 pub fn spawn(req: &SpawnRequest<'_>) -> Result<PtyProcess, String> {
     let (program, args) = req.cmd.split_first().ok_or("cmd is empty")?;
     // portable-pty は cwd がディレクトリでないとき黙ってホームに切り替えるので、先に確かめる。
@@ -51,6 +75,8 @@ pub fn spawn(req: &SpawnRequest<'_>) -> Result<PtyProcess, String> {
     let pair = native_pty_system()
         .openpty(pty_size(req.cols, req.rows))
         .map_err(|e| format!("{e:#}"))?;
+    let reader = pair.master.try_clone_reader().map_err(|e| format!("{e:#}"))?;
+    let writer = pair.master.take_writer().map_err(|e| format!("{e:#}"))?;
     let mut builder = CommandBuilder::new(program);
     builder.args(args);
     builder.cwd(req.cwd);
@@ -59,11 +85,15 @@ pub fn spawn(req: &SpawnRequest<'_>) -> Result<PtyProcess, String> {
         builder.env(key, value);
     }
     let child = pair.slave.spawn_command(builder).map_err(|e| format!("{e:#}"))?;
+    let guard = ChildGuard(Some(child));
     // slave を親が持ち続けると、子が終わっても master が EOF にならない。
     drop(pair.slave);
-    let pid = child.process_id().ok_or("the child has no process id")?;
-    let reader = pair.master.try_clone_reader().map_err(|e| format!("{e:#}"))?;
-    let writer = pair.master.take_writer().map_err(|e| format!("{e:#}"))?;
+    let pid = guard
+        .0
+        .as_ref()
+        .and_then(|child| child.process_id())
+        .ok_or("the child has no process id")?;
+    let child = guard.disarm().ok_or("the child has no process id")?;
     Ok(PtyProcess {
         pid,
         master: pair.master,
@@ -181,3 +211,51 @@ mod platform {
 }
 
 pub use platform::{hangup_tree, kill_tree, tree_alive, wait_exit};
+
+#[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn request(cmd: &[String]) -> SpawnRequest<'_> {
+        SpawnRequest {
+            cmd,
+            cwd: "/",
+            env: std::env::vars_os().collect(),
+            cols: 80,
+            rows: 24,
+        }
+    }
+
+    #[test]
+    fn dropping_the_guard_kills_and_reaps_the_child() {
+        let cmd = vec!["sleep".to_string(), "300".to_string()];
+        let process = spawn(&request(&cmd)).unwrap();
+        let pid = process.pid;
+        assert!(tree_alive(pid));
+        drop(ChildGuard(Some(process.child)));
+        // 回収済み（zombie でもない）なので、グループごと消えている。
+        assert!(!tree_alive(pid));
+    }
+
+    #[test]
+    fn a_disarmed_guard_leaves_the_child_running() {
+        let cmd = vec!["sleep".to_string(), "300".to_string()];
+        let process = spawn(&request(&cmd)).unwrap();
+        let pid = process.pid;
+        let child = ChildGuard(Some(process.child)).disarm();
+        assert!(child.is_some() && tree_alive(pid));
+        kill_tree(pid);
+        let _ = wait_exit(child.unwrap(), pid);
+    }
+
+    #[test]
+    fn spawn_fails_cleanly_for_a_missing_command_or_directory() {
+        let missing = vec!["/nonexistent/command".to_string()];
+        assert!(spawn(&request(&missing)).is_err());
+        let cmd = vec!["true".to_string()];
+        let mut bad_cwd = request(&cmd);
+        bad_cwd.cwd = "/nonexistent/dir";
+        assert!(spawn(&bad_cwd).is_err());
+    }
+}
