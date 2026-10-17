@@ -36,6 +36,8 @@ describe('pane.screen と pane.info', () => {
     const winScript = "process.stdout.write('\\x1b]0;e2e title\\x07one\\r\\n日本\\x1b[3;1Hz'); setTimeout(() => {}, 30000)";
     const { paneId } = await client.request('pane.open', { cmd: IS_WINDOWS ? js(winScript) : sh(script), cols: 20, rows: 4 });
     await waitFor(async () => (await screen(paneId)).text.includes('z'), 'the output');
+    // ConPTY は子のタイトルを内容より後に届ける (Unix は先)
+    await waitFor(async () => (await screen(paneId)).title === 'e2e title', 'the title');
     const first = await screen(paneId);
     assert.equal(first.text, 'one\n日本\nz\n');
     assert.deepEqual(first.cursor, { x: 1, y: 2 });
@@ -108,7 +110,10 @@ describe('稼働判定のイベント', () => {
     const winScript = "process.stdout.write('\\x1b]0;⠋ build\\x07'); setTimeout(() => { process.stdout.write('\\x1b]0;done\\x07'); setTimeout(() => {}, 300); }, 300)";
     const { paneId } = await client.request('pane.open', { cmd: IS_WINDOWS ? js(winScript) : sh(script) });
     await waitFor(() => events.some((e) => e.type === 'pane.state' && e.paneId === paneId && (e.data as { state: string }).state === 'exited'), 'exited');
-    const mine = events.filter((e) => e.paneId === paneId && (e.type === 'pane.title' || e.type === 'pane.state' || e.type === 'pane.exited'));
+    // ConPTY は子が始まる前に、実行ファイルのパスを自分のタイトルとして出す。
+    const isConPtyTitle = (e: EventParams): boolean =>
+      IS_WINDOWS && e.type === 'pane.title' && String((e.data as { title?: string }).title).toLowerCase() === process.execPath.toLowerCase();
+    const mine = events.filter((e) => e.paneId === paneId && (e.type === 'pane.title' || e.type === 'pane.state' || e.type === 'pane.exited') && !isConPtyTitle(e));
     const summary = mine.map((e) => {
       const data = e.data as { state?: string; decidedBy?: string; prev?: string; title?: string };
       return e.type === 'pane.title' ? `title:${data.title}` : e.type === 'pane.exited' ? 'exited' : `${data.prev}>${data.state}:${data.decidedBy}`;

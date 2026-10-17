@@ -11,7 +11,9 @@ import type { DaemonProcess } from './helpers/daemon-process.js';
 import { IS_WINDOWS, interactiveShell, skipOnWindows } from './helpers/platform.js';
 import { sleep, waitFor, waitQuiet } from './helpers/wait.js';
 
-const REPLAYS: Replay[] = ['raw', 'snapshot'];
+// ConPTY の出力は、前に描いた画面を前提にしたカーソル位置の指定で更新するので、リングを超えて切り詰めた raw 再生では画面を再構成できない。
+// Windows では snapshot 再生だけを確かめる。
+const REPLAYS: Replay[] = IS_WINDOWS ? ['snapshot'] : ['raw', 'snapshot'];
 const RAW_RING_BYTES = 1024 * 1024;
 const PADDING = ' padding-text-to-lengthen-the-line-0123456789abcdef';
 const BULK_COMMAND = IS_WINDOWS

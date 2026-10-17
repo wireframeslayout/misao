@@ -4,7 +4,8 @@
 
 misao のデーモンと CLI を Rust の単一バイナリ `misao` に書き直しています。配布は GitHub Releases です。
 SDK（`@misao/sdk`）と protocol（`@misao/protocol`、`PROTOCOL_VERSION` 0.3.0）は TypeScript のまま維持し、プロトコルは変えません。
-Rust 版は既存の e2e（`packages/e2e`）と CLI のテスト（`packages/cli/test`）を全部通します（オプトインの Claude / Codex / systemd を除く）。
+Rust 版は既存の e2e（`packages/e2e`）と CLI のテスト（`packages/cli/test`）を、Linux と macOS（arm64 / x64）で全部通します（オプトインの Claude / Codex / systemd を除く）。
+Windows（x64）では、POSIX 前提のケースを分岐した e2e が通ります（第 5 段、後述）。
 バイナリの配布と AZITO の切り替え（#44）までは、Node 版が正式版です。
 
 関連文書: [プロトコル](../protocol.ja.md)、[CLI](../cli.ja.md)、[設定](../config.ja.md)。
@@ -19,7 +20,8 @@ crates/
     schema/protocol.json  Zod から書き出した JSON Schema（生成物。コミットする）
     tests/schema_conformance.rs
   misao-daemon/         デーモンの本体: ソケット、pid ファイル、ログ、接続、RPC、作業場所 / 窓 / ペイン、PTY、リング、イベント、
-                        画面（端末の解釈）、稼働判定（state-tracker・profile）、前面プロセス
+                        画面（端末の解釈）、稼働判定（state-tracker・profile）、前面プロセス、
+                        OS ごとの部分: 接続口（Unix ソケット / 名前付きパイプ）、プロセスツリー（プロセスグループ / Job Object）、Windows の ACL
     tests/fixtures/node-diff/  Node 版との差分テストの入力と期待値（`scripts/gen-rust-diff-fixtures.mjs` の生成物）
   misao/                バイナリ: CLI の全サブコマンド（引数の解釈・クライアント・attach の端末制御）、設定、ソケットパス
 ```
@@ -37,7 +39,7 @@ cargo deny check                   # ライセンス・脆弱性・取得元（d
 ```
 
 方針: stable の Rust、MSRV は `1.88`（`workspace.package.rust-version`。CI の `Rust (MSRV)` で確認）、
-`unsafe_code = "forbid"`、clippy の `all` を deny、テスト以外では `unwrap` / `expect` を deny。
+`unsafe_code = "deny"`（OS の API を直接呼ぶ小さなモジュールだけが許可し、`unsafe` ごとに `SAFETY:` コメントを付けます。macOS の `waitid`、Windows の Job Object・ACL・コンソールのモード・停止イベント・ユーザー名）、clippy の `all` を deny、テスト以外では `unwrap` / `expect` を deny。
 `Cargo.lock` はコミットし、CI は `--locked` で動かします。
 
 手元で Rust 版のデーモンを動かす:
@@ -51,7 +53,7 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
 | Node（`packages/`） | Rust（`crates/`） | 状況（第 4 段まで） |
 |---|---|---|
 | `protocol`（Zod スキーマ、`ErrorCode`、framing） | `misao-protocol` | `server.info`・JSON-RPC・エラー・NDJSON の型。スキーマと照合済み |
-| `daemon/src/socket.ts` | `misao-daemon/src/socket.rs` | 完了（dir 700 / socket 600、所有者とシンボリックリンクの確認、古いソケット） |
+| `daemon/src/socket.ts`、`endpoint.ts` | `misao-daemon/src/socket.rs`、`endpoint_{unix,windows}.rs`、`win_security.rs`、`windows_dir.rs` | 完了（Unix: dir 700 / socket 600、所有者とシンボリックリンクの確認、古いソケット。Windows: 起動したユーザーだけの ACL の名前付きパイプ。第 5 段） |
 | `daemon/src/pid-file.ts` | `misao-daemon/src/pid_file.rs` | 完了 |
 | `daemon/src/daemon.ts`（`start` / `shutdown`） | `misao-daemon/src/daemon.rs` | 完了。起動の lock を終了まで保持する（下記） |
 | `daemon/src/daemon.ts`（ディスパッチ）、`rpc-error.ts`、`params.ts` | `core.rs`、`rpc.rs`、`rpc_error.rs`、`params.rs` | 完了（`pane.send_keys` / `window.focus` / `pane.respawn` は Node 版と同じく `NotImplemented`） |
@@ -63,6 +65,7 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
 | `daemon/src/state-tracker.ts`、`byte-activity.ts`、`title-activity.ts` | `state_tracker.rs`、`byte_activity.rs`、`title_activity.rs` | 完了。閾値・窓・猶予は Node 版と同じ。タイマーは持たず、時刻は引数（後述） |
 | `daemon/src/profile.ts`（差し込み口だけ。規則は Node 版に無い） | `profile.rs`、`profiles/{claude,codex}.json` | 完了。規則をデータとして持ち、AZITO の画面規則から Claude / Codex を移植（後述） |
 | `daemon/src/foreground.ts` | `foreground.rs` | 完了（Linux は `/proc`、macOS は `ps`、Windows は未対応）|
+| （`daemon/src/pane.ts` と `cli/src/commands/serve.ts` の Windows 向けの部分）| `pty_{unix,windows}.rs`、`cmd_resolve.rs`、`repaint_filter.rs`、`cursor_query.rs`、`stop_event.rs`、`misao/src/{pipe_name,win_user,tty_sys_windows,serve_{unix,windows}}.rs`、`commands/stop.rs` | 完了（第 5 段、後述）|
 | `daemon/src/size-arbiter.ts`、`ring.ts`、`ansi.ts`、`child-env.ts`、`event-log.ts`、`limits.ts`、`ulid.ts` | `size_arbiter.rs`、`ring.rs`、`ansi.rs`、`child_env.rs`、`event_log.rs`、`limits.rs`、`ids.rs` | 完了 |
 | `daemon/src/log.ts` | `misao-daemon/src/log.rs` | 完了（stderr に `[misao <ISO 時刻>] msg`） |
 | `sdk-node/src/socket-path.ts` | `misao/src/socket_path.rs` | 完了（優先順位も 107 バイト制限も同じ） |
@@ -71,8 +74,7 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
 | `cli/src/**`（全サブコマンド、attach、target、view） | `misao/src/{args,client,commands,attach,view,target,follow,connect,io,tty_sys}*` | 完了（第 4 段。下記） |
 
 第 1 段で意図的に違う点: `--help` は clap の生成（説明は日本語、フラグ名は英語）。`--version` は `misao <Cargo のバージョン>` で、
-リリーススクリプトが設定するようになる（第 6 段）まで `0.0.0`。Windows では接続口が後続の段のため、
-`misao serve` はエラーで終わる（`docs/*/windows.md` を参照）。
+リリーススクリプトが設定するようになる（第 6 段）まで `0.0.0`。（第 1 段では Windows の `misao serve` はエラーで終わったが、第 5 段で名前付きパイプを足した。）
 
 ## 第 2 段の振る舞い（Node 版と違う点）
 
@@ -93,9 +95,9 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
   **pgid の再利用対策**: Linux ではリーダーの終了を `waitid(WNOWAIT)` で「回収せずに」検知し、終了コードとシグナルをそこで記録します。
   リーダーはゾンビのまま残り、`pane.close` / 終了でグループを片付けた後に初めて回収するので、その pid（= pgid）は close まで再利用されず、
   close の時点で `/proc` を走査してグループの生存（ゾンビのリーダーは数えない）をその場で判定できます。終了済みの pane は close まで
-  ゾンビを 1 つ残します。他の Unix（macOS）は `waitid` の `WNOWAIT` を使えないため終了時に回収し、終了時にグループに残りがいた pane
-  だけを close で扱います（残りが後で終わって pgid が再利用された場合の誤送信は、この環境では防げません）。
-  Windows は `taskkill /T /F` でツリーごと止めます（`spawn_blocking` で実行。SIGHUP 相当の猶予は無く、最初から強制終了で、終了済みの pane の残りは追いません。Job Object による封じ込めは第 5 段）。
+  ゾンビを 1 つ残します。macOS も同じ方式です（第 5 段）: リーダーを libc の `waitid(P_PID, ..., WEXITED | WNOWAIT)` で待ち（macOS の `waitid(2)` には `WNOWAIT` があり、nix は macOS では包んでいないので直接呼ぶ）、
+  ゾンビのリーダーは close まで保持し、グループの生存は `/proc` の代わりに `ps -A -o pid=,pgid=,stat=`（ゾンビ `Z` は数えない）で読みます。
+  Windows のプロセスツリーは Job Object です: 子を `CreateProcess` の直後に入れ、close は `TerminateJobObject` です。SIGHUP 相当の猶予は無く、終了済みの pane に残ったプロセスは Job の動作中プロセス数で見つけます（詳細は第 5 段の節）。
 - **`pane.write` の `dataB64`**: 不正な base64 は `InvalidParams` にします（Node の `Buffer.from` は黙って読み捨てる）。
 - **サイズ**: cols / rows は Zod と同じ範囲（安全な整数）をそのまま保持し、`pane.info` とイベントには元の値を返します。pty へ渡すときだけ 65535 に丸めます。
 - **未対応**: `preplace`（Node 版も未実装）。状態の保存と attach は第 4 段で入った（次の節）。
@@ -220,6 +222,37 @@ Node 版との違い: raw モード中の panic は端末を戻して `[misao] �
 
 `misao.json`（`socket` / `logLevel` / `scrollback` / `rings` / `keys`）、制限値の既定、ログ（stderr に `[misao <ISO 時刻>] msg`）は Node 版と同じ検証・既定です。
 
+## 第 5 段の振る舞い（macOS と Windows）
+
+### macOS（arm64 / x64）
+
+CI の `macos-14`（arm64）と `macos-15-intel`（x64）でビルドし、`cargo test`・e2e の全部・CLI のテストが両方で通ります。
+
+- **pgid の再利用対策**（#40 からの持ち越し）: リーダーを終了時に回収しません。macOS の libc に `waitid(WNOWAIT)` があるので直接呼び（`pty_unix.rs`。ここだけが `unsafe`）、
+  `pane.close` / 終了でグループを片付けるまでゾンビのリーダーを保持してから回収します。その pid（= pgid）は close まで再利用されず、close で送るシグナルが無関係なグループに当たりません。Linux は nix 経由で同じ方式です。
+  代案（kqueue の `EVFILT_PROC`、signal の前にグループのメンバーの制御端末とセッションを確かめる）は要りませんでした。
+  macOS に `/proc` は無いので、グループに生きているメンバーがいるかは `ps -A -o pid=,pgid=,stat=` を 1 回起動して読みます（ゾンビは数えない。読めなければ `Unknown` で、close は猶予まで待ってから SIGKILL する）。
+- **launchd**: `deploy/com.misao.daemon.binary.plist` が単一バイナリを起動します（`__MISAO__ serve`）。Node のバンドル用の `com.misao.daemon.plist` は変えません。
+  `scripts/smoke-launchd.sh`（CI の `macOS launchd` ジョブ。GitHub のホストのランナー）が、テンプレートを展開して `gui/<uid>` に bootstrap し、`misao status` とペインを確かめ、bootout して、デーモンとペインの子が消えることを確かめます。
+  systemd の `misao.service` は変更不要です: `ExecStart=%h/.local/bin/misao serve` は、Rust 版をそこに置けばそのまま動きます。
+- 前面のコマンド（`fgCommand`）は変更なし（`ps`）。
+- macOS だけで見えた競合（`sh` の起動が遅い）: テストが、シェルが `trap '' HUP` を実行する前に `pane.close` を送っていました。子が準備できたと知らせてから閉じ始めるようにしました。
+
+### Windows（x64）
+
+すべて [Windows](windows.md) の §12 にあります。要約: SDK と同じ名前で起動したユーザーだけの DACL の名前付きパイプ（`PIPE_REJECT_REMOTE_CLIENTS`、`FILE_FLAG_FIRST_PIPE_INSTANCE`）、portable-pty 経由の ConPTY（デーモンがそのカーソル位置の問い合わせに答える）、
+`pane.close` の Job Object、エラーにファイル名を含める `PATHEXT` / `.ps1` のコマンド解決、`pane.line` の再描画フィルタ、起動したユーザーだけが開ける名前付きイベントによる `misao stop`（プロトコルは 0.3.0 のまま）、Windows のコンソールでの `attach`、`deploy/windows/` のタスクスケジューラの定義。
+
+### Node 版との意図的な違い
+
+- `misao stop` は Rust 版だけにあります。プロトコルのメソッドではありません。
+- Windows: `PATH` / `PATHEXT` で解決できない名前は `pane.open` が `command not found: <名前>` で失敗します（Node は名前が空の `File not found: `）。`.ps1` が動きます。拡張子なしの `cmd[0]` を解決します。
+- Windows: パイプの DACL は起動したユーザーだけで、リモートの接続は断ります（Node は Everyone / ANONYMOUS LOGON が read でき、SMB 経由で届く）。
+- Windows: データディレクトリの所有者と、広いグループへの書き込み許可を検証します（Node はシンボリックリンクとディレクトリの確認だけ）。
+- Windows: `pane.close` は Job Object でツリーごとすぐ止めます（Node は約 4.7 秒かかり、孫が残る）。
+- Windows: resize の再描画は `pane.line` に入りません。
+- 全 OS: `unsafe_code` は `forbid` ではなく `deny` です（上記）。
+
 ## Node 版との差分テスト
 
 `scripts/gen-rust-diff-fixtures.mjs` が、記録した出力の列を Node 版の部品（`@xterm/headless` + `StateTracker` + `foreground`）に流し、
@@ -284,7 +317,9 @@ MISAO_DAEMON_BIN=$B MISAO_CLI_BIN=$B npm run test:e2e:rust -w @misao/e2e   # e2e
 MISAO_DAEMON_BIN=$B MISAO_CLI_BIN=$B npm run test:rust -w misao             # CLI のテスト（CI）
 ```
 
-変数を指定しなければ何も変わりません（Node 版）。大量出力のテスト（`v3-line-markers`）は処理速度に左右されるので `release` ビルドで動かしてください。`vim` が要ります。
+変数を指定しなければ何も変わりません（Node 版）。大量出力のテスト（`v3-line-markers`）は処理速度に左右されるので `release` ビルドで動かしてください。`vim` が要ります（Windows を除く）。
+
+Windows では同じスイートを `MISAO_DAEMON_BIN` / `MISAO_CLI_BIN` を指定して動かします（npm スクリプトが POSIX の環境変数の書き方なので、`packages/e2e` で `node --conditions=@misao/source --import tsx --test ...` を直接呼びます）。`vim`・`bash`・systemd が要るケースは理由を付けて skip し、シェルのスクリプトは `node -e` に置き換え、デーモンは一意な名前付きパイプで待ち受けて `misao stop` で止め、行の確定は CR で送ります（コンソールは LF を受け付けない）。`packages/cli/test` は Windows では流しません。
 
 | テストファイル | Rust 版 |
 |---|---|
@@ -360,5 +395,5 @@ scrollback が大きいと Rust のセル（24 バイト）が Node の xterm.js
 ## 移行計画
 
 issue で管理しています。#39（workspace・プロトコル適合・最小デーモン・CI）、#40 中核（RPC・作業場所/窓/ペイン・PTY・出力の記録・イベント）、
-#41 画面と稼働判定、#42 状態の保存・attach・CLI 全体（既存 e2e を全部通す。この段）、#43 macOS と Windows、#44 バイナリ配布と AZITO の切り替え。
+#41 画面と稼働判定、#42 状態の保存・attach・CLI 全体（既存 e2e を全部通す）、#43 macOS と Windows（第 5 段、上記）、#44 バイナリ配布と AZITO の切り替え。
 背景は #32（部品の検討）と #37（Windows）。

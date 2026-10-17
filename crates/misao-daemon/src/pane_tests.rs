@@ -147,16 +147,24 @@ async fn close_after_a_natural_exit_releases_the_threads_and_the_master() {
     wait_for("the pane to be freed", || weak.upgrade().is_none());
 }
 
-/// `/proc/<pid>/stat` の状態文字。プロセスが無ければ None。
+/// プロセスの状態文字（`Z` はゾンビ）。プロセスが無ければ None。Linux は `/proc/<pid>/stat`、macOS は `ps -o stat=`。
 #[cfg(target_os = "linux")]
 fn proc_state(pid: u32) -> Option<char> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     stat.rsplit_once(')')?.1.trim().chars().next()
 }
 
+#[cfg(all(unix, not(target_os = "linux")))]
+fn proc_state(pid: u32) -> Option<char> {
+    let out = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().chars().next()
+}
+
 /// 残りの子が pty を握ったまま、close も shutdown もせずに Pane を捨てても、reader が Pane を握り続けないので、
 /// `Drop` が走って終了済みのリーダーが回収される。
-#[cfg(target_os = "linux")]
 #[test]
 fn dropping_a_pane_without_close_reaps_the_exited_leader_even_while_a_child_holds_the_pty() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -177,7 +185,6 @@ fn dropping_a_pane_without_close_reaps_the_exited_leader_even_while_a_child_hold
     );
 }
 
-#[cfg(target_os = "linux")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_and_repeated_closes_clean_up_once_and_the_later_ones_just_wait() {
     let tmp = tempfile::TempDir::new().unwrap();

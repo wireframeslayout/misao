@@ -38,6 +38,9 @@ const sh = (script: string): string[] => ['sh', '-c', script];
 /** Windows ではシェルの代わりに node で同じことをする（ConPTY の中で動く）。JSON.stringify でパスを安全に埋め込む。 */
 const js = (script: string): string[] => nodeEval(script);
 
+/** 行の入力を確定するキー。Windows のコンソールは LF では確定せず、Enter (CR) が要る。 */
+const ENTER = IS_WINDOWS ? '\r' : '\n';
+
 async function waitForExit(paneId: string): Promise<Awaited<ReturnType<typeof client.request<'pane.info'>>>> {
   await waitFor(async () => (await client.request('pane.info', { paneId })).processState === 'exited', `pane ${paneId} to exit`);
   return client.request('pane.info', { paneId });
@@ -117,7 +120,7 @@ describe('ペイン', () => {
     await client.request('pane.resize', { paneId, cols: 70, rows: 20, clientId: 'A' });
     const resized = await client.request('pane.info', { paneId });
     assert.deepEqual([resized.cols, resized.rows, resized.sizeOwner], [70, 20, 'A']);
-    await client.request('pane.write', { paneId, dataB64: Buffer.from('hello\n').toString('base64') });
+    await client.request('pane.write', { paneId, dataB64: Buffer.from(`hello${ENTER}`).toString('base64') });
     assert.equal(await readLines(out, 3), '30 100\ngot:hello\n20 70');
     await waitForExit(paneId);
     assert.equal(await rpcCode(client.request('pane.write', { paneId, data: 'x' })), ErrorCode.PaneExited);
@@ -196,7 +199,7 @@ describe('イベント', () => {
     const mark = events.length;
     const winRead = `process.stdin.once('data', () => process.exit(0))`;
     const { paneId } = await client.request('pane.open', { cmd: IS_WINDOWS ? js(winRead) : sh('read x; exit 0'), labels: { k: 'v' } });
-    await client.request('pane.write', { paneId, data: 'secret-input\n', source: 'terminal' });
+    await client.request('pane.write', { paneId, data: `secret-input${ENTER}`, source: 'terminal' });
     await waitForExit(paneId);
     await client.request('pane.close', { paneId });
     await waitFor(() => events.some((e) => e.type === 'pane.closed' && e.paneId === paneId), 'pane.closed');
