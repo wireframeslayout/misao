@@ -566,3 +566,34 @@ async fn input_is_refused_with_an_error_once_the_queue_is_full_and_the_daemon_st
     assert_eq!(c.ok("server.info", json!({})).await["paneCount"], 1);
     c.ok("pane.close", json!({"paneId": pane_id})).await;
 }
+
+/// `/proc/<pid>/stat` の状態文字。プロセスが無ければ None。
+#[cfg(target_os = "linux")]
+fn proc_state(pid: &str) -> Option<char> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat.rsplit_once(')')?.1.trim().chars().next()
+}
+
+/// リーダーは close まで回収されない（ゾンビのまま pid を保つ）ので、その pgid が無関係なグループに再利用されることはない。
+/// 残っていた子が自然に終わった後に close しても、グループのメンバーはもういないので何にも signal しない。
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn the_exited_leader_keeps_its_pid_until_close_so_a_late_close_cannot_hit_a_reused_group() {
+    let tmp = TempDir::new().unwrap();
+    let mut c = connect(&core());
+    let pid_file = tmp.path().join("leader.pid");
+    let script = format!("(sleep 0.3) & echo $$ > {}", pid_file.display());
+    let pane_id = open(&mut c, sh(&script), json!({})).await;
+    let leader = read_file_when_ready(&pid_file).await;
+    let i = wait_exit(&mut c, &pane_id).await;
+    assert_eq!(i["pid"].as_u64().unwrap().to_string(), leader);
+    // 残っていた子が自然に終わるまで待つ。それでもリーダーは回収されずに pid を保っている。
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert_eq!(
+        proc_state(&leader),
+        Some('Z'),
+        "the exited leader must stay unreaped until close"
+    );
+    c.ok("pane.close", json!({"paneId": pane_id})).await;
+    assert_eq!(proc_state(&leader), None, "reaped after the group was cleaned up");
+}

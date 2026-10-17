@@ -108,6 +108,8 @@ pub struct Pane {
     exited_tx: watch::Sender<bool>,
     /// リーダーの終了時に、プロセスグループに他のプロセスが残っていたか（Unix のみ）。
     survivors_at_exit: AtomicBool,
+    /// 保留していたリーダーを回収した（以後は pid が再利用されうる）。
+    reaped: AtomicBool,
     /// close が始まった時刻（SIGHUP を送った時刻）。2 回目以降の close は何もせず終了を待つ。
     closing: Mutex<Option<Instant>>,
     released: AtomicBool,
@@ -118,6 +120,13 @@ pub struct Pane {
     lines_ring_bytes: usize,
     /// pty を読むスレッドが購読者を待つ間の起床。購読者の進み・購読の終了・close・子の終了・release で起こす。
     wakeup: Arc<Wakeup>,
+}
+
+impl Drop for Pane {
+    /// close されないまま捨てられても、終了済みのリーダーをゾンビで残さない。
+    fn drop(&mut self) {
+        self.reap_leader();
+    }
 }
 
 impl Inner {
@@ -195,6 +204,7 @@ impl Pane {
             lines_tx: watch::Sender::new(0),
             exited_tx: watch::Sender::new(false),
             survivors_at_exit: AtomicBool::new(false),
+            reaped: AtomicBool::new(false),
             closing: Mutex::new(None),
             released: AtomicBool::new(false),
             exit_seen: AtomicBool::new(false),
@@ -245,8 +255,8 @@ impl Pane {
         let pane = Arc::clone(self);
         std::thread::spawn(move || {
             let exit = pty::wait_exit(child, pane.pid);
-            // リーダーが居なくなった今、グループに残ったプロセスがいるか。いる間は pgid は再利用されないので、
-            // 後の close はそれを頼りに（無関係なプロセスグループを誤って止めずに）掃除できる。
+            // リーダーを回収しない環境（`pty::LEADER_HELD`）では、close まで pid が再利用されない。
+            // そうでない環境では、終了時に残りがいたかを記録し、いなければ close はグループに触れない。
             pane.survivors_at_exit
                 .store(pty::tree_alive(pane.pid), Ordering::Release);
             pane.exit_seen.store(true, Ordering::Release);
@@ -414,8 +424,13 @@ impl Pane {
         self.wakeup.notify();
         let deadline = started + KILL_GRACE;
         let was_running = self.state() == RunState::Running;
-        let has_survivors = self.survivors_at_exit.load(Ordering::Acquire);
-        if first && (was_running || has_survivors) {
+        // リーダーを回収していないなら pid は自分のもの。そうでなければ、終了時に残りがいたときだけ触れる。
+        let owns_group = || {
+            was_running
+                || (pty::LEADER_HELD && !self.reaped.load(Ordering::Acquire))
+                || self.survivors_at_exit.load(Ordering::Acquire)
+        };
+        if first && owns_group() && (was_running || pty::tree_alive(pid)) {
             blocking(move || pty::hangup_tree(pid)).await;
         }
         let mut exited = self.exited_tx.subscribe();
@@ -426,8 +441,16 @@ impl Pane {
             blocking(move || pty::kill_tree(pid)).await;
             let _ = exited.wait_for(|e| *e).await;
         }
-        if was_running || self.survivors_at_exit.load(Ordering::Acquire) {
+        if owns_group() {
             self.sweep_group(deadline).await;
+        }
+        self.reap_leader();
+    }
+
+    /// 回収を保留していたリーダーを回収する（グループの片付けの後。一度だけ）。
+    fn reap_leader(&self) {
+        if self.state() == RunState::Exited && !self.reaped.swap(true, Ordering::AcqRel) {
+            pty::reap(self.pid);
         }
     }
 

@@ -83,6 +83,11 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
 - **`pane.close` は子を残さない**: Unix ではプロセスグループへ SIGHUP → 3 秒 → SIGKILL を送ります（Node 版と同じ）。さらに、
   リーダーが SIGHUP で終わっても、グループに残ったプロセス（SIGHUP を無視する子など）がいれば、猶予の後に SIGKILL してから戻ります。
   終了済みの pane でも、グループに残ったプロセスがいれば（`pane.close` とデーモンの終了で）同じ手順で止めます。
+  **pgid の再利用対策**: Linux ではリーダーの終了を `waitid(WNOWAIT)` で「回収せずに」検知し、終了コードとシグナルをそこで記録します。
+  リーダーはゾンビのまま残り、`pane.close` / 終了でグループを片付けた後に初めて回収するので、その pid（= pgid）は close まで再利用されず、
+  close の時点で `/proc` を走査してグループの生存（ゾンビのリーダーは数えない）をその場で判定できます。終了済みの pane は close まで
+  ゾンビを 1 つ残します。他の Unix（macOS）は `waitid` の `WNOWAIT` を使えないため終了時に回収し、終了時にグループに残りがいた pane
+  だけを close で扱います（残りが後で終わって pgid が再利用された場合の誤送信は、この環境では防げません）。
   Windows は `taskkill /T /F` でツリーごと止めます（`spawn_blocking` で実行。SIGHUP 相当の猶予は無く、最初から強制終了で、終了済みの pane の残りは追いません。Job Object による封じ込めは第 5 段）。
 - **`pane.write` の `dataB64`**: 不正な base64 は `InvalidParams` にします（Node の `Buffer.from` は黙って読み捨てる）。
 - **サイズ**: cols / rows は Zod と同じ範囲（安全な整数）をそのまま保持し、`pane.info` とイベントには元の値を返します。pty へ渡すときだけ 65535 に丸めます。

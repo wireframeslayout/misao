@@ -107,7 +107,7 @@ pub fn spawn(req: &SpawnRequest<'_>) -> Result<PtyProcess, String> {
 mod platform {
     use nix::errno::Errno;
     use nix::sys::signal::{Signal, killpg};
-    use nix::sys::wait::{WaitStatus, waitpid};
+    use nix::sys::wait::{Id, WaitPidFlag, WaitStatus, waitid, waitpid};
     use nix::unistd::Pid;
 
     use super::{Child, ExitInfo};
@@ -116,7 +116,13 @@ mod platform {
         i32::try_from(pid).ok().map(Pid::from_raw)
     }
 
-    /// 子の終了まで待つ（ブロッキング）。pty の子はセッションリーダーなので、wait は自分で行う
+    /// リーダーを `reap` まで回収せずに（ゾンビのまま）残すか。残せば、リーダーの pid（= pgid = sid）は
+    /// 回収されるまで再利用されないので、`pane.close` の時点でグループへ signal しても無関係なグループを止めない。
+    /// `waitid(WNOWAIT)` と /proc の走査が使える Linux だけ。他の Unix は終了時に回収する。
+    pub const LEADER_HELD: bool = cfg!(target_os = "linux");
+
+    /// 子の終了まで待つ（ブロッキング）。Linux では回収しないまま終了を検知する（`LEADER_HELD`）。
+    /// pty の子はセッションリーダーなので、wait は自分で行う
     /// （portable-pty の wait はシグナルの番号を名前に変えてしまうため）。
     pub fn wait_exit(_child: Box<dyn Child + Send + Sync>, pid: u32) -> ExitInfo {
         let unknown = ExitInfo {
@@ -125,7 +131,12 @@ mod platform {
         };
         let Some(pid) = pgid(pid) else { return unknown };
         loop {
-            match waitpid(pid, None) {
+            let waited = if LEADER_HELD {
+                waitid(Id::Pid(pid), WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT)
+            } else {
+                waitpid(pid, None)
+            };
+            match waited {
                 Ok(WaitStatus::Exited(_, code)) => {
                     return ExitInfo {
                         exit_code: Some(code),
@@ -161,9 +172,64 @@ mod platform {
         signal_group(pid, Signal::SIGKILL);
     }
 
+    /// 回収されずに残っているリーダーを回収する（`LEADER_HELD` のとき。終了済みであること）。
+    pub fn reap(pid: u32) {
+        if LEADER_HELD && let Some(pid) = pgid(pid) {
+            let _ = waitpid(pid, None);
+        }
+    }
+
+    /// グループにまだ生きているプロセスがいるか。ゾンビのリーダー自身は数えない。
+    #[cfg(target_os = "linux")]
+    pub fn tree_alive(pid: u32) -> bool {
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return false;
+        };
+        entries.filter_map(Result::ok).any(|entry| {
+            let is_numeric = entry
+                .file_name()
+                .to_string_lossy()
+                .bytes()
+                .all(|b| b.is_ascii_digit());
+            is_numeric
+                && std::fs::read_to_string(entry.path().join("stat"))
+                    .is_ok_and(|stat| is_live_member(&stat, pid))
+        })
+    }
+
+    /// `/proc/<pid>/stat`（`pid (comm) state ppid pgrp ...`）が、pgrp が `pgrp` の、ゾンビでないプロセスか。
+    /// comm は `)` を含みうるので、最後の `)` から後ろを読む。
+    #[cfg(target_os = "linux")]
+    fn is_live_member(stat: &str, pgrp: u32) -> bool {
+        let Some((_, rest)) = stat.rsplit_once(')') else {
+            return false;
+        };
+        let mut fields = rest.split_whitespace();
+        let state = fields.next();
+        let group = fields.nth(1).and_then(|f| f.parse::<u32>().ok());
+        group == Some(pgrp) && !matches!(state, Some("Z" | "X"))
+    }
+
     /// グループにまだ生きているプロセスがいるか（シグナル 0 の送信）。EPERM は「いる」。
+    #[cfg(not(target_os = "linux"))]
     pub fn tree_alive(pid: u32) -> bool {
         pgid(pid).is_some_and(|pid| !matches!(killpg(pid, None), Err(Errno::ESRCH)))
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    mod tests {
+        use super::is_live_member;
+
+        #[test]
+        fn proc_stat_parsing_ignores_zombies_and_other_groups() {
+            assert!(is_live_member("12 (sleep) S 1 12 12 0 -1", 12));
+            assert!(!is_live_member("12 (sleep) Z 1 12 12 0 -1", 12), "zombie");
+            assert!(!is_live_member("13 (sleep) S 1 99 12 0 -1", 12), "other group");
+            assert!(
+                is_live_member("14 (a) b) R 1 12 12 0 -1", 12),
+                "comm containing a parenthesis"
+            );
+        }
     }
 }
 
@@ -204,13 +270,17 @@ mod platform {
         taskkill_tree(pid);
     }
 
+    pub const LEADER_HELD: bool = false;
+
+    pub fn reap(_pid: u32) {}
+
     /// taskkill /T が木ごと止めるので、リーダーの終了後に追いかけて待つものは無い。
     pub fn tree_alive(_pid: u32) -> bool {
         false
     }
 }
 
-pub use platform::{hangup_tree, kill_tree, tree_alive, wait_exit};
+pub use platform::{LEADER_HELD, hangup_tree, kill_tree, reap, tree_alive, wait_exit};
 
 #[cfg(all(test, unix))]
 #[allow(clippy::unwrap_used)]

@@ -90,7 +90,12 @@ Error codes and numbers, ordinal renumbering, `ephemeralEnv` (never stored), the
   3 seconds (as the Node build does). In addition, if the leader exits on SIGHUP while other processes in
   the group survive (children that ignore SIGHUP, say), they are killed with SIGKILL after the grace period
   before the call returns. The same steps apply to a pane whose leader has already exited but whose group still has survivors (on
-  `pane.close` and on daemon shutdown). On Windows the whole tree is stopped with `taskkill /T /F`, run through
+  `pane.close` and on daemon shutdown). **Guarding against pgid reuse**: on Linux the leader's exit is detected with `waitid(WNOWAIT)` without reaping it, and the exit code and signal are recorded then.
+  The leader stays a zombie until `pane.close` / shutdown has cleaned up the group and only then is reaped, so its pid (= pgid) cannot be reused before
+  close, and close can check on the spot, by scanning `/proc` (the zombie leader is not counted), whether the group still has members. An exited pane
+  therefore keeps one zombie until it is closed. Other Unixes (macOS) cannot use `WNOWAIT` here, so they reap at exit and close only touches panes whose
+  group had survivors at exit (a signal sent after those survivors finished and the pgid was reused is not prevented there).
+  On Windows the whole tree is stopped with `taskkill /T /F`, run through
   `spawn_blocking`: there is no SIGHUP-style grace period (it is a forced kill from the start), and survivors of an
   already exited pane are not chased (containment with a Job Object is stage 5).
 - **The input queue is bounded.** `pane.write` input is written to the pty by a dedicated thread, so it piles up when the child does not read. Once more than 4 MiB is pending, the Rust build refuses further input immediately with `-32603` (`pane input queue is full ...`) instead of waiting (one write into an empty queue is accepted even if it is larger). The Node build (node-pty) queues without limit and has no equivalent error.
