@@ -65,37 +65,43 @@ impl Line {
         self.cells.len()
     }
 
+    // 行の外（折り返し待ちで桁数の位置にいるときなど）への書き込みは無視し、読み出しは空のセルとして扱う
+    // （xterm.js は型付き配列の範囲外を同じように扱う）。
+
     pub fn width(&self, x: usize) -> u8 {
-        self.cells[x].width
+        self.cell(x).width
     }
 
     pub fn has_content(&self, x: usize) -> bool {
-        self.cells[x].has_content()
+        self.cell(x).has_content()
     }
 
     pub fn has_width(&self, x: usize) -> bool {
-        self.cells[x].width != 0
+        self.cell(x).width != 0
     }
 
     pub fn set_null(&mut self, x: usize) {
-        self.cells[x] = Cell::NULL;
+        self.set_cell(x, Cell::NULL);
     }
 
     pub fn set_code(&mut self, x: usize, code: u32, width: u8) {
-        self.cells[x] = Cell::from_code(code, width);
+        self.set_cell(x, Cell::from_code(code, width));
     }
 
     pub fn set_cell(&mut self, x: usize, cell: Cell) {
-        self.cells[x] = cell;
+        if let Some(slot) = self.cells.get_mut(x) {
+            *slot = cell;
+        }
     }
 
     pub fn cell(&self, x: usize) -> &Cell {
-        &self.cells[x]
+        static EMPTY: Cell = Cell::NULL;
+        self.cells.get(x).unwrap_or(&EMPTY)
     }
 
     /// セルの文字列（空なら空文字列）。
     pub fn string_at(&self, x: usize) -> String {
-        let cell = &self.cells[x];
+        let cell = self.cell(x);
         let mut text = String::new();
         if cell.has_content() {
             cell.push_to(&mut text);
@@ -106,7 +112,9 @@ impl Line {
     /// セルに結合文字を足す。空のセルなら、その文字自体を幅 1 で置く。`width` が 0 でなければセルの幅をそれにする。
     /// 1 つのセルに付けられる結合文字は `MAX_COMBINING` まで（超えたぶんは捨てる）。長い結合列で行の更新が遅くならないように。
     pub fn add_code_to_cell(&mut self, x: usize, code: u32, width: u8) {
-        let cell = &mut self.cells[x];
+        let Some(cell) = self.cells.get_mut(x) else {
+            return;
+        };
         let added = char::from_u32(code).unwrap_or('\u{FFFD}');
         if let Some(combined) = cell.combined.as_mut() {
             if combined.0.chars().count() <= MAX_COMBINING {

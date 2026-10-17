@@ -69,3 +69,5 @@ pub use socket::{ensure_socket_dir, listen_unix_socket, lock_socket_start, remov
 
 #[cfg(test)]
 mod node_diff_tests;
+#[cfg(test)]
+mod panic_fuzz_tests;

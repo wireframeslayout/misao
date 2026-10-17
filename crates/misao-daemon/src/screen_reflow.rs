@@ -49,6 +49,19 @@ impl Buffer {
         }
         self.cols = cols;
         self.rows = rows;
+        self.ensure_viewport();
+    }
+
+    /// 行リストが見えている行ぶんに足りなければ、空行で足す。xterm.js は、ある操作の組み合わせ（空の代替画面を先に resize するなど）で
+    /// 行リストと `ybase` が食い違い、画面の外の古い行を読む。そうなった状態を再現せず、空行で補って画面の操作が常に成り立つようにする。
+    fn ensure_viewport(&mut self) {
+        if self.lines.is_empty() {
+            return;
+        }
+        while self.lines.len() < self.ybase + self.rows {
+            let blank = self.blank_line(false);
+            self.lines.push_back(blank);
+        }
     }
 
     /// 折り返しで始まる行（`is_wrapped`）を前の行にまとめる。
