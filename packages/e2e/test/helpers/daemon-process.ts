@@ -10,6 +10,15 @@ import { waitFor } from './wait.js';
 
 const CLI_MAIN = new URL('../../../cli/src/main.ts', import.meta.url).pathname;
 
+/** どちらの実装のデーモンか。省略時は `MISAO_DAEMON_BIN` があれば Rust 版、無ければ Node 版。 */
+export type DaemonImpl = 'node' | 'rust';
+
+export interface DaemonOptions {
+  /** 既存のディレクトリ（ソケット・pid・保存した状態の置き場）で起動する。stop() でもディレクトリは消さない（再起動の確認用）。 */
+  dir?: string;
+  impl?: DaemonImpl;
+}
+
 export interface DaemonConfig {
   scrollback?: number;
   rings?: { rawBytes?: number; linesBytes?: number; events?: number };
@@ -42,20 +51,22 @@ export function cleanEnv(): Record<string, string> {
  * （Rust 版の `target/debug/misao` など）で `misao serve` を動かす。未設定なら Node 版。
  * `MISAO_*` は cleanEnv が子へ渡さないので、ここでだけ読む。
  */
-function daemonCmd(configPath: string, socket: string, dir: string): string[] {
+function daemonCmd(configPath: string, socket: string, dir: string, impl: DaemonImpl | undefined): string[] {
   const serveArgs = ['serve', '--config', configPath, '--socket', socket, '--data', dir];
   const bin = process.env['MISAO_DAEMON_BIN'];
-  return bin === undefined || bin === '' ? nodeCmd(CLI_MAIN, ...serveArgs) : [bin, ...serveArgs];
+  const hasBin = bin !== undefined && bin !== '';
+  if (impl === 'rust' && !hasBin) throw new Error('MISAO_DAEMON_BIN is required to start the Rust daemon');
+  return (impl ?? (hasBin ? 'rust' : 'node')) === 'rust' ? [bin!, ...serveArgs] : nodeCmd(CLI_MAIN, ...serveArgs);
 }
 
 /** 一時ディレクトリに misao.json を置き、`misao serve` を子プロセスで起動する。 */
-export async function startDaemonProcess(config: DaemonConfig = {}): Promise<DaemonProcess> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misao-e2e-'));
+export async function startDaemonProcess(config: DaemonConfig = {}, options: DaemonOptions = {}): Promise<DaemonProcess> {
+  const dir = options.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'misao-e2e-'));
   const socket = path.join(dir, 'misao.sock');
   const configPath = path.join(dir, 'misao.json');
   fs.writeFileSync(configPath, JSON.stringify({ ...config, logLevel: 'warn' }));
   const log = fs.openSync(path.join(dir, 'daemon.log'), 'a');
-  const [command, ...args] = daemonCmd(configPath, socket, dir);
+  const [command, ...args] = daemonCmd(configPath, socket, dir, options.impl);
   const child: ChildProcess = spawn(command!, args, { env: cleanEnv(), stdio: ['ignore', log, log] });
   fs.closeSync(log);
   const pid = child.pid;
@@ -64,7 +75,7 @@ export async function startDaemonProcess(config: DaemonConfig = {}): Promise<Dae
   const stop = async (): Promise<void> => {
     for (const client of clients) client.close();
     await stopChild(child);
-    fs.rmSync(dir, { recursive: true, force: true });
+    if (options.dir === undefined) fs.rmSync(dir, { recursive: true, force: true });
   };
   try {
     const earlyExit = new Promise<never>((_, reject) =>

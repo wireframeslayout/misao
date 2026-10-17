@@ -18,6 +18,7 @@ mod limits;
 mod log;
 mod pane;
 mod pane_handlers;
+mod pane_lifecycle;
 mod pane_observer;
 mod pane_view;
 mod params;

@@ -5,6 +5,10 @@ use crate::unicode_width_table::NON_SINGLE_WIDTH;
 
 /// コードポイントの表示幅（0 = 結合文字・制御文字、1、2 = 全角）。
 pub fn char_width(code: u32) -> u8 {
+    // 印字できる ASCII は全て幅 1（出力の大半。表を引かない）。
+    if (0x20..0x7f).contains(&code) {
+        return 1;
+    }
     NON_SINGLE_WIDTH
         .binary_search_by(|&(start, end, _)| {
             if code < start {
@@ -63,6 +67,13 @@ mod tests {
     #[test]
     fn widths_follow_unicode_6() {
         assert_eq!(char_width('a' as u32), 1);
+        for code in 0x20..0x7f {
+            let from_table = NON_SINGLE_WIDTH
+                .iter()
+                .find(|&&(start, end, _)| (start..=end).contains(&code))
+                .map_or(1, |entry| entry.2);
+            assert_eq!(char_width(code), from_table, "{code:#x}");
+        }
         assert_eq!(char_width('日' as u32), 2);
         assert_eq!(char_width(0x0301), 0);
         assert_eq!(char_width(0x200B), 0);

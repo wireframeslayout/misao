@@ -21,9 +21,18 @@ export interface CliAttach {
   kill(): void;
 }
 
+/**
+ * CLI の argv。`MISAO_CLI_BIN` を指定すると、Node 版の代わりにその実行ファイル（Rust 版の `misao`）で動かす。
+ * `MISAO_*` は cleanEnv が子へ渡さないので、ここ（親プロセス）でだけ読む。
+ */
+function cliCmd(...args: string[]): string[] {
+  const bin = process.env['MISAO_CLI_BIN'];
+  return bin === undefined || bin === '' ? nodeCmd(CLI_MAIN, ...args) : [bin, ...args];
+}
+
 /** 疑似端末の中で `misao attach <target>` を動かす。 */
 export function startCliAttach(daemon: DaemonProcess, target: string): CliAttach {
-  const [command, ...args] = nodeCmd(CLI_MAIN, '--config', daemon.configPath, 'attach', target);
+  const [command, ...args] = cliCmd('--config', daemon.configPath, 'attach', target);
   const term = pty.spawn(command!, args, { name: 'xterm-256color', cols: 100, rows: 30, cwd: REPO_ROOT, env: daemon.cliEnv });
   let out = '';
   let exitCode: number | undefined;

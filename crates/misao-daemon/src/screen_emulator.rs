@@ -126,8 +126,11 @@ impl Emulator {
         if self.run.is_empty() {
             return;
         }
-        let run = std::mem::take(&mut self.run);
+        let mut run = std::mem::take(&mut self.run);
         self.print(&run);
+        // 確保した領域を次の連続のために使い回す。
+        run.clear();
+        self.run = run;
     }
 
     pub(crate) fn print(&mut self, data: &[u32]) {

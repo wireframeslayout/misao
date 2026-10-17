@@ -75,8 +75,30 @@ impl AnsiLineAssembler {
     }
 
     fn run(&mut self, text: &str, out: &mut Vec<String>) {
-        for ch in text.chars() {
+        let bytes = text.as_bytes();
+        let mut at = 0;
+        while at < bytes.len() {
+            if self.state == State::Ground {
+                // 行に足すだけの文字（タブ、印字できる ASCII、ASCII 以外）の連続は、まとめて足す。
+                let run = bytes[at..]
+                    .iter()
+                    .take_while(|&&b| b == 0x09 || (0x20..=0x7e).contains(&b) || b >= 0x80)
+                    .count();
+                if run > 0 {
+                    if self.pending_cr {
+                        self.line.clear();
+                        self.pending_cr = false;
+                    }
+                    self.line.push_str(&text[at..at + run]);
+                    at += run;
+                    continue;
+                }
+            }
+            let Some(ch) = text[at..].chars().next() else {
+                break;
+            };
             self.step(ch, out);
+            at += ch.len_utf8();
         }
     }
 
