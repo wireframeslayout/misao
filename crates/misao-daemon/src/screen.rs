@@ -5,6 +5,7 @@
 use vte::Parser;
 
 use crate::screen_emulator::{Emulator, MIN_COLS, MIN_ROWS};
+use crate::screen_osc::OscGuard;
 
 /// 画面の大きさの上限。プロトコルは安全な整数まで受けるが、格子はセルごとにメモリを使うので、
 /// 画面モデルだけをここで丸める（`pane.info` とイベントには元の値を返す）。
@@ -26,19 +27,22 @@ pub struct Cursor {
 pub struct Screen {
     parser: Parser,
     emulator: Emulator,
+    osc: OscGuard,
 }
 
 impl Screen {
     pub fn new(cols: u64, rows: u64, scrollback: usize) -> Self {
         Self {
             parser: Parser::new(),
+            osc: OscGuard::default(),
             emulator: Emulator::new(clamp(cols, MIN_COLS), clamp(rows, MIN_ROWS), scrollback),
         }
     }
 
     /// 出力を端末に食わせる。この出力で設定されたタイトルを順に返す（同じ値の再設定も 1 件ずつ）。
     pub fn feed(&mut self, data: &[u8]) -> Vec<String> {
-        self.parser.advance(&mut self.emulator, data);
+        let data = self.osc.filter(data);
+        self.parser.advance(&mut self.emulator, &data);
         self.emulator.flush_run();
         std::mem::take(&mut self.emulator.titles)
     }
@@ -128,6 +132,30 @@ mod tests {
         let mut screen = Screen::new(10, 2, 10);
         screen.feed("✅日".as_bytes());
         assert_eq!(screen.cursor(), Cursor { x: 3, y: 0 });
+    }
+
+    #[test]
+    fn repeating_with_the_largest_count_is_bounded_by_the_screen_size() {
+        let mut screen = Screen::new(80, 24, 100);
+        let started = std::time::Instant::now();
+        for _ in 0..200 {
+            screen.feed(b"x\x1b[65535b");
+        }
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert_eq!(screen.rows().len(), 24);
+    }
+
+    #[test]
+    fn an_endless_osc_is_discarded_without_buffering_it_and_the_text_after_it_survives() {
+        let mut screen = Screen::new(10, 2, 10);
+        let mut titles = screen.feed(b"\x1b]0;");
+        let chunk = vec![b'a'; 64 * 1024];
+        for _ in 0..40 {
+            titles.extend(screen.feed(&chunk));
+        }
+        titles.extend(screen.feed(b"\x07ok\x1b]0;fine\x07"));
+        assert_eq!(titles, vec!["fine".to_string()]);
+        assert_eq!(text(&screen), "ok\n");
     }
 
     #[test]

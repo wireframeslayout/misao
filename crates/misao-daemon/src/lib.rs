@@ -31,6 +31,7 @@ mod screen_cursor;
 mod screen_edit;
 mod screen_emulator;
 mod screen_line;
+mod screen_osc;
 mod screen_perform;
 mod screen_reflow;
 mod size_arbiter;

@@ -166,6 +166,8 @@ impl Emulator {
         if codes.is_empty() {
             return;
         }
+        // 画面に影響しうる量（全部で画面のセル数のコードポイント）まで。それより多く繰り返しても同じ画面になる。
+        let n = n.min(self.rows * self.cols / codes.len());
         let repeated: Vec<u32> = (0..n).flat_map(|_| codes.iter().copied()).collect();
         self.print(&repeated);
     }

@@ -1,13 +1,20 @@
 //! 画面の 1 行（xterm.js の `BufferLine`）。属性（色など）は持たない: 画面の文字だけが必要で、属性は結果に出ない。
 //! 「空のセル」（一度も書かれていない / 消去された）と「空白が書かれたセル」は区別する: 前者だけが行末で取り除かれる。
 
+/// 1 つのセルに付けられる結合文字の数の上限（基底の文字は数えない）。xterm.js には上限が無い。
+const MAX_COMBINING: usize = 32;
+
+/// 基底の文字 + 結合文字の文字列。セルを小さく保つため、まれな結合文字つきのセルだけが箱に入れて持つ。
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Combined(String);
+
 /// 1 セル。`code` が 0 なら空。全角文字の 2 つ目のセルは、`code` が 0 で幅 0。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
     code: u32,
     width: u8,
     /// 結合文字を含む文字列（基底の文字 + 結合文字）。
-    combined: Option<Box<str>>,
+    combined: Option<Box<Combined>>,
 }
 
 impl Cell {
@@ -32,7 +39,7 @@ impl Cell {
 
     fn push_to(&self, out: &mut String) {
         match (&self.combined, self.code) {
-            (Some(text), _) => out.push_str(text),
+            (Some(text), _) => out.push_str(&text.0),
             (None, 0) => out.push(' '),
             (None, code) => out.push(char::from_u32(code).unwrap_or('\u{FFFD}')),
         }
@@ -97,18 +104,19 @@ impl Line {
     }
 
     /// セルに結合文字を足す。空のセルなら、その文字自体を幅 1 で置く。`width` が 0 でなければセルの幅をそれにする。
+    /// 1 つのセルに付けられる結合文字は `MAX_COMBINING` まで（超えたぶんは捨てる）。長い結合列で行の更新が遅くならないように。
     pub fn add_code_to_cell(&mut self, x: usize, code: u32, width: u8) {
         let cell = &mut self.cells[x];
         let added = char::from_u32(code).unwrap_or('\u{FFFD}');
-        if let Some(text) = cell.combined.take() {
-            let mut joined = String::from(text);
-            joined.push(added);
-            cell.combined = Some(joined.into_boxed_str());
+        if let Some(combined) = cell.combined.as_mut() {
+            if combined.0.chars().count() <= MAX_COMBINING {
+                combined.0.push(added);
+            }
         } else if cell.code != 0 {
             let mut joined = String::new();
             joined.push(char::from_u32(cell.code).unwrap_or('\u{FFFD}'));
             joined.push(added);
-            cell.combined = Some(joined.into_boxed_str());
+            cell.combined = Some(Box::new(Combined(joined)));
         } else {
             cell.code = code;
             cell.width = 1;
@@ -268,6 +276,15 @@ mod tests {
         assert_eq!(l.translate(true), "a  bcd");
         l.delete_cells(0, 3);
         assert_eq!(l.translate(true), "bcd");
+    }
+
+    #[test]
+    fn a_very_long_run_of_combining_marks_is_capped_per_cell() {
+        let mut l = line("e", 4);
+        for _ in 0..200_000 {
+            l.add_code_to_cell(0, 0x0301, 1);
+        }
+        assert_eq!(l.translate(true).chars().count(), 1 + MAX_COMBINING);
     }
 
     #[test]
