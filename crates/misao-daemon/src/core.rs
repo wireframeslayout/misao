@@ -157,6 +157,7 @@ impl Core {
         };
         // 書き込みの順序づけを取ってからスナップショットを作る（古い状態が新しい状態を上書きしない）。
         let guard = persister.write_guard();
+        let generation = persister.generation();
         let snapshot = {
             let state = self.state();
             PersistedState {
@@ -165,7 +166,7 @@ impl Core {
                 panes: state.registry.to_persisted().map_err(RpcFailure::internal)?,
             }
         };
-        persister.save(&guard, &snapshot).map_err(RpcFailure::internal)
+        persister.save(&guard, generation, &snapshot).map_err(RpcFailure::internal)
     }
 
     /// サイズのような、再起動後の表示用の付帯情報の保存を遅らせて予約する。
