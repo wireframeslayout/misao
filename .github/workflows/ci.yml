@@ -139,6 +139,9 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get install -y --no-install-recommends vim
       - run: npm ci
+      # npm が install スクリプトを動かさない環境で、node-pty の spawn-helper に実行権が付かない (posix_spawnp failed)。
+      - if: runner.os == 'macOS'
+        run: chmod +x node_modules/node-pty/prebuilds/*/spawn-helper
       - run: cargo build --release --locked -p misao
       - uses: actions/upload-artifact@v4
         with:

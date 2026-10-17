@@ -10,6 +10,7 @@ mod child_env;
 mod cmd_resolve;
 mod connection;
 mod core;
+mod cursor_query;
 mod event_log;
 mod foreground;
 mod foreground_sampler;

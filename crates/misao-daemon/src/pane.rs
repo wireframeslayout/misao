@@ -16,6 +16,7 @@ use crate::ansi::AnsiLineAssembler;
 use crate::attachment::{Attachment, output_line};
 use crate::child_env::build_child_env;
 use crate::connection::ConnHandle;
+use crate::cursor_query::{CursorQueryScanner, cursor_report};
 use crate::event_log::EventLog;
 use crate::foreground::ForegroundQuery;
 use crate::ids::new_pane_id;
@@ -104,6 +105,8 @@ struct Inner {
     assembler: AnsiLineAssembler,
     /// resize 後の全画面の再描画を行ストリームから除く（Windows の ConPTY）。
     repaint: RepaintFilter,
+    /// ConPTY のカーソル位置の問い合わせ（`ESC[6n`）の検出（Windows）。
+    cursor_query: CursorQueryScanner,
 }
 
 /// `start` が取り出す、スレッドへ渡すもの。
@@ -254,6 +257,7 @@ impl Pane {
                 lines: SeqRing::new(opts.lines_ring_bytes),
                 assembler: AnsiLineAssembler::default(),
                 repaint: RepaintFilter::default(),
+                cursor_query: CursorQueryScanner::default(),
             }),
             master: Mutex::new(master),
             handoff: Mutex::new(Some(Handoff {
@@ -353,7 +357,7 @@ impl Pane {
     fn on_output(&self, data: &[u8]) {
         let _order = lock(&self.order);
         let ts = now_iso();
-        let (seq, new_head) = {
+        let (seq, new_head, queries) = {
             let mut inner = lock(&self.inner);
             inner.last_output_at = Some(ts.clone());
             let seq = inner.raw.push(data.to_vec(), data.len(), ts.clone());
@@ -363,7 +367,13 @@ impl Pane {
             for text in lines {
                 inner.push_line(text, ts.clone());
             }
-            (seq, any.then(|| inner.lines.head()))
+            // ConPTY は起動時にカーソル位置を尋ね、返事があるまで子を動かさない（`cursor_query.rs`）。
+            let queries = if cfg!(windows) {
+                inner.cursor_query.count(data)
+            } else {
+                0
+            };
+            (seq, any.then(|| inner.lines.head()), queries)
         };
         self.broadcast(seq, &ts, data);
         if let Some(head) = new_head {
@@ -372,6 +382,24 @@ impl Pane {
         // 端末の解析は、リングの更新の lock を離してから行う（解析が長くても、リングを読む側を待たせない）。
         // 出力のスレッドは 1 つなので、順序は保たれる。
         self.observer.output(data);
+        if queries > 0 {
+            let cursor = self.observer.snapshot().cursor;
+            for _ in 0..queries {
+                self.reply_to_terminal_query(cursor_report(cursor.x, cursor.y));
+            }
+        }
+    }
+
+    /// 端末への問い合わせ（子や ConPTY の出力に含まれる）への返事を、子の入力へ送る。アプリの入力ではないので、
+    /// `pane.write` と違って入力のイベントも稼働判定の「入力あり」も起こさない。溜まりすぎていれば捨てる。
+    fn reply_to_terminal_query(&self, reply: Vec<u8>) {
+        let input = lock(&self.input);
+        let Some(tx) = input.as_ref() else { return };
+        if self.check_input_room(reply.len()).is_err() {
+            return;
+        }
+        self.input_queued.fetch_add(reply.len(), Ordering::AcqRel);
+        let _ = tx.send(reply);
     }
 
     fn on_exit(&self, exit: ExitInfo) {
