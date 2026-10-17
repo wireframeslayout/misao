@@ -1,0 +1,105 @@
+//! デーモンの中核を、ソケット無しで（メモリ上のストリームで）動かすテスト用クライアント。
+#![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use misao_daemon::{Core, CoreOptions, Limits, LogLevel, Logger, serve_connection};
+use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};
+
+pub const WAIT: Duration = Duration::from_secs(10);
+
+pub fn core_with(limits: Limits) -> Arc<Core> {
+    Core::new(CoreOptions {
+        version: Some("test".to_string()),
+        socket_path: PathBuf::from("/tmp/misao-test.sock"),
+        limits,
+        log: Logger::new(LogLevel::Error, |m| eprintln!("{m}")),
+    })
+}
+
+pub fn core() -> Arc<Core> {
+    core_with(Limits::default())
+}
+
+pub struct Client {
+    reader: BufReader<ReadHalf<DuplexStream>>,
+    writer: WriteHalf<DuplexStream>,
+    next_id: u64,
+    /// 応答を待つ間に届いた通知。
+    pub notifications: Vec<Value>,
+}
+
+pub fn connect(core: &Arc<Core>) -> Client {
+    let (client, server) = tokio::io::duplex(1024 * 1024);
+    tokio::spawn(serve_connection(server, Arc::clone(core)));
+    let (reader, writer) = tokio::io::split(client);
+    Client {
+        reader: BufReader::new(reader),
+        writer,
+        next_id: 1,
+        notifications: Vec::new(),
+    }
+}
+
+impl Client {
+    pub async fn send_raw(&mut self, line: &str) {
+        self.writer.write_all(line.as_bytes()).await.unwrap();
+        self.writer.write_all(b"\n").await.unwrap();
+    }
+
+    /// 次の 1 行（応答または通知）。無ければ `WAIT` で失敗する。
+    pub async fn read_message(&mut self) -> Value {
+        let mut line = String::new();
+        let n = tokio::time::timeout(WAIT, self.reader.read_line(&mut line))
+            .await
+            .expect("timed out waiting for a message")
+            .unwrap();
+        assert!(n > 0, "connection closed");
+        serde_json::from_str(&line).unwrap()
+    }
+
+    /// 次の通知（応答は読み飛ばさない）。
+    pub async fn next_notification(&mut self) -> Value {
+        if !self.notifications.is_empty() {
+            return self.notifications.remove(0);
+        }
+        let msg = self.read_message().await;
+        assert!(msg.get("method").is_some(), "expected a notification: {msg}");
+        msg
+    }
+
+    /// 応答（成功・エラーとも）を返す。待つ間に届いた通知は `notifications` に溜める。
+    pub async fn call(&mut self, method: &str, params: Value) -> Value {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.send_raw(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}).to_string())
+            .await;
+        loop {
+            let msg = self.read_message().await;
+            if msg.get("method").is_some() {
+                self.notifications.push(msg);
+            } else {
+                assert_eq!(msg["id"], json!(id), "{msg}");
+                return msg;
+            }
+        }
+    }
+
+    /// 成功を期待して result を返す。
+    pub async fn ok(&mut self, method: &str, params: Value) -> Value {
+        let response = self.call(method, params).await;
+        assert!(response.get("error").is_none(), "{method} failed: {response}");
+        response["result"].clone()
+    }
+
+    /// エラーを期待してコードを返す。
+    pub async fn err_code(&mut self, method: &str, params: Value) -> i64 {
+        let response = self.call(method, params).await;
+        response["error"]["code"]
+            .as_i64()
+            .unwrap_or_else(|| panic!("{method} should fail: {response}"))
+    }
+}

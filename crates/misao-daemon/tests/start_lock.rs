@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::sync::mpsc;
 
-use misao_daemon::{Daemon, DaemonError, DaemonOptions, LogLevel, Logger};
+use misao_daemon::{Daemon, DaemonError, DaemonOptions, Limits, LogLevel, Logger};
 use tempfile::TempDir;
 use tokio::net::UnixStream;
 use tokio::sync::oneshot;
@@ -17,6 +17,7 @@ fn options(dir: &Path, pid_name: &str, log: Logger) -> DaemonOptions {
         version: None,
         socket_path: dir.join("misao.sock"),
         pid_path: dir.join(pid_name),
+        limits: Limits::default(),
         log,
     }
 }

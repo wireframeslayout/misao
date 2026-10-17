@@ -540,6 +540,7 @@ version = "0.0.0"
 dependencies = [
  "misao-protocol",
  "nix",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror",

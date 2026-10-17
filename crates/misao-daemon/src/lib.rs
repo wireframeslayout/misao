@@ -1,7 +1,23 @@
-//! misao デーモンの本体。第 1 段は接続口（Unix ソケット）と `server.info` / `server.schema` だけを持つ。
+#![allow(dead_code)] // 段階導入の途中（次のコミット以降で使われる）。最後のコミットで外す。
+//! misao デーモンの本体。接続口（Unix ソケット）、作業場所 / 窓 / ペイン、PTY、出力の記録、イベントを持つ。
+//! 画面・タイトル・稼働判定・状態の保存・attach は後続の段。
 
+mod connection;
+mod core;
+mod event_log;
+mod ids;
+mod layout;
+mod layout_handlers;
+mod limits;
 mod log;
+mod params;
+mod ring;
+mod rpc;
+mod rpc_error;
 
+pub use connection::serve_connection;
+pub use core::{Core, CoreOptions};
+pub use limits::Limits;
 pub use log::{LogLevel, Logger};
 
 #[cfg(unix)]

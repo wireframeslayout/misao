@@ -83,6 +83,7 @@ pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), Cl
         version: Some(env!("CARGO_PKG_VERSION").to_string()),
         socket_path,
         pid_path,
+        limits: config.limits,
         log: Logger::stderr(config.log_level),
     })
     .await
