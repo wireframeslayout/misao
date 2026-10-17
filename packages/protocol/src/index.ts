@@ -66,3 +66,4 @@ export type { EventParams, NotificationName, NotificationParams } from './notifi
 export { buildProtocolJsonSchema } from './schema.js';
 export type { JsonSchema, ProtocolJsonSchema } from './schema.js';
 export { DEFAULT_MAX_LINE_BYTES, LineSplitter, encodeMessage } from './framing.js';
+export { MAX_NAMED_PIPE_NAME_LENGTH, NAMED_PIPE_PREFIX, isNamedPipePath } from './endpoint.js';

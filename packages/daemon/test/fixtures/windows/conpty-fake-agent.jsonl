@@ -1,0 +1,25 @@
+{"meta":{"name":"fake-agent","file":"C:\\Users\\ServerUser\\misao-win-test\\node\\node.exe","args":["C:\\Users\\ServerUser\\misao-win-test\\misao\\fake-agent.cjs"],"cols":80,"rows":24,"platform":"win32","osRelease":"10.0.26200","node":"v24.22.0","nodePty":"1.1.0","steps":[[9000,"r",100,30],[2000,"w","\r"],[4000,"w","q"],[1500,"end"]],"note":"data は node-pty onData の文字列(utf8)。t は spawn からの経過ms","synthetic":"claude CLI の代用 (タイトルのグリフと再描画を模した合成スクリプトの出力)。実物の claude の採取ではない"}}
+{"t":9,"d":"\u001b[?9001h\u001b[?1004h"}
+{"t":44,"d":"\u001b[?25l\u001b[2J\u001b[m\u001b[H\u001b]0;✳ Claude Code\u0007\u001b[?25h"}
+{"t":44,"d":"\u001b[2J"}
+{"t":55,"d":"\u001b[?25l> ready (fake agent)\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[2;1H\u001b[?25h"}
+{"t":550,"d":"\r\n⠂ Thinking... 0s\u001b[K\u001b]0;⠂ working\u0007"}
+{"t":1059,"d":"\r⠐ Thinking... 1s\u001b[K\u001b]0;⠐ working\u0007"}
+{"t":1571,"d":"\r⠠ Thinking... 2s\u001b[K\u001b]0;⠠ working\u0007"}
+{"t":2081,"d":"\r⠐ Thinking... 3s\u001b[K\u001b]0;⠐ working\u0007"}
+{"t":2594,"d":"\r⠂ Thinking... 4s\u001b[K\u001b]0;⠂ working\u0007"}
+{"t":3109,"d":"\r⠐ Thinking... 5s\u001b[K\u001b]0;⠐ working\u0007"}
+{"t":3622,"d":"\r⠠ Thinking... 6s\u001b[K\u001b]0;⠠ working\u0007"}
+{"t":4131,"d":"\r⠐ Thinking... 7s\u001b[K\u001b]0;⠐ working\u0007"}
+{"t":4644,"d":"\r⠂ Thinking... 8s\u001b[K\u001b]0;⠂ working\u0007"}
+{"t":5144,"d":"\r⠐ Thinking... 9s\u001b[K\u001b]0;⠐ working\u0007"}
+{"t":5656,"d":"\r⠠ Thinking... 10s\u001b[K\u001b]0;⠠ working\u0007"}
+{"t":6157,"d":"\r⠐ Thinking... 11s\u001b[K\u001b]0;⠐ working\u0007"}
+{"t":6671,"d":"\r⠂ Thinking... 12s\u001b[K\u001b]0;⠂ working\u0007"}
+{"t":7045,"d":"\r✳ done\u001b[K\r\n> \u001b]0;✳ Claude Code\u0007"}
+{"t":9010,"resize":[100,30]}
+{"t":9011,"d":"\u001b[?25l\u001b[8;30;100t\u001b[H> ready (fake agent)\u001b[K\r\n\u001b[K\r\n✳ done\u001b[K\r\n>\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[4;3H\u001b[?25h"}
+{"t":11027,"input":"\r"}
+{"t":11028,"d":"\r\n"}
+{"t":15040,"input":"q"}
+{"t":16067,"exit":{"exitCode":0}}

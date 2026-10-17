@@ -1,0 +1,31 @@
+{"meta":{"name":"cmd-basic","file":"cmd.exe","args":[],"cols":80,"rows":24,"platform":"win32","osRelease":"10.0.26200","node":"v24.22.0","nodePty":"1.1.0","steps":[[1500,"w","echo hello\r"],[1000,"w","dir C:\\Windows\\System32\\drivers\\etc\r"],[1500,"w","echo 日本語\r"],[1000,"w","cls\r"],[1000,"r",120,40],[1500,"w","echo after-resize\r"],[1000,"w","exit /b 5\r"],[1500,"end"]],"note":"data は node-pty onData の文字列(utf8)。t は spawn からの経過ms"}}
+{"t":16,"d":"\u001b[?9001h\u001b[?1004h"}
+{"t":25,"d":"\u001b[?25l\u001b[2J\u001b[m\u001b[HMicrosoft Windows [Version 10.0.26200.9168]\u001b]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe\u0007\u001b[?25h"}
+{"t":46,"d":"\u001b[?25l\r\n(c) Microsoft Corporation. All rights reserved.\u001b[4;1HC:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[?25h"}
+{"t":1506,"input":"echo hello\r"}
+{"t":1507,"d":"echo hello\r\n"}
+{"t":1521,"d":"\u001b[?25lhello\u001b[7;1HC:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[?25h"}
+{"t":2510,"input":"dir C:\\Windows\\System32\\drivers\\etc\r"}
+{"t":2511,"d":"dir C:\\Windows\\System32\\drivers\\etc\r\n"}
+{"t":2526,"d":"\u001b[?25l ドライブ C のボリューム ラベルは Windows です\r\n ボリューム シリアル番号は F67A-CE70 です\u001b[11;1H C:\\Windows\\System32\\drivers\\etc のディレクトリ\u001b[13;1H\u001b]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe - dir  C:\\Windows\\System32\\drivers\\etc\u0007\u001b[?25h"}
+{"t":2542,"d":"\u001b[?25l2026/07/17  17:56    <DIR>          .\r\n2026/08/18  05:05    <DIR>          ..\r\n2026/07/17  17:56             1,239 hosts\r\n2026/09/26  16:18               441 hosts.ics\r\n2024/04/01  16:24             3,683 lmhosts.sam\r\n2024/04/01  16:24               407 networks\r\n2024/04/01  16:24             1,358 protocol\r\n2024/04/01  16:24            17,635 services\r\n               6 個のファイル              24,763 バイト\r\n               2 個のディレクトリ  98,574,020,608 バイトの空き領域\u001b[24;1HC:\\Users\\ServerUser\\misao-win-test\\misao>\u001b]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe\u0007\u001b[?25h"}
+{"t":4024,"input":"echo 日本語\r"}
+{"t":4024,"d":"echo 日本語\r"}
+{"t":4024,"d":"\n"}
+{"t":4025,"d":"日本語\r\u001b]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe - echo  日本語\u0007"}
+{"t":4026,"d":"\n\u001b]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe\u0007"}
+{"t":4040,"d":"\nC:\\Users\\ServerUser\\misao-win-test\\misao>"}
+{"t":5036,"input":"cls\r"}
+{"t":5036,"d":"cls\r"}
+{"t":5036,"d":"\n"}
+{"t":5037,"d":"\u001b[?25l\u001b[H\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe - cls\u0007\u001b[?25h"}
+{"t":5037,"d":"\u001b[3J"}
+{"t":5051,"d":"\u001b[?25l\u001b[2;1HC:\\Users\\ServerUser\\misao-win-test\\misao>\u001b]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe\u0007\u001b[?25h"}
+{"t":6042,"resize":[120,40]}
+{"t":6044,"d":"\u001b[?25l\u001b[8;40;120t\u001b[H\u001b[K\r\nC:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[2;42H\u001b[?25h"}
+{"t":7543,"input":"echo after-resize\r"}
+{"t":7544,"d":"echo after-resize\r\n"}
+{"t":7559,"d":"\u001b[?25lafter-resize\u001b[5;1HC:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[?25h"}
+{"t":8550,"input":"exit /b 5\r"}
+{"t":8551,"d":"exit /b 5\r\n"}
+{"t":9564,"exit":{"exitCode":5}}

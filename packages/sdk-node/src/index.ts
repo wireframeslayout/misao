@@ -1,4 +1,5 @@
 export const PACKAGE = '@misao/sdk';
+export { NAMED_PIPE_PREFIX, isNamedPipePath } from '@misao/protocol';
 export { MAX_SOCKET_PATH_BYTES, MisaoPathError, resolveMisaoDirs, resolveSocketPath } from './socket-path.js';
 export type {
   MisaoDir,

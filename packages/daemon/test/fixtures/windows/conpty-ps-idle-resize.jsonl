@@ -1,0 +1,15 @@
+{"meta":{"name":"ps-idle-resize","file":"powershell.exe","args":["-NoLogo","-NoProfile"],"cols":80,"rows":24,"platform":"win32","osRelease":"10.0.26200","node":"v24.22.0","nodePty":"1.1.0","steps":[[8000,"r",100,30],[3000,"r",80,24],[3000,"r",132,50],[3000,"r",80,24],[3000,"w","exit\r"],[2000,"end"]],"note":"data は node-pty onData の文字列(utf8)。t は spawn からの経過ms"}}
+{"t":17,"d":"\u001b[?9001h\u001b[?1004h"}
+{"t":348,"d":"\u001b[?25l\u001b[2J\u001b[m\u001b[HPS C:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[1C\u001b]0;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\u0007\u001b[?25h"}
+{"t":8013,"resize":[100,30]}
+{"t":8013,"d":"\u001b[?25l\u001b[8;30;100t\u001b[HPS C:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[1;46H\u001b[?25h"}
+{"t":11022,"resize":[80,24]}
+{"t":11023,"d":"\u001b[?25l\u001b[HPS C:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[1;46H\u001b[?25h"}
+{"t":14035,"resize":[132,50]}
+{"t":14036,"d":"\u001b[?25l\u001b[HPS C:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[1;46H\u001b[?25h"}
+{"t":17044,"resize":[80,24]}
+{"t":17045,"d":"\u001b[?25l\u001b[HPS C:\\Users\\ServerUser\\misao-win-test\\misao>\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[1;46H\u001b[?25h"}
+{"t":20046,"input":"exit\r"}
+{"t":20047,"d":"\u001b[?25l"}
+{"t":20062,"d":"\u001b[92mexit\r\n\u001b[?25h"}
+{"t":21075,"exit":{"exitCode":0}}
