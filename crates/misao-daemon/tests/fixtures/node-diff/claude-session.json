@@ -1,0 +1,358 @@
+{
+ "scrollback": 5000,
+ "name": "claude-session",
+ "cmd": [
+  "claude"
+ ],
+ "cols": 100,
+ "rows": 30,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "\u001b[?2026h\u001b[?25l\u001b]0;✳ Claude Code\u0007"
+  },
+  {
+   "at": 300,
+   "op": "output",
+   "data": "\u001b[G\u001b[38;5;174m╭─── Claude Code v2.1.263 ──────────────────────────────────────────────────────╮\u001b[0m\n\u001b[38;5;174m│\u001b[0m  \u001b[1mWelcome back!\u001b[0m                                                              \u001b[38;5;174m│\u001b[0m\n\u001b[38;5;174m│\u001b[0m  ~/workspace/misao                                                           \u001b[38;5;174m│\u001b[0m\n\u001b[38;5;174m╰───────────────────────────────────────────────────────────────────────────────╯\u001b[0m\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ? for shortcuts\n"
+  },
+  {
+   "at": 300,
+   "op": "output",
+   "data": "\u001b[?25h"
+  },
+  {
+   "at": 310,
+   "op": "info"
+  },
+  {
+   "at": 320,
+   "op": "screen"
+  },
+  {
+   "at": 2300,
+   "op": "input"
+  },
+  {
+   "at": 2340,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G\u001b[38;5;174m╭─── Claude Code v2.1.263 ──────────────────────────────────────────────────────╮\u001b[0m\n\u001b[38;5;174m│\u001b[0m  \u001b[1mWelcome back!\u001b[0m                                                              \u001b[38;5;174m│\u001b[0m\n\u001b[38;5;174m│\u001b[0m  ~/workspace/misao                                                           \u001b[38;5;174m│\u001b[0m\n\u001b[38;5;174m╰───────────────────────────────────────────────────────────────────────────────╯\u001b[0m\n\n> list the files and run the tests\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ? for shortcuts\n"
+  },
+  {
+   "at": 3340,
+   "op": "output",
+   "data": "\u001b]0;⠂ Claude Code\u0007"
+  },
+  {
+   "at": 3345,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G> list the files and run the tests\n\n\u001b[38;5;174m✻\u001b[0m Pondering… (1s · ↑ 120 tokens · esc to interrupt)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt\n"
+  },
+  {
+   "at": 4345,
+   "op": "output",
+   "data": "\u001b]0;⠐ Claude Code\u0007"
+  },
+  {
+   "at": 4350,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G> list the files and run the tests\n\n\u001b[38;5;174m✶\u001b[0m Pondering… (2s · ↑ 240 tokens · esc to interrupt)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt\n"
+  },
+  {
+   "at": 5350,
+   "op": "output",
+   "data": "\u001b]0;⠒ Claude Code\u0007"
+  },
+  {
+   "at": 5355,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G> list the files and run the tests\n\n\u001b[38;5;174m✽\u001b[0m Pondering… (3s · ↑ 360 tokens · esc to interrupt)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt\n"
+  },
+  {
+   "at": 6355,
+   "op": "output",
+   "data": "\u001b]0;⠲ Claude Code\u0007"
+  },
+  {
+   "at": 6360,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G> list the files and run the tests\n\n\u001b[38;5;174m✢\u001b[0m Pondering… (4s · ↑ 480 tokens · esc to interrupt)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt\n"
+  },
+  {
+   "at": 7360,
+   "op": "output",
+   "data": "\u001b]0;⠂ Claude Code\u0007"
+  },
+  {
+   "at": 7365,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G> list the files and run the tests\n\n\u001b[38;5;174m✻\u001b[0m Pondering… (5s · ↑ 600 tokens · esc to interrupt)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt\n"
+  },
+  {
+   "at": 7375,
+   "op": "info"
+  },
+  {
+   "at": 7385,
+   "op": "screen"
+  },
+  {
+   "at": 8365,
+   "op": "output",
+   "data": "\u001b]0;⠐ Claude Code\u0007"
+  },
+  {
+   "at": 8370,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G> list the files and run the tests\n\n\u001b[38;5;174m✶\u001b[0m Pondering… (6s · ↑ 720 tokens · esc to interrupt)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt\n"
+  },
+  {
+   "at": 9370,
+   "op": "output",
+   "data": "\u001b]0;⠒ Claude Code\u0007"
+  },
+  {
+   "at": 9375,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G> list the files and run the tests\n\n\u001b[38;5;174m✽\u001b[0m Pondering… (7s · ↑ 840 tokens · esc to interrupt)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt\n"
+  },
+  {
+   "at": 10375,
+   "op": "output",
+   "data": "\u001b]0;⠲ Claude Code\u0007"
+  },
+  {
+   "at": 10380,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G> list the files and run the tests\n\n\u001b[38;5;174m✢\u001b[0m Pondering… (8s · ↑ 960 tokens · esc to interrupt)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt\n"
+  },
+  {
+   "at": 11380,
+   "op": "output",
+   "data": "\u001b]0;⠂ Claude Code\u0007"
+  },
+  {
+   "at": 11385,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G> list the files and run the tests\n\n\u001b[38;5;174m✻\u001b[0m Pondering… (9s · ↑ 1080 tokens · esc to interrupt)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt\n"
+  },
+  {
+   "at": 12085,
+   "op": "output",
+   "data": "\u001b]0;✳ Claude Code\u0007"
+  },
+  {
+   "at": 12095,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G\u001b[1m⏺ Bash\u001b[0m(rm -rf build)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n Bash command\n\n   rm -rf build\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. Yes, and don't ask again for rm commands\n   3. No, and tell Claude what to do differently (esc)\n────────────────────────────────────────────────────────────────────────────────────────────────────\n Esc to cancel · Tab to add additional instructions\n"
+  },
+  {
+   "at": 12295,
+   "op": "info"
+  },
+  {
+   "at": 12305,
+   "op": "screen"
+  },
+  {
+   "at": 15095,
+   "op": "input"
+  },
+  {
+   "at": 15125,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G⏺ Bash(rm -rf build)\n  ⎿  (No content)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────\n  ? for shortcuts\n"
+  },
+  {
+   "at": 15225,
+   "op": "info"
+  },
+  {
+   "at": 22125,
+   "op": "info"
+  },
+  {
+   "at": 22130,
+   "op": "screen"
+  },
+  {
+   "at": 22225,
+   "op": "exit"
+  }
+ ],
+ "end": 25125,
+ "expect": {
+  "profile": "claude",
+  "log": [
+   {
+    "kind": "title",
+    "at": 0,
+    "title": "✳ Claude Code"
+   },
+   {
+    "kind": "info",
+    "at": 310,
+    "agentState": "unknown",
+    "decidedBy": "none"
+   },
+   {
+    "kind": "screen",
+    "at": 320,
+    "text": "╭─── Claude Code v2.1.263 ──────────────────────────────────────────────────────╮\n                                                                                 │  Welcome back!   \n                                                           │\n                                                            │  ~/workspace/misao                    \n                                       │\n                                        ╰───────────────────────────────────────────────────────────\n────────────────────╯\n\n                     ───────────────────────────────────────────────────────────────────────────────\n─────────────────────\n                     ❯ \n                       ─────────────────────────────────────────────────────────────────────────────\n───────────────────────\n                         ? for shortcuts\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 40,
+     "y": 14
+    },
+    "altScreen": false,
+    "title": "✳ Claude Code",
+    "activity": 3
+   },
+   {
+    "kind": "state",
+    "at": 3340,
+    "state": "working",
+    "decidedBy": "title",
+    "prev": "unknown"
+   },
+   {
+    "kind": "title",
+    "at": 3340,
+    "title": "⠂ Claude Code"
+   },
+   {
+    "kind": "state",
+    "at": 3465,
+    "state": "working",
+    "decidedBy": "claude",
+    "prev": "working"
+   },
+   {
+    "kind": "title",
+    "at": 4345,
+    "title": "⠐ Claude Code"
+   },
+   {
+    "kind": "title",
+    "at": 5350,
+    "title": "⠒ Claude Code"
+   },
+   {
+    "kind": "title",
+    "at": 6355,
+    "title": "⠲ Claude Code"
+   },
+   {
+    "kind": "title",
+    "at": 7360,
+    "title": "⠂ Claude Code"
+   },
+   {
+    "kind": "info",
+    "at": 7375,
+    "agentState": "working",
+    "decidedBy": "claude"
+   },
+   {
+    "kind": "screen",
+    "at": 7385,
+    "text": "                                       │\n                                        ╰───────────────────────────────────────────────────────────\n> list the files and run the tests\n\n                                  ✻ Pondering… (1s · ↑ 120 tokens · esc to interrupt)\n\n> list the files and run the tests\n\n                                  ✶ Pondering… (2s · ↑ 240 tokens · esc to interrupt)\n\n> list the files and run the tests\n\n                                  ✽ Pondering… (3s · ↑ 360 tokens · esc to interrupt)\n\n> list the files and run the tests\n\n                                  ✢ Pondering… (4s · ↑ 480 tokens · esc to interrupt)\n\n> list the files and run the tests\n\n                                  ✻ Pondering… (5s · ↑ 600 tokens · esc to interrupt)\n\n                                                                                     ───────────────\n─────────────────────────────────────────────────────────────────────────────────────\n                                                                                     ❯ \n                                                                                       ─────────────\n───────────────────────────────────────────────────────────────────────────────────────\n                                                                                         ⏵⏵ accept e\ndits on (shift+tab to cycle) · esc to interrupt\n",
+    "cursor": {
+     "x": 47,
+     "y": 29
+    },
+    "altScreen": false,
+    "title": "⠂ Claude Code",
+    "activity": 14
+   },
+   {
+    "kind": "title",
+    "at": 8365,
+    "title": "⠐ Claude Code"
+   },
+   {
+    "kind": "title",
+    "at": 9370,
+    "title": "⠒ Claude Code"
+   },
+   {
+    "kind": "title",
+    "at": 10375,
+    "title": "⠲ Claude Code"
+   },
+   {
+    "kind": "title",
+    "at": 11380,
+    "title": "⠂ Claude Code"
+   },
+   {
+    "kind": "title",
+    "at": 12085,
+    "title": "✳ Claude Code"
+   },
+   {
+    "kind": "state",
+    "at": 12215,
+    "state": "blocked",
+    "decidedBy": "claude",
+    "prev": "working"
+   },
+   {
+    "kind": "info",
+    "at": 12295,
+    "agentState": "blocked",
+    "decidedBy": "claude"
+   },
+   {
+    "kind": "screen",
+    "at": 12305,
+    "text": "> list the files and run the tests\n\n                                  ✽ Pondering… (7s · ↑ 840 tokens · esc to interrupt)\n\n> list the files and run the tests\n\n                                  ✢ Pondering… (8s · ↑ 960 tokens · esc to interrupt)\n\n> list the files and run the tests\n\n                                  ✻ Pondering… (9s · ↑ 1080 tokens · esc to interrupt)\n\n⏺ Bash(rm -rf build)\n\n                    ────────────────────────────────────────────────────────────────────────────────\n────────────────────\n                     Bash command\n\n                                    rm -rf build\n\n                                                 Do you want to proceed?\n                                                                         ❯ 1. Yes\n                                                                                    2. Yes, and don'\nt ask again for rm commands\n                              3. No, and tell Claude what to do differently (esc)\n                                                                                 ───────────────────\n─────────────────────────────────────────────────────────────────────────────────\n                                                                                  Esc to cancel · Ta\nb to add additional instructions\n",
+    "cursor": {
+     "x": 32,
+     "y": 29
+    },
+    "altScreen": false,
+    "title": "✳ Claude Code",
+    "activity": 24
+   },
+   {
+    "kind": "info",
+    "at": 15225,
+    "agentState": "blocked",
+    "decidedBy": "claude"
+   },
+   {
+    "kind": "state",
+    "at": 15245,
+    "state": "working",
+    "decidedBy": "claude",
+    "prev": "blocked"
+   },
+   {
+    "kind": "info",
+    "at": 22125,
+    "agentState": "working",
+    "decidedBy": "claude"
+   },
+   {
+    "kind": "screen",
+    "at": 22130,
+    "text": "> list the files and run the tests\n\n                                  ✽ Pondering… (7s · ↑ 840 tokens · esc to interrupt)\n\n> list the files and run the tests\n\n                                  ✢ Pondering… (8s · ↑ 960 tokens · esc to interrupt)\n\n> list the files and run the tests\n\n                                  ✻ Pondering… (9s · ↑ 1080 tokens · esc to interrupt)\n\n⏺ Bash(rm -rf build)\n\n                    ────────────────────────────────────────────────────────────────────────────────\n────────────────────\n                     Bash command\n⏺ Bash(rm -rf build)\n                      ⎿  (No content)\n\n                                     ───────────────────────────────────────────────────────────────\n─────────────────────────────────────\n                                     ❯ \n                                       ─────────────────────────────────────────────────────────────\n───────────────────────────────────────\n                                         ? for shortcuts\n\n\n\n",
+    "cursor": {
+     "x": 56,
+     "y": 26
+    },
+    "altScreen": false,
+    "title": "✳ Claude Code",
+    "activity": 25
+   },
+   {
+    "kind": "state",
+    "at": 22225,
+    "state": "exited",
+    "decidedBy": "exit",
+    "prev": "working"
+   }
+  ]
+ }
+}

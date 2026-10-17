@@ -1,0 +1,137 @@
+{
+ "scrollback": 5000,
+ "name": "alt-screen",
+ "cmd": [
+  "vim"
+ ],
+ "cols": 80,
+ "rows": 24,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "main screen line 1\r\nmain screen line 2\r\n"
+  },
+  {
+   "at": 100,
+   "op": "output",
+   "data": "\u001b[?1049h\u001b[2J\u001b[H\u001b]0;vim demo\u0007"
+  },
+  {
+   "at": 110,
+   "op": "output",
+   "data": "\u001b[1;1Hheader\u001b[3;5Hindented\u001b[5;1H\u001b[K~\u001b[24;1H-- INSERT --\u001b[2;1H"
+  },
+  {
+   "at": 200,
+   "op": "screen"
+  },
+  {
+   "at": 300,
+   "op": "output",
+   "data": "\u001b[2;23r\u001b[23;1H\r\nscrolled-in line\r\n\r\n\u001b[r"
+  },
+  {
+   "at": 400,
+   "op": "screen"
+  },
+  {
+   "at": 500,
+   "op": "output",
+   "data": "\u001b[1;1H\u001b[2L\u001b[1;1Hinserted\u001b[M\u001b[2P\u001b[4@"
+  },
+  {
+   "at": 600,
+   "op": "screen"
+  },
+  {
+   "at": 700,
+   "op": "output",
+   "data": "\u001b[?1049l"
+  },
+  {
+   "at": 800,
+   "op": "screen"
+  },
+  {
+   "at": 900,
+   "op": "output",
+   "data": "\u001b7saved\u001b8\u001b[2Aup\u001b[3Cright\u001b[10Gabs\u001b[5dline5"
+  },
+  {
+   "at": 1000,
+   "op": "screen"
+  }
+ ],
+ "end": 2000,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "title",
+    "at": 100,
+    "title": "vim demo"
+   },
+   {
+    "kind": "screen",
+    "at": 200,
+    "text": "header\n\n    indented\n\n~\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n-- INSERT --",
+    "cursor": {
+     "x": 0,
+     "y": 1
+    },
+    "altScreen": true,
+    "title": "vim demo",
+    "activity": 3
+   },
+   {
+    "kind": "screen",
+    "at": 400,
+    "text": "header\n~\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nscrolled-in line\n\n\n-- INSERT --",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": true,
+    "title": "vim demo",
+    "activity": 4
+   },
+   {
+    "kind": "screen",
+    "at": 600,
+    "text": "\nheader\n~\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nscrolled-in line\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": true,
+    "title": "vim demo",
+    "activity": 5
+   },
+   {
+    "kind": "screen",
+    "at": 800,
+    "text": "main screen line 1\nmain screen line 2\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 2
+    },
+    "altScreen": false,
+    "title": "vim demo",
+    "activity": 6
+   },
+   {
+    "kind": "screen",
+    "at": 1000,
+    "text": "upin righabsline 1\nmain screen line 2\nsaved\n\n            line5\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 17,
+     "y": 4
+    },
+    "altScreen": false,
+    "title": "vim demo",
+    "activity": 7
+   }
+  ]
+ }
+}

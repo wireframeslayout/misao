@@ -1,0 +1,306 @@
+{
+ "argv": [
+  {
+   "argv": [
+    "/usr/bin/sleep",
+    "30"
+   ],
+   "name": "sleep"
+  },
+  {
+   "argv": [
+    "bash"
+   ],
+   "name": "bash"
+  },
+  {
+   "argv": [
+    "node",
+    "/x/codex"
+   ],
+   "name": "codex"
+  },
+  {
+   "argv": [
+    "node",
+    "--inspect",
+    "/x/a.mjs"
+   ],
+   "name": "a"
+  },
+  {
+   "argv": [
+    "python3.12",
+    "-u",
+    "x.py"
+   ],
+   "name": "x"
+  },
+  {
+   "argv": [
+    "node",
+    "-r",
+    "dotenv/config",
+    "app.js"
+   ],
+   "name": "app"
+  },
+  {
+   "argv": [
+    "node",
+    "--import",
+    "tsx",
+    "a.ts"
+   ],
+   "name": "a"
+  },
+  {
+   "argv": [
+    "node",
+    "--import=tsx",
+    "--conditions",
+    "dev",
+    "b.mjs"
+   ],
+   "name": "b"
+  },
+  {
+   "argv": [
+    "python3",
+    "-W",
+    "ignore",
+    "-X",
+    "dev",
+    "x.py"
+   ],
+   "name": "x"
+  },
+  {
+   "argv": [
+    "python3",
+    "-c",
+    "import os"
+   ],
+   "name": "python3"
+  },
+  {
+   "argv": [
+    "node",
+    "-e",
+    "1"
+   ],
+   "name": "node"
+  },
+  {
+   "argv": [
+    "node",
+    "--eval=1"
+   ],
+   "name": "node"
+  },
+  {
+   "argv": [
+    "node",
+    "-p",
+    "1 + 1"
+   ],
+   "name": "node"
+  },
+  {
+   "argv": [
+    "python3",
+    "-m",
+    "http.server"
+   ],
+   "name": "http.server"
+  },
+  {
+   "argv": [
+    "python3",
+    "-m"
+   ],
+   "name": "python3"
+  },
+  {
+   "argv": [
+    "bun",
+    "run",
+    "dev.ts"
+   ],
+   "name": "dev"
+  },
+  {
+   "argv": [
+    "bun",
+    "x",
+    "tool"
+   ],
+   "name": "tool"
+  },
+  {
+   "argv": [
+    "bun",
+    "--preload",
+    "p.ts",
+    "run",
+    "s.ts"
+   ],
+   "name": "s"
+  },
+  {
+   "argv": [
+    "node",
+    "--",
+    "x.js"
+   ],
+   "name": "x"
+  },
+  {
+   "argv": [
+    "node",
+    "--"
+   ],
+   "name": "node"
+  },
+  {
+   "argv": [
+    "node"
+   ],
+   "name": "node"
+  },
+  {
+   "argv": [
+    "ruby",
+    "-I",
+    "lib",
+    "a.rb"
+   ],
+   "name": "a"
+  },
+  {
+   "argv": [
+    "perl",
+    "-E",
+    "say 1"
+   ],
+   "name": "perl"
+  },
+  {
+   "argv": [
+    "perl",
+    "x.pl"
+   ],
+   "name": "x"
+  },
+  {
+   "argv": [
+    "/bin/sh",
+    "-c",
+    "node x.js"
+   ],
+   "name": "sh"
+  },
+  {
+   "argv": [
+    "node",
+    "a b.js"
+   ],
+   "name": "a b"
+  },
+  {
+   "argv": [
+    "node",
+    "/x/.hidden.tar.gz"
+   ],
+   "name": ".hidden.tar"
+  },
+  {
+   "argv": [
+    "/usr/bin/‮evil​"
+   ],
+   "name": "evil"
+  },
+  {
+   "argv": [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   ],
+   "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "argv": [
+    "日本語コマンド"
+   ],
+   "name": "日本語コマンド"
+  },
+  {
+   "argv": [
+    ""
+   ],
+   "name": null
+  },
+  {
+   "argv": [],
+   "name": null
+  }
+ ],
+ "stats": [
+  {
+   "stat": "123 (bash) S 100 123 123 34816 4567 4194304 1 0",
+   "pgid": 4567
+  },
+  {
+   "stat": "123 (a) (b) S 100 123 123 34816 789 4194304 1 0",
+   "pgid": 789
+  },
+  {
+   "stat": "123 (bash) S 100 123 123 0 -1 4194304 1 0",
+   "pgid": null
+  },
+  {
+   "stat": "123 (bash) S 100 123 123 0 0 4194304 1 0",
+   "pgid": null
+  },
+  {
+   "stat": "123 (bash) S 100 123 123 0 12x 4194304 1 0",
+   "pgid": null
+  },
+  {
+   "stat": "garbage",
+   "pgid": null
+  },
+  {
+   "stat": "",
+   "pgid": null
+  },
+  {
+   "stat": "1 (x) S 1",
+   "pgid": null
+  }
+ ],
+ "sanitize": [
+  {
+   "name": "plain",
+   "sanitized": "plain"
+  },
+  {
+   "name": "",
+   "sanitized": null
+  },
+  {
+   "name": "\u0007\u001b[31mred",
+   "sanitized": "[31mred"
+  },
+  {
+   "name": "a​b‮c",
+   "sanitized": "abc"
+  },
+  {
+   "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "sanitized": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "name": "日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語",
+   "sanitized": "日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日"
+  }
+ ]
+}

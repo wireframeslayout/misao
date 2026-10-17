@@ -57,7 +57,7 @@ pub fn resolve_paths(env: &Env, config: &Config, args: &ServeArgs) -> Result<(Pa
 pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), CliError> {
     use std::os::unix::fs::DirBuilderExt;
 
-    use misao_daemon::{Daemon, DaemonOptions, Logger};
+    use misao_daemon::{Daemon, DaemonOptions, Logger, builtin_profiles};
     use tokio::signal::unix::{SignalKind, signal};
 
     let (socket_path, pid_path) = resolve_paths(env, config, &args)?;
@@ -85,6 +85,7 @@ pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), Cl
         pid_path,
         limits: config.limits,
         log: Logger::stderr(config.log_level),
+        profiles: builtin_profiles().map_err(|e| CliError::new(ErrorKind::Runtime, e))?,
     })
     .await
     .map_err(|e| CliError::runtime(&e))?;

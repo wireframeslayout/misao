@@ -1,0 +1,111 @@
+{
+ "scrollback": 5000,
+ "name": "plain-terminal",
+ "cmd": [
+  "bash"
+ ],
+ "cols": 80,
+ "rows": 24,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "user@host:~$ ls --color\r\nline 00 \u001b[32mgreen\u001b[0m \r\nline 01 \u001b[32mgreen\u001b[0m =>\r\nline 02 \u001b[32mgreen\u001b[0m =>=>\r\nline 03 \u001b[32mgreen\u001b[0m =>=>=>\r\nline 04 \u001b[32mgreen\u001b[0m =>=>=>=>\r\nline 05 \u001b[32mgreen\u001b[0m =>=>=>=>=>\r\nline 06 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>\r\nline 07 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>\r\nline 08 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>\r\nline 09 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>\r\nline 10 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>\r\nline 11 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>\r\nline 12 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>\r\nline 13 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 14 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 15 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 16 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 17 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 18 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 19 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 20 \u001b[32mgreen\u001b[0m \r\nline 21 \u001b[32mgreen\u001b[0m =>\r\nline 22 \u001b[32mgreen\u001b[0m =>=>\r\nline 23 \u001b[32mgreen\u001b[0m =>=>=>\r\nline 24 \u001b[32mgreen\u001b[0m =>=>=>=>\r\nline 25 \u001b[32mgreen\u001b[0m =>=>=>=>=>\r\nline 26 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>\r\nline 27 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>\r\nline 28 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>\r\nline 29 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>\r\n"
+  },
+  {
+   "at": 100,
+   "op": "screen"
+  },
+  {
+   "at": 200,
+   "op": "output",
+   "data": "line 30 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>\r\nline 31 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>\r\nline 32 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>\r\nline 33 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 34 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 35 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 36 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 37 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 38 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 39 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 40 \u001b[32mgreen\u001b[0m \r\nline 41 \u001b[32mgreen\u001b[0m =>\r\nline 42 \u001b[32mgreen\u001b[0m =>=>\r\nline 43 \u001b[32mgreen\u001b[0m =>=>=>\r\nline 44 \u001b[32mgreen\u001b[0m =>=>=>=>\r\nline 45 \u001b[32mgreen\u001b[0m =>=>=>=>=>\r\nline 46 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>\r\nline 47 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>\r\nline 48 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>\r\nline 49 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>\r\nline 50 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>\r\nline 51 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>\r\nline 52 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>\r\nline 53 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 54 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 55 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 56 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 57 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 58 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nline 59 \u001b[32mgreen\u001b[0m =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\r\nuser@host:~$ "
+  },
+  {
+   "at": 300,
+   "op": "screen"
+  },
+  {
+   "at": 400,
+   "op": "output",
+   "data": "tab\there\tand more\tstuff\r\nback\b\bsp\r\nover\rXY\r\n"
+  },
+  {
+   "at": 500,
+   "op": "output",
+   "data": "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXYYYYYYY\r\n"
+  },
+  {
+   "at": 600,
+   "op": "output",
+   "data": "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW\r\nVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV"
+  },
+  {
+   "at": 700,
+   "op": "screen"
+  },
+  {
+   "at": 800,
+   "op": "output",
+   "data": "\r\n\u001b[1;31mred bold\u001b[0m \u001b[7minverse\u001b[0m \u001b[4munder\u001b[0m \u001b[38;2;10;20;30mtruecolor\u001b[0m\r\n"
+  },
+  {
+   "at": 900,
+   "op": "screen"
+  }
+ ],
+ "end": 2000,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "screen",
+    "at": 100,
+    "text": "line 07 green =>=>=>=>=>=>=>\nline 08 green =>=>=>=>=>=>=>=>\nline 09 green =>=>=>=>=>=>=>=>=>\nline 10 green =>=>=>=>=>=>=>=>=>=>\nline 11 green =>=>=>=>=>=>=>=>=>=>=>\nline 12 green =>=>=>=>=>=>=>=>=>=>=>=>\nline 13 green =>=>=>=>=>=>=>=>=>=>=>=>=>\nline 14 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 15 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 16 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 17 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 18 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 19 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 20 green \nline 21 green =>\nline 22 green =>=>\nline 23 green =>=>=>\nline 24 green =>=>=>=>\nline 25 green =>=>=>=>=>\nline 26 green =>=>=>=>=>=>\nline 27 green =>=>=>=>=>=>=>\nline 28 green =>=>=>=>=>=>=>=>\nline 29 green =>=>=>=>=>=>=>=>=>\n",
+    "cursor": {
+     "x": 0,
+     "y": 23
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 1
+   },
+   {
+    "kind": "screen",
+    "at": 300,
+    "text": "line 37 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 38 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 39 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 40 green \nline 41 green =>\nline 42 green =>=>\nline 43 green =>=>=>\nline 44 green =>=>=>=>\nline 45 green =>=>=>=>=>\nline 46 green =>=>=>=>=>=>\nline 47 green =>=>=>=>=>=>=>\nline 48 green =>=>=>=>=>=>=>=>\nline 49 green =>=>=>=>=>=>=>=>=>\nline 50 green =>=>=>=>=>=>=>=>=>=>\nline 51 green =>=>=>=>=>=>=>=>=>=>=>\nline 52 green =>=>=>=>=>=>=>=>=>=>=>=>\nline 53 green =>=>=>=>=>=>=>=>=>=>=>=>=>\nline 54 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 55 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 56 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 57 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 58 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 59 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nuser@host:~$ ",
+    "cursor": {
+     "x": 13,
+     "y": 23
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 2
+   },
+   {
+    "kind": "screen",
+    "at": 700,
+    "text": "line 44 green =>=>=>=>\nline 45 green =>=>=>=>=>\nline 46 green =>=>=>=>=>=>\nline 47 green =>=>=>=>=>=>=>\nline 48 green =>=>=>=>=>=>=>=>\nline 49 green =>=>=>=>=>=>=>=>=>\nline 50 green =>=>=>=>=>=>=>=>=>=>\nline 51 green =>=>=>=>=>=>=>=>=>=>=>\nline 52 green =>=>=>=>=>=>=>=>=>=>=>=>\nline 53 green =>=>=>=>=>=>=>=>=>=>=>=>=>\nline 54 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 55 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 56 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 57 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 58 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 59 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nuser@host:~$ tab        here    and more        stuff\nbasp\nXYer\nWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nYYYYYYY\nWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW\nVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV",
+    "cursor": {
+     "x": 80,
+     "y": 23
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 5
+   },
+   {
+    "kind": "screen",
+    "at": 900,
+    "text": "line 46 green =>=>=>=>=>=>\nline 47 green =>=>=>=>=>=>=>\nline 48 green =>=>=>=>=>=>=>=>\nline 49 green =>=>=>=>=>=>=>=>=>\nline 50 green =>=>=>=>=>=>=>=>=>=>\nline 51 green =>=>=>=>=>=>=>=>=>=>=>\nline 52 green =>=>=>=>=>=>=>=>=>=>=>=>\nline 53 green =>=>=>=>=>=>=>=>=>=>=>=>=>\nline 54 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 55 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 56 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 57 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 58 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nline 59 green =>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>\nuser@host:~$ tab        here    and more        stuff\nbasp\nXYer\nWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nYYYYYYY\nWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW\nVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV\nred bold inverse under truecolor\n",
+    "cursor": {
+     "x": 0,
+     "y": 23
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 6
+   }
+  ]
+ }
+}

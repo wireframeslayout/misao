@@ -1,0 +1,80 @@
+{
+ "scrollback": 5000,
+ "name": "wide-chars",
+ "cmd": [
+  "bash"
+ ],
+ "cols": 80,
+ "rows": 24,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "日本語のテキスト、ＡＢＣ　全角スペース。\r\n"
+  },
+  {
+   "at": 10,
+   "op": "output",
+   "data": "ああああああああああああああああああああああああああああああああああああああああい\r\n"
+  },
+  {
+   "at": 20,
+   "op": "output",
+   "data": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaあう\r\n"
+  },
+  {
+   "at": 30,
+   "op": "output",
+   "data": "é ä ñ combining\r\n"
+  },
+  {
+   "at": 40,
+   "op": "output",
+   "data": "┌────────┐\r\n│ 箱 罫線 │\r\n└────────┘\r\n"
+  },
+  {
+   "at": 50,
+   "op": "output",
+   "data": "❯ ⏺ ✻ ✳ ⎿ · … → ← ↑ ↓ ▐▛███▜▌\r\n"
+  },
+  {
+   "at": 60,
+   "op": "output",
+   "bytes": [
+    230,
+    151
+   ]
+  },
+  {
+   "at": 61,
+   "op": "output",
+   "bytes": [
+    165,
+    13,
+    10
+   ]
+  },
+  {
+   "at": 100,
+   "op": "screen"
+  }
+ ],
+ "end": 1000,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "screen",
+    "at": 100,
+    "text": "日本語のテキスト、ＡＢＣ　全角スペース。\nああああああああああああああああああああああああああああああああああああああああ\nい\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nあう\né ä ñ combining\n┌────────┐\n│ 箱 罫線 │\n└────────┘\n❯ ⏺ ✻ ✳ ⎿ · … → ← ↑ ↓ ▐▛███▜▌\n日\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 0,
+     "y": 11
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 8
+   }
+  ]
+ }
+}

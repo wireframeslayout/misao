@@ -1,0 +1,161 @@
+{
+ "scrollback": 5000,
+ "name": "claude-question-transcript",
+ "cmd": [
+  "env",
+  "-u",
+  "CLAUDE_CODE",
+  "claude",
+  "--model",
+  "x"
+ ],
+ "cols": 90,
+ "rows": 30,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "\u001b[?2026h\u001b]0;✳ Claude Code\u0007"
+  },
+  {
+   "at": 400,
+   "op": "output",
+   "data": "\u001b[G⏺ Which approach do you prefer?\n──────────────────────────────────────────────────────────────────────────────────────────\n❯ \n──────────────────────────────────────────────────────────────────────────────────────────\n  ? for shortcuts\n"
+  },
+  {
+   "at": 5400,
+   "op": "info"
+  },
+  {
+   "at": 5400,
+   "op": "output",
+   "data": "\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[1A\u001b[2K\u001b[G⏺ Which approach do you prefer?\n──────────────────────────────────────────────────────────────────────────────────────────\n ☐ Approach\n\n Which approach?\n ❯ 1. Fast path\n   2. Careful path\n──────────────────────────────────────────────────────────────────────────────────────────\n Enter to select · ↑/↓ to navigate · Esc to cancel\n"
+  },
+  {
+   "at": 5700,
+   "op": "info"
+  },
+  {
+   "at": 5710,
+   "op": "screen"
+  },
+  {
+   "at": 11400,
+   "op": "output",
+   "data": "\u001b[?1049h\u001b[2J\u001b[H Transcript\r\n Do you want to proceed?\r\n\u001b[30;1HShowing detailed transcript · ctrl+o to toggle"
+  },
+  {
+   "at": 11600,
+   "op": "info"
+  },
+  {
+   "at": 11610,
+   "op": "screen"
+  },
+  {
+   "at": 15400,
+   "op": "output",
+   "data": "\u001b[?1049l"
+  },
+  {
+   "at": 15600,
+   "op": "info"
+  },
+  {
+   "at": 15610,
+   "op": "screen"
+  }
+ ],
+ "end": 20400,
+ "expect": {
+  "profile": "claude",
+  "log": [
+   {
+    "kind": "title",
+    "at": 0,
+    "title": "✳ Claude Code"
+   },
+   {
+    "kind": "info",
+    "at": 5400,
+    "agentState": "unknown",
+    "decidedBy": "none"
+   },
+   {
+    "kind": "state",
+    "at": 5520,
+    "state": "blocked",
+    "decidedBy": "claude",
+    "prev": "unknown"
+   },
+   {
+    "kind": "info",
+    "at": 5700,
+    "agentState": "blocked",
+    "decidedBy": "claude"
+   },
+   {
+    "kind": "screen",
+    "at": 5710,
+    "text": "⏺ Which approach do you prefer?\n                               ───────────────────────────────────────────────────────────\n───────────────────────────────\n                               ❯ \n⏺ Which approach do you prefer?\n                               ───────────────────────────────────────────────────────────\n───────────────────────────────\n                                ☐ Approach\n\n                                           Which approach?\n                                                           ❯ 1. Fast path\n                                                                            2. Careful pat\nh\n ─────────────────────────────────────────────────────────────────────────────────────────\n─\n  Enter to select · ↑/↓ to navigate · Esc to cancel\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 51,
+     "y": 16
+    },
+    "altScreen": false,
+    "title": "✳ Claude Code",
+    "activity": 3
+   },
+   {
+    "kind": "state",
+    "at": 11520,
+    "state": "idle",
+    "decidedBy": "bytes",
+    "prev": "blocked"
+   },
+   {
+    "kind": "info",
+    "at": 11600,
+    "agentState": "idle",
+    "decidedBy": "bytes"
+   },
+   {
+    "kind": "screen",
+    "at": 11610,
+    "text": " Transcript\n Do you want to proceed?\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nShowing detailed transcript · ctrl+o to toggle",
+    "cursor": {
+     "x": 46,
+     "y": 29
+    },
+    "altScreen": true,
+    "title": "✳ Claude Code",
+    "activity": 4
+   },
+   {
+    "kind": "state",
+    "at": 15520,
+    "state": "blocked",
+    "decidedBy": "claude",
+    "prev": "idle"
+   },
+   {
+    "kind": "info",
+    "at": 15600,
+    "agentState": "blocked",
+    "decidedBy": "claude"
+   },
+   {
+    "kind": "screen",
+    "at": 15610,
+    "text": "⏺ Which approach do you prefer?\n                               ───────────────────────────────────────────────────────────\n───────────────────────────────\n                               ❯ \n⏺ Which approach do you prefer?\n                               ───────────────────────────────────────────────────────────\n───────────────────────────────\n                                ☐ Approach\n\n                                           Which approach?\n                                                           ❯ 1. Fast path\n                                                                            2. Careful pat\nh\n ─────────────────────────────────────────────────────────────────────────────────────────\n─\n  Enter to select · ↑/↓ to navigate · Esc to cancel\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "cursor": {
+     "x": 51,
+     "y": 16
+    },
+    "altScreen": false,
+    "title": "✳ Claude Code",
+    "activity": 5
+   }
+  ]
+ }
+}

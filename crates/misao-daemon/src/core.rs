@@ -9,10 +9,12 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::event_log::{EventLog, EventsSource};
+use crate::foreground_sampler::ForegroundSampler;
 use crate::layout::Layout;
 use crate::limits::Limits;
 use crate::log::Logger;
 use crate::params::{self, Empty, EventsSubscribeParams};
+use crate::profile::Profile;
 use crate::registry::PaneRegistry;
 use crate::rpc::RequestContext;
 use crate::rpc_error::{RpcFailure, RpcResult};
@@ -25,6 +27,8 @@ pub struct CoreOptions {
     pub socket_path: PathBuf,
     pub limits: Limits,
     pub log: Logger,
+    /// pane の稼働判定に使うプロファイル（`pane.open` の cmd で最初に一致したものを使う）。
+    pub profiles: Vec<Arc<Profile>>,
 }
 
 pub(crate) struct State {
@@ -43,6 +47,9 @@ pub struct Core {
     /// 子プロセスの環境変数 `MISAO_SOCKET` に渡す、接続口のパス。
     pub(crate) socket_path: PathBuf,
     pub(crate) limits: Limits,
+    pub(crate) profiles: Vec<Arc<Profile>>,
+    /// 前面のプログラムの定期調査（profile の選び直し）。デーモンに 1 つ。
+    pub(crate) sampler: ForegroundSampler,
 }
 
 pub(crate) fn to_value<T: Serialize>(value: &T) -> RpcResult<Value> {
@@ -65,6 +72,7 @@ impl Core {
             socket_path,
             limits,
             log,
+            profiles,
         } = opts;
         let core = Arc::new(Self {
             version,
@@ -73,6 +81,8 @@ impl Core {
             log,
             socket_path,
             limits,
+            profiles,
+            sampler: ForegroundSampler::start(),
             events: Arc::new(EventLog::new(limits.events)),
             state: Mutex::new(State {
                 layout: Layout::default(),
@@ -119,6 +129,7 @@ impl Core {
             "pane.list" => self.pane_list(raw),
             "pane.write" => self.pane_write(raw),
             "pane.resize" => self.pane_resize(raw),
+            "pane.screen" => self.pane_screen(raw),
             "pane.subscribe_lines" => self.pane_subscribe_lines(raw, ctx),
             "pane.set_label" => self.pane_set_label(raw),
             "pane.close" => self.pane_close(raw).await,

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use misao_daemon::{Core, CoreOptions, Limits, LogLevel, Logger, serve_connection};
+use misao_daemon::{Core, CoreOptions, Limits, LogLevel, Logger, builtin_profiles, serve_connection};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};
 
@@ -17,6 +17,7 @@ pub fn core_with(limits: Limits) -> Arc<Core> {
         socket_path: PathBuf::from("/tmp/misao-test.sock"),
         limits,
         log: Logger::new(LogLevel::Error, |m| eprintln!("{m}")),
+        profiles: builtin_profiles().unwrap(),
     })
 }
 

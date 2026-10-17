@@ -19,6 +19,7 @@ fn options(dir: &Path, pid_name: &str, log: Logger) -> DaemonOptions {
         pid_path: dir.join(pid_name),
         limits: Limits::default(),
         log,
+        profiles: Vec::new(),
     }
 }
 

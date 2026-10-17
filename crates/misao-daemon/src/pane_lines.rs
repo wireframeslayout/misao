@@ -115,6 +115,7 @@ mod tests {
 
     use super::super::{Pane, PaneOpenOptions};
     use super::*;
+    use crate::event_log::EventLog;
 
     fn pane() -> Arc<Pane> {
         Pane::spawn(PaneOpenOptions {
@@ -127,6 +128,9 @@ mod tests {
             socket_path: Path::new("/tmp/unused.sock"),
             raw_ring_bytes: 1024,
             lines_ring_bytes: 1024,
+            scrollback: 100,
+            profiles: Vec::new(),
+            events: Arc::new(EventLog::new(10)),
         })
         .unwrap()
     }

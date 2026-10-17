@@ -1,0 +1,45 @@
+{
+  "name": "codex",
+  "programs": ["codex"],
+  "rules": [
+    {
+      "id": "action_required_title",
+      "verdict": "blocked",
+      "priority": 95,
+      "region": "title",
+      "when": { "contains": "action required" }
+    },
+    {
+      "id": "confirm",
+      "verdict": "blocked",
+      "priority": 90,
+      "region": "all",
+      "when": {
+        "any": [
+          { "contains": "press enter to confirm or esc to cancel" },
+          { "contains": "allow command?" },
+          { "contains": "enter to submit" }
+        ]
+      }
+    },
+    {
+      "id": "yes_no",
+      "verdict": "blocked",
+      "priority": 85,
+      "region": "all",
+      "when": {
+        "any": [
+          { "contains": "[y/n]" },
+          { "all": [{ "contains": "do you want to" }, { "contains": "yes" }] }
+        ]
+      }
+    },
+    {
+      "id": "working",
+      "verdict": "working",
+      "priority": 70,
+      "region": "above",
+      "when": { "contains": "esc to interrupt" }
+    }
+  ]
+}
