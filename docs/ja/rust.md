@@ -214,7 +214,7 @@ Node 版と違う点: pane を `close` したとき、attach していたクラ�
 正本は Node 版のソースとテストで、引数の解釈は `util.parseArgs` の strict と同じ振る舞いを**手書きで**実装しています（clap は使いません: エラーの文言・終了コード 2・`--json` のエラーを Node 版と一致させるため）。
 CLI は tokio の接続を持つクライアント（1 つの actor が接続を持ち、購読の応答を再生の通知より先に適用する。Node の SDK と同じ指数バックオフで再接続し、`since` / `epoch` を復元する）で、
 `attach` は端末を raw にして prefix キーの状態機械・SIGWINCH・終了シグナル・端末の復元（`TTY_RESET`）を扱います（Unix のみ。他の OS は後続の段）。
-Node 版との違い: raw モード中の panic は端末を戻して `[misao] 予期しないエラー` を出し終了コード 1 にする（Node の `uncaughtException`）、stdin の EOF は「シグナル」と同じ終わり方、`misao.json` の `keys` / `rings` の未知のキーは警告（Node 版と同じ）。
+Node 版との違い: raw モード中の panic は端末を戻して `[misao] 予期しないエラー` を出し終了コード 1 にする（Node の `uncaughtException`）、`misao.json` の `keys` / `rings` の未知のキーは警告（Node 版と同じ）。
 
 `misao.json`（`socket` / `logLevel` / `scrollback` / `rings` / `keys`）、制限値の既定、ログ（stderr に `[misao <ISO 時刻>] msg`）は Node 版と同じ検証・既定です。
 

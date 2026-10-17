@@ -167,10 +167,15 @@ async fn drive(
             input_count,
         );
     }
+    let mut stdin_closed = false;
     let reason = loop {
         tokio::select! {
-            chunk = io.stdin.recv() => {
-                let Some(chunk) = chunk else { break SessionReason::Signal };
+            chunk = io.stdin.recv(), if !stdin_closed => {
+                // Node 版は 'data' だけを聞き、EOF では終わらない。入力が閉じたら以後は入力を読まず、出力と終了を待ち続ける。
+                let Some(chunk) = chunk else {
+                    stdin_closed = true;
+                    continue;
+                };
                 let result = filter.feed(&chunk);
                 if !result.forward.is_empty() && !is_readonly {
                     input_count += 1;

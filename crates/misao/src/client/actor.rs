@@ -1,122 +1,27 @@
 //! 接続を持つタスク。要求と応答の対応、購読の登録・再購読、切断後の再接続を 1 つのタスクで順番に処理する
 //! （購読の応答は、同じチャンクで続く再生通知より必ず先に反映される）。
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
-use misao_protocol::{LineSplitter, PROTOCOL_VERSION, encode_message};
-use serde_json::{Value, json};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
+use serde_json::Value;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::oneshot;
-use tokio::time::{sleep, timeout};
 
+use super::conn::{Conn, Pending};
 use super::cursor::{StreamCursor, StreamId, StreamPos};
-use super::transport::{Stream, connect_stream};
 use super::{ClientError, ClientEvent, Cmd, GapReason, Shared, subscribe_params};
 
-const CONNECT_TIMEOUT: Duration = Duration::from_millis(5000);
-const INITIAL_DELAY_MS: u64 = 100;
-const MAX_DELAY_MS: u64 = 5000;
-
-enum Pending {
-    User(oneshot::Sender<Result<Value, ClientError>>),
-    Subscribe {
-        stream: StreamId,
-        since: Option<StreamPos>,
-        reply: oneshot::Sender<Result<(), ClientError>>,
-    },
-    Resub {
-        stream: StreamId,
-        was_reset: bool,
-    },
-    Info,
-}
-
-struct Conn {
-    read: ReadHalf<Stream>,
-    write: WriteHalf<Stream>,
-    splitter: LineSplitter,
-    pending: HashMap<u64, Pending>,
-    next_id: u64,
-    buf: Vec<u8>,
-}
-
-impl Conn {
-    fn new(stream: Stream) -> Self {
-        let (read, write) = tokio::io::split(stream);
-        Self {
-            read,
-            write,
-            splitter: LineSplitter::default(),
-            pending: HashMap::new(),
-            next_id: 1,
-            buf: vec![0u8; 64 * 1024],
-        }
-    }
-
-    async fn send(&mut self, method: &str, params: Value, pending: Pending) -> Result<(), ClientError> {
-        let id = self.next_id;
-        self.next_id += 1;
-        let bytes = encode_message(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
-            .map_err(|e| ClientError::Other(e.to_string()))?;
-        self.pending.insert(id, pending);
-        self.write
-            .write_all(&bytes)
-            .await
-            .map_err(|e| ClientError::Connection(e.to_string()))
-    }
-
-    /// 次のまとまりの行。相手が閉じたら Err。
-    async fn read_lines(&mut self) -> Result<Vec<String>, ClientError> {
-        loop {
-            let n = self
-                .read
-                .read(&mut self.buf)
-                .await
-                .map_err(|e| ClientError::Connection(e.to_string()))?;
-            if n == 0 {
-                return Err(ClientError::Connection("connection closed by peer".to_string()));
-            }
-            let lines = self
-                .splitter
-                .push(&self.buf[..n])
-                .map_err(|e| ClientError::Connection(format!("protocol violation: {e}")))?;
-            if !lines.is_empty() {
-                return Ok(lines);
-            }
-        }
-    }
-
-    /// 保留中の要求を、接続の失敗で終わらせる。
-    fn fail_all(&mut self, reason: &ClientError) {
-        for (_, pending) in self.pending.drain() {
-            match pending {
-                Pending::User(reply) => {
-                    let _ = reply.send(Err(reason.clone()));
-                }
-                Pending::Subscribe { reply, .. } => {
-                    let _ = reply.send(Err(reason.clone()));
-                }
-                Pending::Resub { .. } | Pending::Info => {}
-            }
-        }
-    }
-}
-
-enum End {
+pub(super) enum End {
     Closed,
     Lost(ClientError),
 }
 
-struct Actor {
-    path: PathBuf,
-    shared: Arc<Shared>,
-    cmd_rx: UnboundedReceiver<Cmd>,
-    cursor: StreamCursor,
-    info: Option<Value>,
+pub(super) struct Actor {
+    pub(super) path: PathBuf,
+    pub(super) shared: Arc<Shared>,
+    pub(super) cmd_rx: UnboundedReceiver<Cmd>,
+    pub(super) cursor: StreamCursor,
+    pub(super) info: Option<Value>,
 }
 
 pub(super) async fn start(
@@ -136,20 +41,20 @@ pub(super) async fn start(
     Ok(())
 }
 
-fn violation(message: impl std::fmt::Display) -> ClientError {
+pub(super) fn violation(message: impl std::fmt::Display) -> ClientError {
     ClientError::Connection(format!("protocol violation: {message}"))
 }
 
-fn str_field<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+pub(super) fn str_field<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
 
 impl Actor {
-    fn emit(&self, event: &ClientEvent) {
+    pub(super) fn emit(&self, event: &ClientEvent) {
         self.shared.emit(event);
     }
 
-    async fn run(mut self, mut conn: Conn) {
+    pub(super) async fn run(mut self, mut conn: Conn) {
         loop {
             match self.serve(&mut conn).await {
                 End::Closed => {
@@ -168,7 +73,7 @@ impl Actor {
         }
     }
 
-    async fn serve(&mut self, conn: &mut Conn) -> End {
+    pub(super) async fn serve(&mut self, conn: &mut Conn) -> End {
         loop {
             tokio::select! {
                 cmd = self.cmd_rx.recv() => match cmd {
@@ -185,7 +90,7 @@ impl Actor {
         }
     }
 
-    async fn apply(&mut self, conn: &mut Conn, cmd: Cmd) -> Result<(), ClientError> {
+    pub(super) async fn apply(&mut self, conn: &mut Conn, cmd: Cmd) -> Result<(), ClientError> {
         match cmd {
             Cmd::Request {
                 method,
@@ -218,7 +123,7 @@ impl Actor {
     }
 
     /// 1 行を処理する。Err はプロトコル違反（接続を切って再接続する）。
-    fn handle_line(&mut self, conn: &mut Conn, line: &str) -> Result<(), ClientError> {
+    pub(super) fn handle_line(&mut self, conn: &mut Conn, line: &str) -> Result<(), ClientError> {
         let value: Value = serde_json::from_str(line).map_err(|_| violation("invalid JSON line"))?;
         if value.get("method").is_some() && value.get("id").is_none() {
             let method = str_field(&value, "method").unwrap_or_default().to_string();
@@ -246,7 +151,11 @@ impl Actor {
         self.settle(pending, outcome)
     }
 
-    fn settle(&mut self, pending: Pending, outcome: Result<Value, ClientError>) -> Result<(), ClientError> {
+    pub(super) fn settle(
+        &mut self,
+        pending: Pending,
+        outcome: Result<Value, ClientError>,
+    ) -> Result<(), ClientError> {
         match pending {
             Pending::User(reply) => {
                 let _ = reply.send(outcome);
@@ -286,7 +195,7 @@ impl Actor {
     }
 
     /// 購読の応答を反映する。since が無ければ head から、あれば epoch が現在と違うかを比べる。
-    fn activate(
+    pub(super) fn activate(
         &mut self,
         stream: &StreamId,
         since: Option<&StreamPos>,
@@ -322,7 +231,7 @@ impl Actor {
         Ok(())
     }
 
-    fn handle_notification(&mut self, method: String, params: Value) -> Result<(), ClientError> {
+    pub(super) fn handle_notification(&mut self, method: String, params: Value) -> Result<(), ClientError> {
         let stream = match method.as_str() {
             "event" => Some(StreamId::Events),
             "pane.line" => str_field(&params, "paneId").map(|id| StreamId::Lines(id.to_string())),
@@ -341,143 +250,15 @@ impl Actor {
         }
         Ok(())
     }
-
-    /// 接続して `server.info` を確かめ、登録済みのストリームを再購読する。全体で `CONNECT_TIMEOUT` まで。
-    async fn establish(&mut self) -> Result<Conn, ClientError> {
-        match timeout(CONNECT_TIMEOUT, self.establish_inner()).await {
-            Ok(result) => result,
-            Err(_) => Err(ClientError::Connection(format!(
-                "connection setup timed out after {}ms",
-                CONNECT_TIMEOUT.as_millis()
-            ))),
-        }
-    }
-
-    async fn establish_inner(&mut self) -> Result<Conn, ClientError> {
-        let stream = connect_stream(&self.path).await.map_err(|e| {
-            ClientError::Connection(format!("cannot connect to {}: {e}", self.path.display()))
-        })?;
-        let mut conn = Conn::new(stream);
-        self.info = None;
-        conn.send("server.info", json!({}), Pending::Info).await?;
-        while self.info.is_none() {
-            for line in conn.read_lines().await? {
-                self.handle_line(&mut conn, &line)?;
-            }
-        }
-        let info = self.info.take().unwrap_or(Value::Null);
-        let (Some(server), Some(epoch)) = (str_field(&info, "protocolVersion"), str_field(&info, "epoch"))
-        else {
-            return Err(violation("invalid result for server.info"));
-        };
-        if major(server) != major(PROTOCOL_VERSION) {
-            return Err(ClientError::IncompatibleVersion {
-                server: server.to_string(),
-                client: PROTOCOL_VERSION.to_string(),
-            });
-        }
-        *self
-            .shared
-            .epoch
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(epoch.to_string());
-        let reset = self.cursor.reset_for_epoch(epoch);
-        for stream in &reset {
-            self.emit(&ClientEvent::Gap {
-                stream: stream.clone(),
-                reason: GapReason::Epoch,
-            });
-        }
-        self.resubscribe(&mut conn, epoch, &reset).await?;
-        Ok(conn)
-    }
-
-    async fn resubscribe(
-        &mut self,
-        conn: &mut Conn,
-        epoch: &str,
-        reset: &[StreamId],
-    ) -> Result<(), ClientError> {
-        for stream in self.cursor.streams() {
-            let since = StreamPos {
-                seq: self.cursor.last_seq(&stream).unwrap_or(0),
-                epoch: epoch.to_string(),
-            };
-            let params = subscribe_params(Some(&since), stream.pane_id());
-            let was_reset = reset.contains(&stream);
-            conn.send(method_of(&stream), params, Pending::Resub { stream, was_reset })
-                .await?;
-        }
-        while conn.pending.values().any(|p| matches!(p, Pending::Resub { .. })) {
-            for line in conn.read_lines().await? {
-                self.handle_line(conn, &line)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// 指数バックオフで再接続する。close() されるか、再接続先が非互換なら None。
-    async fn reconnect(&mut self, first_cause: ClientError) -> Option<Conn> {
-        let mut cause = first_cause;
-        for attempt in 1u32.. {
-            let delay = INITIAL_DELAY_MS
-                .saturating_mul(1u64 << (attempt - 1).min(20))
-                .min(MAX_DELAY_MS);
-            self.emit(&ClientEvent::Reconnecting {
-                attempt,
-                cause: cause.to_string(),
-            });
-            if !self.sleep_serving_commands(Duration::from_millis(delay)).await {
-                self.emit(&ClientEvent::Closed { cause: None });
-                return None;
-            }
-            match self.establish().await {
-                Ok(conn) => {
-                    self.emit(&ClientEvent::Connected);
-                    return Some(conn);
-                }
-                Err(e @ ClientError::IncompatibleVersion { .. }) => {
-                    // 非互換は待っても直らない。打ち切って利用側へ知らせる。
-                    self.emit(&ClientEvent::Closed {
-                        cause: Some(e.to_string()),
-                    });
-                    return None;
-                }
-                Err(e) => cause = e,
-            }
-        }
-        None
-    }
-
-    /// 待つ間、要求は「未接続」で断る。close() されたら false。
-    async fn sleep_serving_commands(&mut self, delay: Duration) -> bool {
-        let wake = sleep(delay);
-        tokio::pin!(wake);
-        loop {
-            tokio::select! {
-                () = &mut wake => return true,
-                cmd = self.cmd_rx.recv() => match cmd {
-                    None | Some(Cmd::Close) => return false,
-                    Some(Cmd::Request { reply, .. }) => {
-                        let _ = reply.send(Err(ClientError::Connection("not connected".to_string())));
-                    }
-                    Some(Cmd::Subscribe { reply, .. }) => {
-                        let _ = reply.send(Err(ClientError::Connection("not connected".to_string())));
-                    }
-                    Some(Cmd::Unsubscribe(stream)) => self.cursor.remove(&stream),
-                },
-            }
-        }
-    }
 }
 
-fn method_of(stream: &StreamId) -> &'static str {
+pub(super) fn method_of(stream: &StreamId) -> &'static str {
     match stream {
         StreamId::Events => "events.subscribe",
         StreamId::Lines(_) => "pane.subscribe_lines",
     }
 }
 
-fn major(version: &str) -> &str {
+pub(super) fn major(version: &str) -> &str {
     version.split('.').next().unwrap_or("")
 }

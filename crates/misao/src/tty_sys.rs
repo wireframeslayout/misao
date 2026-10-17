@@ -114,10 +114,16 @@ mod imp {
                     continue;
                 };
                 let tx = tx.clone();
+                // 受け手(セッション)が捨てられたら、次のシグナルを待たずに終わる(タスクを溜めない)。
                 tokio::spawn(async move {
-                    while stream.recv().await.is_some() {
-                        if tx.send(which).is_err() {
-                            break;
+                    loop {
+                        tokio::select! {
+                            received = stream.recv() => {
+                                if received.is_none() || tx.send(which).is_err() {
+                                    break;
+                                }
+                            }
+                            () = tx.closed() => break,
                         }
                     }
                 });
@@ -133,6 +139,27 @@ mod imp {
             .flatten()
             .map(|user| user.shell.to_string_lossy().into_owned())
             .filter(|shell| !shell.is_empty())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn listeners_end_when_the_receiver_is_dropped() {
+            let alive = || tokio::runtime::Handle::current().metrics().num_alive_tasks();
+            let before = alive();
+            for _ in 0..20 {
+                drop(RealSignals.listen(&[CliSignal::Terminate, CliSignal::WindowChange]));
+            }
+            for _ in 0..200 {
+                if alive() <= before {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+            panic!("signal tasks piled up: {} alive, {before} before", alive());
+        }
     }
 }
 

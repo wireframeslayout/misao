@@ -3,7 +3,9 @@
 //! デーモンの epoch が変わったら since を捨てて gap を通知する。
 
 mod actor;
+mod conn;
 mod cursor;
+mod reconnect;
 mod transport;
 
 use std::path::Path;

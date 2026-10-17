@@ -233,6 +233,22 @@ async fn a_lost_connection_ends_with_disconnected_and_restores_the_terminal() {
 }
 
 #[tokio::test]
+async fn eof_on_stdin_does_not_end_the_session_like_the_node_cli() {
+    let daemon = FakeDaemon::start(vec![named(A, "eof")]).await;
+    let io = Arc::new(tty_io());
+    let end = session(&daemon, &io, daemon.pane(A), false).await;
+    wait_for("attach", || !daemon.calls("pane.attach").is_empty()).await;
+    io.close_stdin();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(!end.is_finished(), "the session must keep running after EOF");
+    io.signals.emit(CliSignal::Terminate);
+    assert!(matches!(
+        end.await.unwrap().unwrap().reason,
+        SessionReason::Signal
+    ));
+}
+
+#[tokio::test]
 async fn a_termination_signal_ends_with_signal_and_restores_the_terminal() {
     let daemon = FakeDaemon::start(vec![named(A, "sig")]).await;
     let io = Arc::new(tty_io());
@@ -556,7 +572,6 @@ async fn the_picker_handles_q_n_eof_and_the_readonly_guide() {
     );
     assert!(!quit.out.text().contains("n で新しいペイン"));
     let eof = TestIo::new(TestIoOptions::default());
-    drop(eof.stdin.clone());
     let empty = run_picker(
         &eof.io,
         &[],

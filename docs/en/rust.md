@@ -231,7 +231,7 @@ Every `misao` subcommand (`ls`, `attach`, `new`, `kill`, `status`, `send`, `scre
 The reference is the Node source and its tests. Argument parsing is **hand-written** to behave like `util.parseArgs` in strict mode (clap is not used, so that error text, exit code 2 and `--json` errors match exactly).
 The CLI uses a tokio client (one actor owns the connection and applies a subscribe reply before the replay notifications; it reconnects with the SDK's exponential backoff and restores `since` / `epoch`),
 and `attach` puts the terminal in raw mode and handles the prefix-key state machine, SIGWINCH, termination signals and restoring the terminal (`TTY_RESET`) (Unix only; other OSes come later).
-Differences: a panic during raw mode restores the terminal, prints `[misao] 予期しないエラー` and exits 1 (Node's `uncaughtException`), EOF on stdin ends the session like a signal, and unknown keys under `keys` / `rings` in `misao.json` are warnings (as in Node).
+Differences: a panic during raw mode restores the terminal, prints `[misao] 予期しないエラー` and exits 1 (Node's `uncaughtException`), unknown keys under `keys` / `rings` in `misao.json` are warnings (as in Node).
 
 `misao.json` (`socket` / `logLevel` / `scrollback` / `rings` / `keys`), the limit defaults and logging (`[misao <ISO time>] msg` on stderr) validate and default like the Node build.
 

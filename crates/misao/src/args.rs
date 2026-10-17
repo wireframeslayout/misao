@@ -103,6 +103,18 @@ fn usage_error(detail: &str) -> CliError {
     CliError::usage(format!("引数が正しくありません: {detail}"))
 }
 
+/// `util.parseArgs` の未知のオプションの文面。短いオプション(`-abc`)は先頭の 1 文字だけを示す。
+fn unknown_option(token: &str) -> CliError {
+    let shown: String = if token.starts_with("--") {
+        token.to_string()
+    } else {
+        token.chars().take(2).collect()
+    };
+    usage_error(&format!(
+        "Unknown option '{shown}'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- \"{shown}\""
+    ))
+}
+
 fn looks_like_option(value: &str) -> bool {
     value.chars().count() > 1 && value.starts_with('-')
 }
@@ -127,7 +139,7 @@ pub fn parse_command_args(argv: &[String], specs: &[OptSpec]) -> Result<ParsedAr
         }
         let Some(body) = arg.strip_prefix("--") else {
             if looks_like_option(arg) {
-                return Err(usage_error(&format!("Unknown option '{arg}'")));
+                return Err(unknown_option(arg));
             }
             parsed.positionals.push(arg.clone());
             continue;
@@ -137,7 +149,7 @@ pub fn parse_command_args(argv: &[String], specs: &[OptSpec]) -> Result<ParsedAr
             None => (body, None),
         };
         let Some(spec) = find(name) else {
-            return Err(usage_error(&format!("Unknown option '--{name}'")));
+            return Err(unknown_option(&format!("--{name}")));
         };
         match spec.kind {
             Kind::Bool => {
@@ -157,7 +169,7 @@ pub fn parse_command_args(argv: &[String], specs: &[OptSpec]) -> Result<ParsedAr
                         })?;
                         if looks_like_option(next) {
                             return Err(usage_error(&format!(
-                                "Option '--{name} <value>' argument is ambiguous. To specify an option argument starting with a dash use '--{name}=-XYZ'"
+                                "Option '--{name}' argument is ambiguous.\nDid you forget to specify the option argument for '--{name}'?\nTo specify an option argument starting with a dash use '--{name}=-XYZ'."
                             )));
                         }
                         i += 1;
@@ -353,6 +365,31 @@ mod tests {
             assert_eq!((e.kind, e.exit_code()), (ErrorKind::Usage, 2), "{argv:?}");
         }
         assert!(parse_command_args(&v(&["--state=--x"]), &SPECS).is_ok());
+    }
+
+    #[test]
+    fn messages_match_util_parse_args_exactly() {
+        let message = |argv: &[&str]| parse_command_args(&v(argv), &SPECS).unwrap_err().message;
+        let unknown = |shown: &str| {
+            format!(
+                "引数が正しくありません: Unknown option '{shown}'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- \"{shown}\""
+            )
+        };
+        assert_eq!(message(&["--nope"]), unknown("--nope"));
+        assert_eq!(message(&["--nope=1"]), unknown("--nope"));
+        assert_eq!(message(&["-abc"]), unknown("-a"));
+        assert_eq!(
+            message(&["--state", "-1"]),
+            "引数が正しくありません: Option '--state' argument is ambiguous.\nDid you forget to specify the option argument for '--state'?\nTo specify an option argument starting with a dash use '--state=-XYZ'."
+        );
+        assert_eq!(
+            message(&["--state"]),
+            "引数が正しくありません: Option '--state <value>' argument missing"
+        );
+        assert_eq!(
+            message(&["--force=1"]),
+            "引数が正しくありません: Option '--force' does not take an argument"
+        );
     }
 
     #[test]
