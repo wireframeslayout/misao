@@ -13,6 +13,7 @@ use crate::layout::Layout;
 use crate::limits::Limits;
 use crate::log::Logger;
 use crate::params::{self, Empty};
+use crate::registry::PaneRegistry;
 use crate::rpc::RequestContext;
 use crate::rpc_error::{RpcFailure, RpcResult};
 
@@ -27,6 +28,7 @@ pub struct CoreOptions {
 
 pub(crate) struct State {
     pub layout: Layout,
+    pub registry: PaneRegistry,
 }
 
 pub struct Core {
@@ -35,8 +37,10 @@ pub struct Core {
     pub(crate) epoch: String,
     started_at: Instant,
     pub(crate) log: Logger,
-    pub(crate) events: EventLog,
+    pub(crate) events: Arc<EventLog>,
     state: Mutex<State>,
+    /// 子プロセスの環境変数 `MISAO_SOCKET` に渡す、接続口のパス。
+    pub(crate) socket_path: PathBuf,
 }
 
 pub(crate) fn to_value<T: Serialize>(value: &T) -> RpcResult<Value> {
@@ -56,7 +60,7 @@ impl Core {
     pub fn new(opts: CoreOptions) -> Arc<Self> {
         let CoreOptions {
             version,
-            socket_path: _,
+            socket_path,
             limits,
             log,
         } = opts;
@@ -65,9 +69,11 @@ impl Core {
             epoch: crate::ids::new_ulid(),
             started_at: Instant::now(),
             log,
-            events: EventLog::new(limits.events),
+            socket_path,
+            events: Arc::new(EventLog::new(limits.events)),
             state: Mutex::new(State {
                 layout: Layout::default(),
+                registry: PaneRegistry::default(),
             }),
         });
         core.events.emit(
@@ -104,6 +110,13 @@ impl Core {
             "window.create" => self.window_create(raw),
             "window.rename" => self.window_rename(raw),
             "window.close" => self.window_close(raw).await,
+            "pane.open" => self.pane_open(raw),
+            "pane.info" => self.pane_info(raw),
+            "pane.list" => self.pane_list(raw),
+            "pane.write" => self.pane_write(raw),
+            "pane.resize" => self.pane_resize(raw),
+            "pane.set_label" => self.pane_set_label(raw),
+            "pane.close" => self.pane_close(raw).await,
             _ => Err(RpcFailure::new(
                 ErrorCode::NOT_IMPLEMENTED,
                 format!("not implemented: {method}"),
@@ -118,7 +131,7 @@ impl Core {
             pid: std::process::id(),
             epoch: self.epoch.clone(),
             uptime_sec: self.started_at.elapsed().as_secs(),
-            pane_count: 0,
+            pane_count: self.state().registry.len() as u64,
             event_head: self.events.head(),
         }
     }

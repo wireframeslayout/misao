@@ -103,3 +103,42 @@ impl Client {
             .unwrap_or_else(|| panic!("{method} should fail: {response}"))
     }
 }
+
+/// 条件が満たされるまで待つ。`WAIT` で失敗する。
+pub async fn wait_until<F, Fut>(what: &str, mut cond: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while !cond().await {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for {what}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// `sh -c <script>` を pane で動かす cmd。
+pub fn sh(script: &str) -> Value {
+    json!(["sh", "-c", script])
+}
+
+/// ファイルが現れ、中身が空でなくなるまで待って、末尾の改行を除いた中身を返す。
+pub async fn read_file_when_ready(path: &std::path::Path) -> String {
+    wait_until(&format!("{}", path.display()), || async {
+        std::fs::read_to_string(path).is_ok_and(|s| s.ends_with('\n'))
+    })
+    .await;
+    std::fs::read_to_string(path).unwrap().trim_end().to_string()
+}
+
+/// pid のプロセスが生きているか（`kill -0`）。
+pub fn is_alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}

@@ -2,6 +2,7 @@
 //! misao デーモンの本体。接続口（Unix ソケット）、作業場所 / 窓 / ペイン、PTY、出力の記録、イベントを持つ。
 //! 画面・タイトル・稼働判定・状態の保存・attach は後続の段。
 
+mod child_env;
 mod connection;
 mod core;
 mod event_log;
@@ -10,10 +11,15 @@ mod layout;
 mod layout_handlers;
 mod limits;
 mod log;
+mod pane;
+mod pane_handlers;
 mod params;
+mod pty;
+mod registry;
 mod ring;
 mod rpc;
 mod rpc_error;
+mod size_arbiter;
 
 pub use connection::serve_connection;
 pub use core::{Core, CoreOptions};

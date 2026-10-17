@@ -124,6 +124,8 @@ impl Daemon {
         // (Node 版の socket.destroy() 相当)。
         conns.abort_all();
         while conns.join_next().await.is_some() {}
+        // 子プロセスを残さない（pid ファイルとソケットが残っている間に、生きている pane を閉じ切る）。
+        self.core.shutdown().await;
         self.log.debug("removing the socket and pid file");
         for f in [&self.socket_path, &self.pid_path] {
             let _ = fs::remove_file(f);

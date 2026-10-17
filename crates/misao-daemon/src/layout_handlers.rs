@@ -1,6 +1,9 @@
 //! workspace.* / window.* の RPC（Node 版の `layout-handlers`）。
 //! 作成・rename・close は layout を変えてからイベントを出す。
 
+use std::collections::HashSet;
+use std::sync::Arc;
+
 use serde_json::{Map, Value, json};
 
 use crate::core::{Core, to_value};
@@ -43,10 +46,15 @@ impl Core {
         Ok(ok())
     }
 
-    pub(crate) async fn workspace_close(&self, raw: Raw<'_>) -> RpcResult<Value> {
+    pub(crate) async fn workspace_close(self: &Arc<Self>, raw: Raw<'_>) -> RpcResult<Value> {
         let p: WorkspaceNameParams = params::parse("workspace.close", raw)?;
         let name = p.name.as_str();
+        // 閉じている間は layout が closing として配下への作成・pane.open を拒否する。pane を閉じるのに失敗したら取り消す。
         let window_ids = self.state().layout.begin_close_workspace(name)?;
+        if let Err(e) = self.close_panes_in(&window_ids.iter().cloned().collect()).await {
+            self.state().layout.cancel_close_workspace(name);
+            return Err(e);
+        }
         self.state().layout.close_workspace(name)?;
         for window_id in window_ids {
             self.events
@@ -83,14 +91,15 @@ impl Core {
         Ok(ok())
     }
 
-    pub(crate) async fn window_close(&self, raw: Raw<'_>) -> RpcResult<Value> {
+    pub(crate) async fn window_close(self: &Arc<Self>, raw: Raw<'_>) -> RpcResult<Value> {
         let p: WindowIdParams = params::parse("window.close", raw)?;
         let window_id = p.window_id.as_str();
-        {
-            let mut state = self.state();
-            state.layout.begin_close_window(window_id)?;
-            state.layout.close_window(window_id)?;
+        self.state().layout.begin_close_window(window_id)?;
+        if let Err(e) = self.close_panes_in(&HashSet::from([window_id.to_string()])).await {
+            self.state().layout.cancel_close_window(window_id);
+            return Err(e);
         }
+        self.state().layout.close_window(window_id)?;
         self.events
             .emit("window.closed", json!({"windowId": window_id}), None);
         Ok(ok())
