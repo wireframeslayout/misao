@@ -70,3 +70,58 @@ jobs:
       - run: npm run release:pack -- --tag v0.0.0-ci
       # tarball の検証に加え、バンドルのスモークテスト (scripts/smoke-bundle.mjs) もここで走る
       - run: node scripts/verify-release.mjs --tag v0.0.0-ci
+
+  # Rust 版 (crates/)。Node 版の必須チェックとは別名にして、Rust 版が正式版になるまで必須にしない。
+  rust:
+    name: Rust (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, os: ubuntu-24.04 }
+          - { name: macos, os: macos-14 }
+          - { name: windows, os: windows-2025 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo build --workspace --locked
+      - run: cargo test --workspace --locked
+
+  rust-msrv:
+    name: Rust (MSRV)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # Cargo.toml の workspace.package.rust-version と同じ値にする
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --locked
+
+  rust-deny:
+    name: Rust (cargo deny)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # 既存の e2e のうち Rust 版デーモンで通る範囲 (server.info まわり)。通らない範囲は docs/*/rust.md の一覧を参照。
+  rust-e2e:
+    name: Rust (e2e subset)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - run: cargo build --locked -p misao
+      - run: npm run test:e2e:rust
