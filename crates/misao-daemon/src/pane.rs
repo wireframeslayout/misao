@@ -326,7 +326,6 @@ impl Pane {
             let mut inner = lock(&self.inner);
             inner.last_output_at = Some(ts.clone());
             inner.raw.push(data.to_vec(), data.len(), ts.clone());
-            self.observer.output(data);
             let lines = inner.assembler.push(data);
             let any = !lines.is_empty();
             for text in lines {
@@ -337,6 +336,9 @@ impl Pane {
         if let Some(head) = new_head {
             self.lines_tx.send_replace(head);
         }
+        // 端末の解析は、リングの更新の lock を離してから行う（解析が長くても、リングを読む側を待たせない）。
+        // 出力のスレッドは 1 つなので、順序は保たれる。
+        self.observer.output(data);
     }
 
     fn on_exit(&self, exit: ExitInfo) {
