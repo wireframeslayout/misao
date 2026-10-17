@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use portable_pty::MasterPty;
 use serde_json::{Value, json};
-use tokio::sync::watch;
+use tokio::sync::{OnceCell, watch};
 
 use crate::ansi::AnsiLineAssembler;
 use crate::child_env::build_child_env;
@@ -18,7 +18,7 @@ use crate::event_log::EventLog;
 use crate::ids::new_pane_id;
 use crate::limits::{INPUT_QUEUE_BYTES, LINE_ENTRY_OVERHEAD};
 use crate::log::now_iso;
-use crate::pty::{self, ExitInfo, PtyProcess, SpawnRequest};
+use crate::pty::{self, ExitInfo, GroupState, PtyProcess, SpawnRequest};
 use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
 use crate::stream::{Progress, Wakeup};
@@ -112,6 +112,8 @@ pub struct Pane {
     reaped: AtomicBool,
     /// close が始まった時刻（SIGHUP を送った時刻）。2 回目以降の close は何もせず終了を待つ。
     closing: Mutex<Option<Instant>>,
+    /// close の片付け（1 回だけ）。完了したら入る。
+    closed: OnceCell<()>,
     released: AtomicBool,
     /// 子のプロセスが終了した（残りの出力は待たずに読み切る）。
     exit_seen: AtomicBool,
@@ -206,6 +208,7 @@ impl Pane {
             survivors_at_exit: AtomicBool::new(false),
             reaped: AtomicBool::new(false),
             closing: Mutex::new(None),
+            closed: OnceCell::new(),
             released: AtomicBool::new(false),
             exit_seen: AtomicBool::new(false),
             line_subscribers: Mutex::new(Vec::new()),
@@ -240,14 +243,22 @@ impl Pane {
             // （portable-pty は drop のときに改行と EOF を pty へ書くが、子が居ない pty なので害はない）。
         });
         let (drained_tx, drained_rx) = mpsc::channel::<()>();
-        let pane = Arc::clone(self);
+        // reader はブロッキングの read の間 Pane を強参照しない。孫が pty を握って EOF が来なくても、
+        // 持ち主が Pane を捨てれば `Drop`（リーダーの回収）が走る。
+        let pane = Arc::downgrade(self);
         std::thread::spawn(move || {
             let mut buf = vec![0u8; READ_CHUNK];
             loop {
-                pane.wait_for_subscribers();
+                match pane.upgrade() {
+                    Some(pane) => pane.wait_for_subscribers(),
+                    None => break,
+                }
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
-                    Ok(n) => pane.on_output(&buf[..n]),
+                    Ok(n) => match pane.upgrade() {
+                        Some(pane) => pane.on_output(&buf[..n]),
+                        None => break,
+                    },
                 }
             }
             let _ = drained_tx.send(());
@@ -258,7 +269,7 @@ impl Pane {
             // リーダーを回収しない環境（`pty::LEADER_HELD`）では、close まで pid が再利用されない。
             // そうでない環境では、終了時に残りがいたかを記録し、いなければ close はグループに触れない。
             pane.survivors_at_exit
-                .store(pty::tree_alive(pane.pid), Ordering::Release);
+                .store(pty::group_state(pane.pid) != GroupState::Empty, Ordering::Release);
             pane.exit_seen.store(true, Ordering::Release);
             pane.wakeup.notify();
             // 残りの出力を読み切ってから終了を報告する（終了直前の出力を取りこぼさない）。
@@ -406,31 +417,23 @@ impl Pane {
     }
 
     /// SIGHUP → 3 秒 → SIGKILL（プロセスグループ全体）。リーダーの終了と、グループに残ったプロセスの
-    /// 掃除まで済んだら戻る。リーダーが既に（自然に）終了していても、グループに残ったプロセスがいれば同じ手順で止める。
-    /// 並行して呼ばれても SIGHUP は 1 回だけで、猶予は最初の呼び出しから数える。
+    /// 掃除、リーダーの回収まで済んだら戻る。リーダーが既に（自然に）終了していても、グループに残ったプロセスがいれば
+    /// 同じ手順で止める。片付けは 1 回だけ行い、並行して呼ばれた分と後から呼ばれた分は、その完了を待つだけ。
     pub async fn close(self: &Arc<Self>) {
+        self.closed.get_or_init(|| self.run_close()).await;
+    }
+
+    async fn run_close(&self) {
         let pid = self.pid;
-        let (started, first) = {
-            let mut closing = lock(&self.closing);
-            match *closing {
-                Some(started) => (started, false),
-                None => {
-                    let now = Instant::now();
-                    *closing = Some(now);
-                    (now, true)
-                }
-            }
-        };
+        let started = Instant::now();
+        *lock(&self.closing) = Some(started);
         self.wakeup.notify();
         let deadline = started + KILL_GRACE;
         let was_running = self.state() == RunState::Running;
-        // リーダーを回収していないなら pid は自分のもの。そうでなければ、終了時に残りがいたときだけ触れる。
-        let owns_group = || {
-            was_running
-                || (pty::LEADER_HELD && !self.reaped.load(Ordering::Acquire))
-                || self.survivors_at_exit.load(Ordering::Acquire)
-        };
-        if first && owns_group() && (was_running || pty::tree_alive(pid)) {
+        // リーダーを回収していない（まだ誰も回収していない最初の片付け）なら pid は自分のもの。
+        // 回収する環境でなければ、終了時に残りがいたときだけ触れる。
+        let owns_group = was_running || pty::LEADER_HELD || self.survivors_at_exit.load(Ordering::Acquire);
+        if owns_group && (was_running || pty::group_state(pid) != GroupState::Empty) {
             blocking(move || pty::hangup_tree(pid)).await;
         }
         let mut exited = self.exited_tx.subscribe();
@@ -441,27 +444,32 @@ impl Pane {
             blocking(move || pty::kill_tree(pid)).await;
             let _ = exited.wait_for(|e| *e).await;
         }
-        if owns_group() {
+        if owns_group {
             self.sweep_group(deadline).await;
         }
         self.reap_leader();
     }
 
-    /// 回収を保留していたリーダーを回収する（グループの片付けの後。一度だけ）。
+    /// 回収を保留していたリーダーを回収する（グループの片付けの後）。成功（または回収済み）を確かめてから回収済みにする。
     fn reap_leader(&self) {
-        if self.state() == RunState::Exited && !self.reaped.swap(true, Ordering::AcqRel) {
-            pty::reap(self.pid);
+        if self.state() == RunState::Exited
+            && !self.reaped.load(Ordering::Acquire)
+            && pty::reap(self.pid).is_ok()
+        {
+            self.reaped.store(true, Ordering::Release);
         }
     }
 
     /// グループに残ったプロセスが消えるのを待ち、猶予が過ぎても残っていれば SIGKILL する。
+    /// 調べられない（`Unknown`）ときは消えたとは言えないので、期限まで待って SIGKILL してから先へ進む
+    /// （リーダーを回収するまで pgid は自分のものなので、無関係なグループには当たらない）。
     async fn sweep_group(&self, deadline: Instant) {
         let pid = self.pid;
-        while pty::tree_alive(pid) {
+        while pty::group_state(pid) != GroupState::Empty {
             if Instant::now() >= deadline {
                 blocking(move || pty::kill_tree(pid)).await;
                 let give_up = Instant::now() + GROUP_KILL_WAIT;
-                while pty::tree_alive(pid) && Instant::now() < give_up {
+                while pty::group_state(pid) != GroupState::Empty && Instant::now() < give_up {
                     tokio::time::sleep(GROUP_POLL_INTERVAL).await;
                 }
                 return;
@@ -616,9 +624,52 @@ mod tests {
         // 孫が pty を握っているので、reader はまだ EOF になっていない（Pane への参照を持ち続ける）。
         let weak = Arc::downgrade(&pane);
         pane.close().await;
-        assert!(!crate::pty::tree_alive(pane.pid));
+        assert_eq!(crate::pty::group_state(pane.pid), GroupState::Empty);
         drop(pane);
         // reader / 待機のスレッドが終われば、最後の参照（= master と writer）が解放される。
         wait_for("the pane to be freed", || weak.upgrade().is_none());
+    }
+
+    /// `/proc/<pid>/stat` の状態文字。プロセスが無ければ None。
+    #[cfg(target_os = "linux")]
+    fn proc_state(pid: u32) -> Option<char> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        stat.rsplit_once(')')?.1.trim().chars().next()
+    }
+
+    /// 残りの子が pty を握ったまま、close も shutdown もせずに Pane を捨てても、reader が Pane を握り続けないので、
+    /// `Drop` が走って終了済みのリーダーが回収される。
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dropping_a_pane_without_close_reaps_the_exited_leader_even_while_a_child_holds_the_pty() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (pane, pid_file) = pane_with_a_survivor(tmp.path());
+        wait_for("the pane to exit", || pane.state() == RunState::Exited);
+        let leader = pane.pid;
+        let survivor: u32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(proc_state(leader), Some('Z'), "held as a zombie until reaped");
+        drop(pane);
+        wait_for("the leader to be reaped", || proc_state(leader).is_none());
+        crate::pty::kill_tree(survivor);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_and_repeated_closes_clean_up_once_and_the_later_ones_just_wait() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (pane, _) = pane_with_a_survivor(tmp.path());
+        wait_for("the pane to exit", || pane.state() == RunState::Exited);
+        let leader = pane.pid;
+        tokio::join!(pane.close(), pane.close());
+        assert_eq!(proc_state(leader), None, "reaped by the single clean-up");
+        assert!(pane.reaped.load(Ordering::Acquire));
+        // 回収後の close は、グループに触れずにすぐ戻る（pid が再利用されていても害がない）。
+        let started = Instant::now();
+        pane.close().await;
+        assert!(started.elapsed() < Duration::from_millis(500));
     }
 }
