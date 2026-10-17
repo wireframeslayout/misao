@@ -1,4 +1,4 @@
-use std::fs;
+use std::fs::{self, File};
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,6 +8,7 @@ use misao_protocol::{
     ErrorCode, Incoming, LineSplitter, METHODS, PROTOCOL_SCHEMA, PROTOCOL_VERSION, Request, Response,
     ServerInfo, encode_message, parse_incoming,
 };
+use nix::fcntl::Flock;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -38,6 +39,10 @@ struct Shared {
 }
 
 pub struct Daemon {
+    /// 起動の排他ロック。ソケットの掃除と bind からソケットの削除まで、ライフサイクル全体で保持する。
+    /// 解放が早いと、終了中の旧デーモンが、後から起動した新デーモン（`--data` が違うと pid ファイルでは排他できない）の
+    /// ソケットを unlink できてしまう。
+    start_lock: Flock<File>,
     listener: UnixListener,
     socket_path: PathBuf,
     pid_path: PathBuf,
@@ -55,10 +60,10 @@ impl Daemon {
         } = opts;
         ensure_socket_dir(&socket_path)?;
         acquire_pid_file(&pid_path, std::process::id())?;
-        // 古いソケットの判定から bind が終わるまで、ソケットの隣の lock で他の起動を締め出す。
+        // 古いソケットの判定から終了時のソケット削除まで、ソケットの隣の lock で他の起動を締め出す。
         // (pid ファイルは --data 次第で場所が変わるので、ソケットに対する排他はこちらで取る。)
-        let listener = match Self::listen(&socket_path, &log).await {
-            Ok(listener) => listener,
+        let (start_lock, listener) = match Self::listen(&socket_path, &log).await {
+            Ok(bound) => bound,
             Err(e) => {
                 let _ = fs::remove_file(&pid_path);
                 return Err(e);
@@ -77,6 +82,7 @@ impl Daemon {
             log,
         });
         Ok(Self {
+            start_lock,
             listener,
             socket_path,
             pid_path,
@@ -84,12 +90,17 @@ impl Daemon {
         })
     }
 
-    async fn listen(socket_path: &std::path::Path, log: &Logger) -> Result<UnixListener, DaemonError> {
-        let _lock = lock_socket_start(socket_path)?;
+    async fn listen(
+        socket_path: &std::path::Path,
+        log: &Logger,
+    ) -> Result<(Flock<File>, UnixListener), DaemonError> {
+        let lock = lock_socket_start(socket_path)?;
         if remove_stale_socket(socket_path).await? {
             log.info("removed stale socket");
         }
-        listen_unix_socket(socket_path)
+        // 失敗しても lock はここで解放される（socket は作られていないか、自分で片付けてある）。
+        let listener = listen_unix_socket(socket_path)?;
+        Ok((lock, listener))
     }
 
     /// `shutdown` が完了するまで接続を受け付け、完了したら接続を切ってソケットと pid ファイルを消す。
@@ -119,9 +130,12 @@ impl Daemon {
         // (Node 版の socket.destroy() 相当)。
         conns.abort_all();
         while conns.join_next().await.is_some() {}
+        self.shared.log.debug("removing the socket and pid file");
         for f in [&self.socket_path, &self.pid_path] {
             let _ = fs::remove_file(f);
         }
+        // ソケットを消した後に解放する。これより前に次のデーモンは起動できない。
+        drop(self.start_lock);
     }
 }
 
