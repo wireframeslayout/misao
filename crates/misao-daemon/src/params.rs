@@ -155,16 +155,6 @@ pub enum ProcessState {
     Stopped,
 }
 
-impl ProcessState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Running => "running",
-            Self::Exited => "exited",
-            Self::Stopped => "stopped",
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct Empty {}
 
@@ -207,14 +197,6 @@ pub struct PaneRefParams {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PreplaceFile {
-    pub path: String,
-    pub content: String,
-    pub mode: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct PaneOpenParams {
     pub cmd: Vec<String>,
     pub cwd: Option<String>,
@@ -224,7 +206,8 @@ pub struct PaneOpenParams {
     pub rows: Option<Dimension>,
     pub labels: Option<Labels>,
     pub window_id: Option<WindowId>,
-    pub preplace: Option<Vec<PreplaceFile>>,
+    /// 未実装（NotImplemented を返す）なので、配列であることだけを確かめる。
+    pub preplace: Option<Vec<serde::de::IgnoredAny>>,
 }
 
 /// 全条件の AND。未知の条件は拒否する（古いデーモンが条件を無視して全 pane を返さないため）。

@@ -53,7 +53,7 @@ pub fn subscribe(
     // 新着の取りこぼしがないよう、境界を読む前に待ち受けを作る。
     let wake = source.wake();
     let (head, oldest) = source.bounds();
-    let gap = epoch_mismatch || since.is_some_and(|s| s + 1 < oldest || s > head);
+    let gap = epoch_mismatch || since.is_some_and(|s| has_gap(s, head, oldest));
     // 最後に送った seq。gap のときは保持している最古から、head より先（seq 巻き戻り）なら head から送る。
     let cursor = since.map_or(head, |s| s.max(oldest - 1).min(head));
     let conn = Arc::clone(&ctx.conn);
@@ -64,6 +64,11 @@ pub fn subscribe(
         conn.register_subscription(key, handle.abort_handle());
     });
     json!({"gap": gap, "head": head, "epoch": current_epoch})
+}
+
+/// since が保持範囲より古い、または head より先（= 送信側が再起動して seq が巻き戻った）なら欠落扱い。
+fn has_gap(since: u64, head: u64, oldest: u64) -> bool {
+    since + 1 < oldest || since > head
 }
 
 async fn pump(
@@ -103,5 +108,25 @@ async fn pump(
             changed = wake.changed() => if changed.is_err() { return },
             changed = drain.changed() => if changed.is_err() { return },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_gap;
+
+    #[test]
+    fn an_empty_stream_has_oldest_one_past_head() {
+        assert!(!has_gap(0, 0, 1));
+        assert!(has_gap(1, 0, 1), "since ahead of head is a gap");
+    }
+
+    #[test]
+    fn since_just_before_the_oldest_is_still_contiguous() {
+        // 保持範囲は 3..=5
+        assert!(!has_gap(2, 5, 3));
+        assert!(has_gap(1, 5, 3), "evicted entries are missing");
+        assert!(!has_gap(5, 5, 3), "since = head: nothing missed");
+        assert!(has_gap(6, 5, 3), "seq was rewound");
     }
 }

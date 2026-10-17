@@ -58,11 +58,6 @@ impl<T> SeqRing<T> {
         }
         self.entries.get(usize::try_from(seq - oldest).ok()?)
     }
-
-    /// since が保持範囲より古い、または head より先（= 送信側が再起動して seq が巻き戻った）なら欠落扱い。
-    pub fn has_gap(&self, since: u64) -> bool {
-        since + 1 < self.oldest() || since > self.head
-    }
 }
 
 #[cfg(test)]
@@ -77,8 +72,6 @@ mod tests {
     fn empty_ring_has_oldest_one_past_head() {
         let r = ring(10);
         assert_eq!((r.head(), r.oldest()), (0, 1));
-        assert!(!r.has_gap(0));
-        assert!(r.has_gap(1), "since ahead of head is a gap");
     }
 
     #[test]
@@ -95,7 +88,7 @@ mod tests {
     }
 
     #[test]
-    fn evicts_oldest_by_size_and_reports_gap() {
+    fn evicts_oldest_by_size() {
         let mut r = ring(3);
         for item in ["a", "b", "c", "d", "e"] {
             r.push(item, 1, String::new());
@@ -103,10 +96,6 @@ mod tests {
         assert_eq!((r.oldest(), r.head()), (3, 5));
         assert!(r.entry(2).is_none());
         assert_eq!(r.entry(3).map(|e| e.item), Some("c"));
-        assert!(!r.has_gap(2), "since = oldest - 1 is still contiguous");
-        assert!(r.has_gap(1));
-        assert!(!r.has_gap(5));
-        assert!(r.has_gap(6));
     }
 
     #[test]

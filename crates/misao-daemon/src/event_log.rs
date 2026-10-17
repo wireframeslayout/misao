@@ -1,10 +1,11 @@
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::log::now_iso;
 use crate::ring::SeqRing;
+use crate::stream::{Next, StreamSource};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DaemonEvent {
@@ -50,6 +51,50 @@ impl EventLog {
 
     pub fn with_ring<R>(&self, f: impl FnOnce(&mut SeqRing<DaemonEvent>) -> R) -> R {
         f(&mut self.ring.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
+
+/// `events.subscribe` の購読元。
+pub struct EventsSource(pub Arc<EventLog>);
+
+impl StreamSource for EventsSource {
+    fn bounds(&self) -> (u64, u64) {
+        self.0.with_ring(|ring| (ring.head(), ring.oldest()))
+    }
+
+    fn next(&self, cursor: u64, writable: bool) -> Next {
+        self.0.with_ring(|ring| {
+            if cursor + 1 < ring.oldest() {
+                return Next::Overtaken;
+            }
+            if cursor >= ring.head() {
+                return Next::Empty;
+            }
+            if !writable {
+                return Next::Blocked;
+            }
+            let Some(entry) = ring.entry(cursor + 1) else {
+                return Next::Overtaken;
+            };
+            let event = &entry.item;
+            let mut params = json!({
+                "seq": entry.seq,
+                "ts": entry.ts,
+                "type": event.kind,
+                "data": event.data,
+            });
+            if let (Some(pane_id), Some(map)) = (&event.pane_id, params.as_object_mut()) {
+                map.insert("paneId".to_string(), json!(pane_id));
+            }
+            Next::Entry {
+                seq: entry.seq,
+                notification: json!({"jsonrpc": "2.0", "method": "event", "params": params}),
+            }
+        })
+    }
+
+    fn wake(&self) -> watch::Receiver<u64> {
+        self.0.wake()
     }
 }
 

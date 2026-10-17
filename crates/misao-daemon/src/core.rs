@@ -8,14 +8,15 @@ use misao_protocol::{ErrorCode, PROTOCOL_SCHEMA, PROTOCOL_VERSION, ServerInfo};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
-use crate::event_log::EventLog;
+use crate::event_log::{EventLog, EventsSource};
 use crate::layout::Layout;
 use crate::limits::Limits;
 use crate::log::Logger;
-use crate::params::{self, Empty};
+use crate::params::{self, Empty, EventsSubscribeParams};
 use crate::registry::PaneRegistry;
 use crate::rpc::RequestContext;
 use crate::rpc_error::{RpcFailure, RpcResult};
+use crate::stream;
 
 pub struct CoreOptions {
     /// デーモンのビルド版（リリースの version）。指定すると `server.info` の version で報告する。
@@ -112,6 +113,7 @@ impl Core {
             "window.create" => self.window_create(raw),
             "window.rename" => self.window_rename(raw),
             "window.close" => self.window_close(raw).await,
+            "events.subscribe" => self.events_subscribe(raw, ctx),
             "pane.open" => self.pane_open(raw),
             "pane.info" => self.pane_info(raw),
             "pane.list" => self.pane_list(raw),
@@ -125,6 +127,23 @@ impl Core {
                 format!("not implemented: {method}"),
             )),
         }
+    }
+
+    /// 1 接続につき events のストリームは 1 つ。再度の購読は既存を置き換える。
+    fn events_subscribe(
+        &self,
+        raw: Option<&Map<String, Value>>,
+        ctx: &mut RequestContext,
+    ) -> RpcResult<Value> {
+        let p: EventsSubscribeParams = params::parse("events.subscribe", raw)?;
+        Ok(stream::subscribe(
+            ctx,
+            "events".to_string(),
+            Arc::new(EventsSource(Arc::clone(&self.events))),
+            p.since.map(params::Seq::get),
+            p.epoch.as_ref().map(params::Epoch::as_str),
+            &self.epoch,
+        ))
     }
 
     fn server_info(&self) -> ServerInfo {
