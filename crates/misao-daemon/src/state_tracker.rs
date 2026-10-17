@@ -166,8 +166,11 @@ impl StateTracker {
         if self.profile.is_some() {
             self.notify_screen_updated(now);
         } else {
-            self.decide(AgentState::Unknown, "none");
-            self.evaluate(now);
+            // 最終の判定を 1 度だけ出す（`unknown` を挟んだ偽の中間イベントを出さない）。
+            let (state, decided_by) = self
+                .opinion(now)
+                .unwrap_or((AgentState::Unknown, "none".to_string()));
+            self.decide(state, &decided_by);
         }
     }
 
@@ -238,20 +241,25 @@ impl StateTracker {
         }
     }
 
-    /// 各段の意見を優先順に見て、最初に意見を持った段で決める。全段が意見なしなら現状維持。
+    /// 各段の意見を優先順に見て、最初に意見を持った段の判定（状態と decidedBy）。全段が意見なしなら None。
+    fn opinion(&self, now: u64) -> Option<(AgentState, String)> {
+        if let (Some(profile), Some(verdict)) = (&self.profile, self.profile_verdict) {
+            return Some((verdict.into(), profile.name.clone()));
+        }
+        if let Some(verdict) = self.title.verdict(now) {
+            return Some((verdict.into(), "title".to_string()));
+        }
+        self.byte_verdict
+            .map(|verdict| (verdict.into(), "bytes".to_string()))
+    }
+
+    /// 意見を持った段があれば、それで決める。全段が意見なしなら現状維持。
     fn evaluate(&mut self, now: u64) {
         if self.is_exited {
             return;
         }
-        if let (Some(profile), Some(verdict)) = (&self.profile, self.profile_verdict) {
-            let name = profile.name.clone();
-            return self.decide(verdict.into(), &name);
-        }
-        if let Some(verdict) = self.title.verdict(now) {
-            return self.decide(verdict.into(), "title");
-        }
-        if let Some(verdict) = self.byte_verdict {
-            self.decide(verdict.into(), "bytes");
+        if let Some((state, decided_by)) = self.opinion(now) {
+            self.decide(state, &decided_by);
         }
     }
 
@@ -318,6 +326,52 @@ mod tests {
         assert_eq!(tracker.snapshot(), (AgentState::Working, "title"));
         run(&mut tracker, 5000);
         assert_eq!(tracker.snapshot(), (AgentState::Idle, "bytes"));
+    }
+
+    #[test]
+    fn dropping_the_profile_emits_a_single_final_state_change() {
+        let profile = crate::profile::builtin_profiles()
+            .ok()
+            .and_then(|p| p.into_iter().next());
+        let mut tracker = StateTracker::new(0, profile);
+        tracker.notify_screen_updated(0);
+        tracker.advance_to(120, &mut || ProfileScreen {
+            rows: vec!["Do you want to proceed?".into()],
+            title: String::new(),
+        });
+        assert_eq!(tracker.snapshot(), (AgentState::Blocked, "claude"));
+        // bytes 段は静かなまま 5 秒で idle の意見を持つ
+        run(&mut tracker, 5000);
+        tracker.take_changes();
+        tracker.set_profile(None, 5100);
+        assert_eq!(
+            tracker.take_changes(),
+            vec![StateChange {
+                state: AgentState::Idle,
+                decided_by: "bytes".into(),
+                prev: AgentState::Blocked
+            }]
+        );
+        // どの段も意見を持たなければ unknown / none へ、これも 1 件だけ
+        let profile = crate::profile::builtin_profiles()
+            .ok()
+            .and_then(|p| p.into_iter().next());
+        let mut tracker = StateTracker::new(0, profile);
+        tracker.notify_screen_updated(0);
+        tracker.advance_to(120, &mut || ProfileScreen {
+            rows: vec!["Do you want to proceed?".into()],
+            title: String::new(),
+        });
+        tracker.take_changes();
+        tracker.set_profile(None, 200);
+        assert_eq!(
+            tracker.take_changes(),
+            vec![StateChange {
+                state: AgentState::Unknown,
+                decided_by: "none".into(),
+                prev: AgentState::Blocked
+            }]
+        );
     }
 
     #[test]
