@@ -1,0 +1,296 @@
+{
+ "scrollback": 5000,
+ "name": "snapshot-look",
+ "cmd": [
+  "bash"
+ ],
+ "cols": 40,
+ "rows": 10,
+ "steps": [
+  {
+   "at": 10,
+   "op": "output",
+   "data": "\u001b[1mbold\u001b[0m \u001b[2mdim\u001b[0m \u001b[3mitalic\u001b[0m \u001b[4munder\u001b[0m \u001b[5mblink\u001b[0m \u001b[7minv\u001b[0m \u001b[8mhid\u001b[0m \u001b[9mstrike\u001b[0m\r\n"
+  },
+  {
+   "at": 20,
+   "op": "output",
+   "data": "\u001b[31mred\u001b[42mon-green\u001b[39mfg-default\u001b[49mbg-default\u001b[0m\r\n"
+  },
+  {
+   "at": 30,
+   "op": "output",
+   "data": "\u001b[91mbright\u001b[104mbg-bright\u001b[0m \u001b[38;5;200mp256\u001b[48;5;17mbg256\u001b[0m \u001b[38;2;10;20;30mrgb\u001b[48;2;200;100;50mbgrgb\u001b[0m\r\n"
+  },
+  {
+   "at": 40,
+   "op": "output",
+   "data": "\u001b[38:2::1:2:3mcolon-rgb\u001b[38:5:99mcolon-256\u001b[48:2:9:8:7mcolon-bg\u001b[0m\r\n"
+  },
+  {
+   "at": 50,
+   "op": "output",
+   "data": "\u001b[1;3m\u001b[22mafter-22 \u001b[23mafter-23\u001b[4m\u001b[24mu\u001b[7m\u001b[27mv\u001b[9m\u001b[29mw\u001b[0m\r\n"
+  },
+  {
+   "at": 51,
+   "op": "screen"
+  },
+  {
+   "at": 60,
+   "op": "output",
+   "data": "\u001b[44m\u001b[K\u001b[2;1H\u001b[1K\u001b[3;3H\u001b[3X\u001b[4;1H\u001b[2@\u001b[2P\u001b[0m"
+  },
+  {
+   "at": 61,
+   "op": "screen"
+  },
+  {
+   "at": 70,
+   "op": "output",
+   "data": "\u001b[41;1m\u001b[2J\u001b[H\u001b[46mline\u001b[3;1H\u001b[L\u001b[M\u001b[S\u001b[T\u001bM\u001b[0m"
+  },
+  {
+   "at": 71,
+   "op": "screen"
+  },
+  {
+   "at": 80,
+   "op": "output",
+   "data": "\u001b[45m\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\u001b[0mtail"
+  },
+  {
+   "at": 81,
+   "op": "screen"
+  },
+  {
+   "at": 90,
+   "op": "output",
+   "data": "\u001b[?1h\u001b=\u001b[?2004h\u001b[?1004h\u001b[?1000h\u001b[4h\u001b[?7l\u001b[?6h"
+  },
+  {
+   "at": 91,
+   "op": "screen"
+  },
+  {
+   "at": 100,
+   "op": "output",
+   "data": "\u001b[?1002h\u001b[?1h\u001b[?1l\u001b>"
+  },
+  {
+   "at": 101,
+   "op": "screen"
+  },
+  {
+   "at": 110,
+   "op": "output",
+   "data": "\u001b[?1003h\u001b[?7h\u001b[4l\u001b[?6l\u001b[?9h"
+  },
+  {
+   "at": 111,
+   "op": "screen"
+  },
+  {
+   "at": 120,
+   "op": "output",
+   "data": "\u001b[?1h\u001b=\u001b[?2004h\u001b[!p"
+  },
+  {
+   "at": 121,
+   "op": "screen"
+  },
+  {
+   "at": 130,
+   "op": "output",
+   "data": "\u001b[?1h\u001b[?2004h\u001b[?1000h\u001bc\u001b[33mreset"
+  },
+  {
+   "at": 131,
+   "op": "screen"
+  },
+  {
+   "at": 140,
+   "op": "output",
+   "data": "\u001b[?1049h\u001b[32malt\u001b[?2004h"
+  },
+  {
+   "at": 141,
+   "op": "screen"
+  },
+  {
+   "at": 150,
+   "op": "output",
+   "data": "\u001b7\u001b[35msaved\u001b8restored\u001b[?1049l"
+  },
+  {
+   "at": 151,
+   "op": "screen"
+  },
+  {
+   "at": 250,
+   "op": "screen"
+  }
+ ],
+ "end": 350,
+ "expect": {
+  "profile": null,
+  "log": [
+   {
+    "kind": "screen",
+    "at": 51,
+    "text": "bold dim italic under blink inv hid stri\nke\nredon-greenfg-defaultbg-default\nbrightbg-bright p256bg256 rgbbgrgb\ncolon-rgbcolon-256colon-bg\nafter-22 after-23uvw\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0;1mbold\u001b[0m \u001b[0;2mdim\u001b[0m \u001b[0;3mitalic\u001b[0m \u001b[0;4munder\u001b[0m \u001b[0;5mblink\u001b[0m \u001b[0;7minv\u001b[0m \u001b[0;8mhid\u001b[0m \u001b[0;9mstri\u001b[0m\u001b[K\u001b[2;1H\u001b[0;9mke\u001b[0m\u001b[K\u001b[3;1H\u001b[0;31mred\u001b[0;31;42mon-green\u001b[0;42mfg-default\u001b[0mbg-default\u001b[0m\u001b[K\u001b[4;1H\u001b[0;91mbright\u001b[0;91;104mbg-bright\u001b[0m \u001b[0;38;5;200mp256\u001b[0;38;5;200;48;5;17mbg256\u001b[0m \u001b[0;38;2;10;20;30mrgb\u001b[0;38;2;10;20;30;48;2;200;100;50mbgrgb\u001b[0m\u001b[K\u001b[5;1H\u001b[0;38;2;1;2;3mcolon-rgb\u001b[0;38;5;99mcolon-256\u001b[0;38;5;99;48;2;8;7;0mcolon-bg\u001b[0m\u001b[K\u001b[6;1H\u001b[0;3mafter-22 \u001b[0mafter-23uvw\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[7;1H",
+    "cursor": {
+     "x": 0,
+     "y": 6
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 5
+   },
+   {
+    "kind": "screen",
+    "at": 61,
+    "text": "bold dim italic under blink inv hid stri\n e\nre   -greenfg-defaultbg-default\nbrightbg-bright p256bg256 rgbbgrgb\ncolon-rgbcolon-256colon-bg\nafter-22 after-23uvw\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0;1mbold\u001b[0m \u001b[0;2mdim\u001b[0m \u001b[0;3mitalic\u001b[0m \u001b[0;4munder\u001b[0m \u001b[0;5mblink\u001b[0m \u001b[0;7minv\u001b[0m \u001b[0;8mhid\u001b[0m \u001b[0;9mstri\u001b[0m\u001b[K\u001b[2;1H\u001b[0;44m \u001b[0;9me\u001b[0m\u001b[K\u001b[3;1H\u001b[0;31mre\u001b[0;44m   \u001b[0;31;42m-green\u001b[0;42mfg-default\u001b[0mbg-default\u001b[0m\u001b[K\u001b[4;1H\u001b[0;91mbright\u001b[0;91;104mbg-bright\u001b[0m \u001b[0;38;5;200mp256\u001b[0;38;5;200;48;5;17mbg256\u001b[0m \u001b[0;38;2;10;20;30mrgb\u001b[0;38;2;10;20;30;48;2;200;100;50mbgrgb\u001b[0m    \u001b[0;44m  \u001b[0m\u001b[K\u001b[5;1H\u001b[0;38;2;1;2;3mcolon-rgb\u001b[0;38;5;99mcolon-256\u001b[0;38;5;99;48;2;8;7;0mcolon-bg\u001b[0m\u001b[K\u001b[6;1H\u001b[0;3mafter-22 \u001b[0mafter-23uvw\u001b[0m\u001b[K\u001b[7;1H\u001b[0;44m                                        \u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[4;1H",
+    "cursor": {
+     "x": 0,
+     "y": 3
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 6
+   },
+   {
+    "kind": "screen",
+    "at": 71,
+    "text": "\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[3;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[4;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[5;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[6;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[7;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[8;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[9;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[10;1H\u001b[0;46m                                        \u001b[0m\u001b[K\u001b[2;1H",
+    "cursor": {
+     "x": 0,
+     "y": 1
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 7
+   },
+   {
+    "kind": "screen",
+    "at": 81,
+    "text": "\n\n\n\n\n\n\n\n\ntail",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[3;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[4;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[5;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[6;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[7;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[8;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[9;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[10;1H\u001b[0mtail\u001b[0;46m                                    \u001b[0m\u001b[K\u001b[10;5H",
+    "cursor": {
+     "x": 4,
+     "y": 9
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 8
+   },
+   {
+    "kind": "screen",
+    "at": 91,
+    "text": "\n\n\n\n\n\n\n\n\ntail",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[3;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[4;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[5;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[6;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[7;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[8;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[9;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[10;1H\u001b[0mtail\u001b[0;46m                                    \u001b[0m\u001b[K\u001b[?1h\u001b=\u001b[4h\u001b[?7l\u001b[?1004h\u001b[?2004h\u001b[?1000h\u001b[?6h\u001b[1;1H",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 9
+   },
+   {
+    "kind": "screen",
+    "at": 101,
+    "text": "\n\n\n\n\n\n\n\n\ntail",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[3;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[4;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[5;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[6;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[7;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[8;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[9;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[10;1H\u001b[0mtail\u001b[0;46m                                    \u001b[0m\u001b[K\u001b[4h\u001b[?7l\u001b[?1004h\u001b[?2004h\u001b[?1002h\u001b[?6h\u001b[1;1H",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 10
+   },
+   {
+    "kind": "screen",
+    "at": 111,
+    "text": "\n\n\n\n\n\n\n\n\ntail",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[3;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[4;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[5;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[6;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[7;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[8;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[9;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[10;1H\u001b[0mtail\u001b[0;46m                                    \u001b[0m\u001b[K\u001b[?1004h\u001b[?2004h\u001b[?9h\u001b[1;1H",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 11
+   },
+   {
+    "kind": "screen",
+    "at": 121,
+    "text": "\n\n\n\n\n\n\n\n\ntail",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[3;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[4;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[5;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[6;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[7;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[8;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[9;1H\u001b[0;41m                                        \u001b[0m\u001b[K\u001b[10;1H\u001b[0mtail\u001b[0;46m                                    \u001b[0m\u001b[K\u001b[?9h\u001b[1;1H",
+    "cursor": {
+     "x": 0,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 12
+   },
+   {
+    "kind": "screen",
+    "at": 131,
+    "text": "reset\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0;33mreset\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[1;6H",
+    "cursor": {
+     "x": 5,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 13
+   },
+   {
+    "kind": "screen",
+    "at": 141,
+    "text": "     alt\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[?1049h\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m     \u001b[0;32malt\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[?2004h\u001b[1;9H",
+    "cursor": {
+     "x": 8,
+     "y": 0
+    },
+    "altScreen": true,
+    "title": "",
+    "activity": 14
+   },
+   {
+    "kind": "screen",
+    "at": 151,
+    "text": "reset\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0;33mreset\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[?2004h\u001b[1;6H",
+    "cursor": {
+     "x": 5,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 15
+   },
+   {
+    "kind": "screen",
+    "at": 250,
+    "text": "reset\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0;33mreset\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[?2004h\u001b[1;6H",
+    "cursor": {
+     "x": 5,
+     "y": 0
+    },
+    "altScreen": false,
+    "title": "",
+    "activity": 15
+   }
+  ]
+ }
+}

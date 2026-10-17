@@ -1,23 +1,20 @@
-//! pane.* の RPC（Node 版の `pane-lifecycle` と `pane-io` のうち、画面・attach を除いたもの）。
+//! pane.* の RPC のうち、状態を変えないもの（info / list）と入出力（write / resize / screen / 行の購読）。
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use misao_protocol::ErrorCode;
 use serde_json::{Map, Value, json};
-use tokio::task::JoinSet;
 
 use crate::core::{Core, State, to_value};
 use crate::foreground::{ForegroundQuery, read_foreground_commands};
-use crate::layout::ResolvedWindow;
-use crate::pane::{LinesSource, Pane, PaneOpenOptions, RunState};
+use crate::pane::{LinesSource, Pane, RunState};
 use crate::params::{
-    self, InputSource, PaneListParams, PaneOpenParams, PaneRefParams, PaneResizeParams, PaneSetLabelParams,
-    PaneWriteParams, SubscribeLinesParams,
+    self, InputSource, PaneListParams, PaneRefParams, PaneResizeParams, PaneWriteParams, SubscribeLinesParams,
 };
-use crate::registry::{PaneEntry, PaneRegistry};
+use crate::registry::{Body, PaneEntry, PaneRegistry};
 use crate::rpc::RequestContext;
 use crate::rpc_error::{RpcFailure, RpcResult};
 use crate::stream;
@@ -46,140 +43,94 @@ fn pane_exited() -> RpcFailure {
 }
 
 /// `pane.info` を作るのに必要なもの。全体の lock の中で取っておき、lock を離してから info（前面プロセスの取得を含む）を作る。
-struct PaneSnapshot {
-    pane: Arc<Pane>,
-    workspace: String,
-    window: Value,
-    labels: Value,
+enum InfoSource {
+    Live {
+        pane: Arc<Pane>,
+        workspace: String,
+        window: Value,
+        labels: Value,
+    },
+    /// 再起動後に復元した pane。実行体が無いので、保存してある記録からそのまま作れる。
+    Stopped(Value),
 }
 
 /// 所属の window が消えていれば WindowNotFound。
-fn snapshot(state: &State, entry: &PaneEntry) -> RpcResult<PaneSnapshot> {
+fn snapshot(state: &State, entry: &PaneEntry) -> RpcResult<InfoSource> {
     let location = state.layout.window_ref(&entry.window_id)?;
-    Ok(PaneSnapshot {
-        pane: Arc::clone(&entry.pane),
-        workspace: location.workspace.clone(),
-        window: to_value(&location.window)?,
-        labels: to_value(&entry.labels)?,
+    let window = to_value(&location.window)?;
+    let labels = to_value(&entry.labels)?;
+    Ok(match &entry.body {
+        Body::Live(pane) => InfoSource::Live {
+            pane: Arc::clone(pane),
+            workspace: location.workspace.clone(),
+            window,
+            labels,
+        },
+        Body::Stopped(s) => InfoSource::Stopped(json!({
+            "paneId": entry.pane_id,
+            "pid": null,
+            "cmd": s.cmd,
+            "cwd": s.cwd,
+            "workspace": location.workspace,
+            "window": window,
+            "labels": labels,
+            "processState": "stopped",
+            "exitCode": null,
+            "signal": null,
+            "agentState": "unknown",
+            "decidedBy": "none",
+            "title": "",
+            "lastOutputAt": null,
+            "cols": s.cols,
+            "rows": s.rows,
+            "clients": [],
+            "sizeOwner": null,
+        })),
     })
 }
 
 /// スナップショットから `pane.info` の結果を作る。前面プロセスは、全 pane ぶんをまとめて取る。
-fn render_infos(snapshots: &[PaneSnapshot]) -> Vec<Value> {
-    let queries: Vec<(usize, ForegroundQuery)> = snapshots
+fn render_infos(sources: Vec<InfoSource>) -> Vec<Value> {
+    let queries: Vec<(usize, ForegroundQuery)> = sources
         .iter()
         .enumerate()
-        .filter_map(|(i, s)| s.pane.foreground_query().map(|q| (i, q)))
+        .filter_map(|(i, s)| match s {
+            InfoSource::Live { pane, .. } => pane.foreground_query().map(|q| (i, q)),
+            InfoSource::Stopped(_) => None,
+        })
         .collect();
     let names = read_foreground_commands(&queries.iter().map(|&(_, q)| q).collect::<Vec<_>>());
-    let mut fg: Vec<Option<String>> = vec![None; snapshots.len()];
+    let mut fg: Vec<Option<String>> = vec![None; sources.len()];
     for ((i, _), name) in queries.iter().zip(names) {
         fg[*i] = name;
     }
-    snapshots
-        .iter()
+    sources
+        .into_iter()
         .zip(fg)
-        .map(|(s, fg)| s.pane.info(&s.workspace, &s.window, &s.labels, fg))
+        .map(|(source, fg)| match source {
+            InfoSource::Live {
+                pane,
+                workspace,
+                window,
+                labels,
+            } => pane.info(&workspace, &window, &labels, fg),
+            InfoSource::Stopped(info) => info,
+        })
         .collect()
 }
 
 fn live_pane(registry: &PaneRegistry, pane_id: &str) -> RpcResult<Arc<Pane>> {
-    Ok(Arc::clone(&registry.get_or_throw(pane_id)?.pane))
+    registry.live(pane_id)
 }
 
 impl Core {
-    pub(crate) fn pane_open(&self, raw: Raw<'_>) -> RpcResult<Value> {
-        let p: PaneOpenParams = params::parse("pane.open", raw)?;
-        if p.preplace.is_some() {
-            return Err(RpcFailure::new(
-                ErrorCode::NOT_IMPLEMENTED,
-                "preplace is not implemented",
-            ));
-        }
-        let labels = p.labels.unwrap_or_default();
-        // layout（既定の遅延作成を含む）→ spawn → 登録を 1 つの単位として扱う。失敗したら layout を戻し、イベントは出さない。
-        let pane = {
-            let mut state = self.state();
-            let before = state.layout.snapshot();
-            let attempt = state
-                .layout
-                .resolve_window(p.window_id.as_ref().map(params::WindowId::as_str))
-                .and_then(|target| {
-                    let pane = Pane::spawn(PaneOpenOptions {
-                        cmd: p.cmd,
-                        cwd: p.cwd,
-                        env: p.env.unwrap_or_default(),
-                        // ephemeralEnv は spawn で使い切り、どこにも保持しない（保存する env の記録は第 4 段）。
-                        ephemeral_env: p.ephemeral_env.unwrap_or_default(),
-                        cols: p.cols.map(params::Dimension::get),
-                        rows: p.rows.map(params::Dimension::get),
-                        socket_path: &self.socket_path,
-                        raw_ring_bytes: self.limits.raw_ring_bytes,
-                        lines_ring_bytes: self.limits.lines_ring_bytes,
-                        scrollback: self.limits.scrollback,
-                        profiles: self.profiles.clone(),
-                        events: Arc::clone(&self.events),
-                    })
-                    .map_err(|e| RpcFailure::invalid_params(format!("spawn failed: {e}")))?;
-                    Ok((pane, target))
-                });
-            match attempt {
-                Ok((pane, target)) => {
-                    state.registry.add(PaneEntry {
-                        pane: Arc::clone(&pane),
-                        window_id: target.location.window.id.clone(),
-                        labels: labels.clone(),
-                    });
-                    // 状態の変更とイベントの発行は、同じ lock の中で行う（イベントの順序を状態の変更の順序に一致させる）。
-                    self.announce_opened(&pane, &labels, &target);
-                    pane
-                }
-                Err(e) => {
-                    state.layout.restore(before);
-                    return Err(e);
-                }
-            }
-        };
-        pane.start();
-        self.sampler.register(&pane);
-        Ok(json!({"paneId": pane.id}))
-    }
-
-    /// 既定の workspace / window の作成と `pane.opened` を出す。
-    fn announce_opened(&self, pane: &Pane, labels: &BTreeMap<String, String>, target: &ResolvedWindow) {
-        let workspace = &target.location.workspace;
-        let window = &target.location.window;
-        if target.created_workspace {
-            self.events
-                .emit("workspace.created", json!({"name": workspace}), None);
-        }
-        if target.created_window {
-            self.events.emit(
-                "window.created",
-                json!({"windowId": window.id, "workspace": workspace, "name": window.name}),
-                None,
-            );
-        }
-        self.events.emit(
-            "pane.opened",
-            json!({
-                "pid": pane.pid,
-                "cmd": pane.cmd,
-                "labels": labels,
-                "workspace": workspace,
-                "windowId": window.id,
-            }),
-            Some(&pane.id),
-        );
-    }
-
     pub(crate) fn pane_info(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: PaneRefParams = params::parse("pane.info", raw)?;
         let snapshot = {
             let state = self.state();
             snapshot(&state, state.registry.get_or_throw(p.pane_id.as_str())?)?
         };
-        Ok(render_infos(&[snapshot]).remove(0))
+        Ok(render_infos(vec![snapshot]).remove(0))
     }
 
     pub(crate) fn pane_list(&self, raw: Raw<'_>) -> RpcResult<Value> {
@@ -198,7 +149,7 @@ impl Core {
                 .map(|entry| snapshot(&state, entry))
                 .collect::<RpcResult<Vec<_>>>()?
         };
-        Ok(Value::Array(render_infos(&snapshots)))
+        Ok(Value::Array(render_infos(snapshots)))
     }
 
     pub(crate) fn pane_write(&self, raw: Raw<'_>) -> RpcResult<Value> {
@@ -224,6 +175,7 @@ impl Core {
             && pane.claim_size(client.as_str()).map_err(RpcFailure::internal)?
         {
             let (cols, rows) = pane.size();
+            self.persist_soon();
             self.events.emit(
                 "pane.resized",
                 json!({"cols": cols, "rows": rows, "clientId": client.as_str()}),
@@ -248,6 +200,7 @@ impl Core {
         let client = p.client_id.as_ref().map(params::Name::as_str);
         pane.resize(p.cols.get(), p.rows.get(), client)
             .map_err(RpcFailure::internal)?;
+        self.persist_soon();
         self.events.emit(
             "pane.resized",
             json!({"cols": p.cols.get(), "rows": p.rows.get(), "clientId": client}),
@@ -282,85 +235,5 @@ impl Core {
             p.epoch.as_ref().map(params::Epoch::as_str),
             &self.epoch,
         ))
-    }
-
-    pub(crate) fn pane_set_label(&self, raw: Raw<'_>) -> RpcResult<Value> {
-        let p: PaneSetLabelParams = params::parse("pane.set_label", raw)?;
-        p.require_change("pane.set_label")?;
-        // 状態の変更とイベントの発行は、同じ lock の中で行う（他のハンドラと同じ）。
-        let mut state = self.state();
-        let labels = state
-            .registry
-            .set_labels(p.pane_id.as_str(), p.set.as_ref(), p.unset.as_deref())?;
-        self.events.emit(
-            "pane.label",
-            json!({"set": p.set.unwrap_or_default(), "unset": p.unset.unwrap_or_default()}),
-            Some(p.pane_id.as_str()),
-        );
-        Ok(json!({"labels": labels}))
-    }
-
-    pub(crate) async fn pane_close(&self, raw: Raw<'_>) -> RpcResult<Value> {
-        let p: PaneRefParams = params::parse("pane.close", raw)?;
-        self.close_pane(p.pane_id.as_str()).await?;
-        Ok(ok())
-    }
-
-    /// pane.close と同じ手順で閉じる（終了を待ち、登録を外して `pane.closed` を出す）。
-    pub(crate) async fn close_pane(&self, pane_id: &str) -> RpcResult<()> {
-        let pane = live_pane(&self.state().registry, pane_id)?;
-        pane.close().await;
-        {
-            let mut state = self.state();
-            // 並行した close が後始末済み
-            if !state
-                .registry
-                .get(pane_id)
-                .is_some_and(|e| Arc::ptr_eq(&e.pane, &pane))
-            {
-                return Ok(());
-            }
-            state.registry.remove(pane_id);
-        }
-        pane.release();
-        self.events.emit("pane.closed", json!({}), Some(pane_id));
-        Ok(())
-    }
-
-    /// 配下の pane を全部閉じる。閉じている間に開かれた pane も残さない。
-    pub(crate) async fn close_panes_in(self: &Arc<Self>, window_ids: &HashSet<String>) -> RpcResult<()> {
-        loop {
-            let ids: Vec<String> = self
-                .state()
-                .registry
-                .filter(None, None, Some(window_ids))
-                .into_iter()
-                .map(|e| e.pane.id.clone())
-                .collect();
-            if ids.is_empty() {
-                return Ok(());
-            }
-            let mut closing = JoinSet::new();
-            for id in ids {
-                let core = Arc::clone(self);
-                closing.spawn(async move { core.close_pane(&id).await });
-            }
-            while let Some(result) = closing.join_next().await {
-                result.map_err(|e| RpcFailure::internal(e.to_string()))??;
-            }
-        }
-    }
-
-    /// デーモンの終了。生きている pane を全部閉じる（`pane.closed` は出さない: 再起動後も pane の記録は残る想定）。
-    pub async fn shutdown(&self) {
-        let panes = self.state().registry.panes();
-        let mut closing = JoinSet::new();
-        for pane in panes {
-            closing.spawn(async move {
-                pane.close().await;
-                pane.release();
-            });
-        }
-        while closing.join_next().await.is_some() {}
     }
 }

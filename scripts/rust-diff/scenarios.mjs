@@ -373,7 +373,49 @@ function fuzz(seed, { cols = 80, rows = 24, scrollback = 5000, resizes = false, 
 
 export const fuzzScenarios = (count) => Array.from({ length: count }, (_, i) => fuzz(1000 + i, [{ cols: 12, rows: 6, scrollback: 8 }, { cols: 30, rows: 10, scrollback: 20, resizes: true }, { cols: 5, rows: 3, scrollback: 4, resizes: true }, {}][i % 4]));
 
+/** attach の snapshot が再現する見た目: 文字飾り・色・消去の背景色・入力モード。 */
+function snapshotLook() {
+  const steps = [];
+  let t = 0;
+  const say = (data) => {
+    t += 10;
+    steps.push(out(t, data));
+  };
+  const look = () => steps.push(screen(t + 1));
+  say(`${sgr(1)}bold${RESET} ${sgr(2)}dim${RESET} ${sgr(3)}italic${RESET} ${sgr(4)}under${RESET} ${sgr(5)}blink${RESET} ${sgr(7)}inv${RESET} ${sgr(8)}hid${RESET} ${sgr(9)}strike${RESET}\r\n`);
+  say(`${sgr(31)}red${sgr(42)}on-green${sgr(39)}fg-default${sgr(49)}bg-default${RESET}\r\n`);
+  say(`${sgr(91)}bright${sgr(104)}bg-bright${RESET} ${sgr(38, 5, 200)}p256${sgr(48, 5, 17)}bg256${RESET} ${sgr(38, 2, 10, 20, 30)}rgb${sgr(48, 2, 200, 100, 50)}bgrgb${RESET}\r\n`);
+  say(`${CSI}38:2::1:2:3mcolon-rgb${CSI}38:5:99mcolon-256${CSI}48:2:9:8:7mcolon-bg${RESET}\r\n`);
+  say(`${sgr(1, 3)}${sgr(22)}after-22 ${sgr(23)}after-23${sgr(4)}${sgr(24)}u${sgr(7)}${sgr(27)}v${sgr(9)}${sgr(29)}w${RESET}\r\n`);
+  look();
+  // 消去は背景色を引き継ぐ (BCE)。行・文字の挿入と削除、スクロール、行の挿入と削除も。
+  say(`${sgr(44)}${CSI}K${CSI}2;1H${CSI}1K${CSI}3;3H${CSI}3X${CSI}4;1H${CSI}2@${CSI}2P${RESET}`);
+  look();
+  say(`${sgr(41, 1)}${CSI}2J${CSI}H${sgr(46)}line${CSI}3;1H${CSI}L${CSI}M${CSI}S${CSI}T${ESC}M${RESET}`);
+  look();
+  say(`${sgr(45)}\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n${RESET}tail`);
+  look();
+  // 入力モード
+  say(`${CSI}?1h${ESC}=${CSI}?2004h${CSI}?1004h${CSI}?1000h${CSI}4h${CSI}?7l${CSI}?6h`);
+  look();
+  say(`${CSI}?1002h${CSI}?1h${CSI}?1l${ESC}>`);
+  look();
+  say(`${CSI}?1003h${CSI}?7h${CSI}4l${CSI}?6l${CSI}?9h`);
+  look();
+  say(`${CSI}?1h${ESC}=${CSI}?2004h${CSI}!p`);
+  look();
+  say(`${CSI}?1h${CSI}?2004h${CSI}?1000h${ESC}c${sgr(33)}reset`);
+  look();
+  say(`${CSI}?1049h${sgr(32)}alt${CSI}?2004h`);
+  look();
+  say(`${ESC}7${sgr(35)}saved${ESC}8restored${CSI}?1049l`);
+  look();
+  steps.push(screen(t + 100));
+  return { name: 'snapshot-look', cmd: ['bash'], cols: 40, rows: 10, steps, end: t + 200 };
+}
+
 export const scenarios = [
+  snapshotLook(),
   claudeSession(),
   claudeQuestion(),
   claudeApiError(),

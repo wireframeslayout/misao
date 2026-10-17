@@ -3,7 +3,7 @@
 // 部品を呼ぶ。時刻は node:test のモックタイマーで進める (実時間を使わないので、何度作っても同じ結果になる)。
 import xterm from '@xterm/headless';
 import { StateTracker } from '../../packages/daemon/dist/state-tracker.js';
-import { viewportText } from '../../packages/daemon/dist/screen.js';
+import { serializeSnapshot, viewportText } from '../../packages/daemon/dist/screen.js';
 import { selectProfile } from '../../packages/daemon/dist/profile.js';
 import { referenceProfiles } from './reference-profiles.mjs';
 import { installVirtualClock } from './virtual-clock.mjs';
@@ -74,6 +74,7 @@ export async function runScenario(scenario) {
             kind: 'screen',
             at: elapsed(),
             text: viewportText(term),
+            snapshot: serializeSnapshot(term),
             cursor: { x: buf.cursorX, y: buf.cursorY },
             altScreen: buf.type === 'alternate',
             title,

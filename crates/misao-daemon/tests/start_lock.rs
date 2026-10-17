@@ -17,6 +17,7 @@ fn options(dir: &Path, pid_name: &str, log: Logger) -> DaemonOptions {
         version: None,
         socket_path: dir.join("misao.sock"),
         pid_path: dir.join(pid_name),
+        state_path: dir.join("persistence.json"),
         limits: Limits::default(),
         log,
         profiles: Vec::new(),

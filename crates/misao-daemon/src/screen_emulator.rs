@@ -1,6 +1,7 @@
 //! 端末の状態と、文字・制御列の意味（xterm.js の `InputHandler` のうち、画面の文字に関わる部分）。
 //! 色・属性、マウス、応答の送信などは扱わない。意味は `@xterm/headless` 6 に合わせる（差分テストで確かめている）。
 
+use crate::screen_attr::Attr;
 use crate::screen_buffer::Buffer;
 use crate::screen_charset::Charset;
 use crate::unicode_width::{CharProps, char_properties};
@@ -8,6 +9,36 @@ use crate::unicode_width::{CharProps, char_properties};
 /// 画面の大きさの下限（xterm.js と同じ: 2 列 x 1 行）。
 pub const MIN_COLS: usize = 2;
 pub const MIN_ROWS: usize = 1;
+
+/// マウスの報告の種類（`CSI ? 9 / 1000 / 1002 / 1003 h`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseMode {
+    None,
+    X10,
+    Vt200,
+    Drag,
+    Any,
+}
+
+/// 端末の入力に関わるモード。画面の文字には効かないが、attach の snapshot が復元する。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InputModes {
+    pub app_cursor_keys: bool,
+    pub app_keypad: bool,
+    pub bracketed_paste: bool,
+    pub send_focus: bool,
+    pub mouse: MouseMode,
+}
+
+impl InputModes {
+    const DEFAULT: Self = Self {
+        app_cursor_keys: false,
+        app_keypad: false,
+        bracketed_paste: false,
+        send_focus: false,
+        mouse: MouseMode::None,
+    };
+}
 
 pub struct Emulator {
     pub(crate) cols: usize,
@@ -21,6 +52,9 @@ pub struct Emulator {
     pub(crate) origin: bool,
     pub(crate) wraparound: bool,
     pub(crate) reverse_wraparound: bool,
+    /// 現在の文字属性（`CSI m` で設定し、書いたセルに付く）。
+    pub(crate) attr: Attr,
+    pub(crate) input: InputModes,
     pub(crate) gsets: [Option<Charset>; 4],
     pub(crate) glevel: usize,
     pub(crate) charset: Option<Charset>,
@@ -47,6 +81,8 @@ impl Emulator {
             origin: false,
             wraparound: true,
             reverse_wraparound: false,
+            attr: Attr::DEFAULT,
+            input: InputModes::DEFAULT,
             gsets: [None; 4],
             glevel: 0,
             charset: None,
@@ -59,7 +95,7 @@ impl Emulator {
 
     fn fresh_buffers(cols: usize, rows: usize, scrollback: usize) -> (Buffer, Buffer) {
         let mut normal = Buffer::new(cols, rows, scrollback, true);
-        normal.fill_viewport_rows();
+        normal.fill_viewport_rows(Attr::DEFAULT);
         (normal, Buffer::new(cols, rows, scrollback, false))
     }
 
@@ -90,8 +126,11 @@ impl Emulator {
         if self.run.is_empty() {
             return;
         }
-        let run = std::mem::take(&mut self.run);
+        let mut run = std::mem::take(&mut self.run);
         self.print(&run);
+        // 確保した領域を次の連続のために使い回す。
+        run.clear();
+        self.run = run;
     }
 
     pub(crate) fn print(&mut self, data: &[u32]) {
@@ -100,12 +139,12 @@ impl Emulator {
         }
         let (cols, rows) = (self.cols, self.rows);
         let (wraparound, insert_mode) = (self.wraparound, self.insert_mode);
-        let charset = self.charset;
+        let (charset, attr, erase) = (self.charset, self.attr, self.attr.erase());
         let mut preceding = self.preceding;
         let b = self.buf();
         if b.x > 0 && b.row(b.y).width(b.x - 1) == 2 {
             let (x, y) = (b.x, b.y);
-            b.row_mut(y).set_null(x - 1);
+            b.row_mut(y).set_null(x - 1, attr);
         }
         for &raw in data {
             let code = charset.map_or(raw, |cs| cs.translate(raw));
@@ -119,7 +158,7 @@ impl Emulator {
             preceding = info;
             if b.x + width > cols + old_width {
                 if wraparound {
-                    Self::wrap_line(b, rows, cols, old_width);
+                    Self::wrap_line(b, rows, cols, old_width, attr, erase);
                 } else {
                     b.x = cols - 1;
                     if width == 2 {
@@ -133,21 +172,21 @@ impl Emulator {
                 let offset = if row.width(x - 1) == 0 { 2 } else { 1 };
                 row.add_code_to_cell(x - offset, code, info.width());
                 for i in 0..width - old_width {
-                    row.set_code(x + i, 0, 0);
+                    row.set_code(x + i, 0, 0, attr);
                 }
                 b.x += width - old_width;
                 continue;
             }
             let row = b.row_mut(y);
             if insert_mode {
-                row.insert_cells(x, width - old_width);
+                row.insert_cells(x, width - old_width, attr);
                 if row.width(cols - 1) == 2 {
-                    row.set_code(cols - 1, 0, 1);
+                    row.set_code(cols - 1, 0, 1, attr);
                 }
             }
-            row.set_code(x, code, info.width());
+            row.set_code(x, code, info.width(), attr);
             for i in 1..width {
-                row.set_code(x + i, 0, 0);
+                row.set_code(x + i, 0, 0, attr);
             }
             b.x += width.max(1);
         }
@@ -155,26 +194,26 @@ impl Emulator {
         let b = self.buf();
         let (x, y) = (b.x, b.y);
         if x < cols && b.row(y).width(x) == 0 && !b.row(y).has_content(x) {
-            b.row_mut(y).set_code(x, 0, 1);
+            b.row_mut(y).set_code(x, 0, 1, attr);
         }
     }
 
     /// 行末で折り返す（`print` の自動折り返し）。結合文字で幅が広がったときは、直前の文字を次の行へ移す。
-    fn wrap_line(b: &mut Buffer, rows: usize, cols: usize, old_width: usize) {
+    fn wrap_line(b: &mut Buffer, rows: usize, cols: usize, old_width: usize, attr: Attr, erase: Attr) {
         let mut old_col = b.x - old_width;
         let old_y = b.y;
         let carried: Vec<_> = (0..old_width)
             .map(|i| b.row(old_y).cell(old_col + i).clone())
             .collect();
         while old_col < cols {
-            b.row_mut(old_y).set_null(old_col);
+            b.row_mut(old_y).set_null(old_col, attr);
             old_col += 1;
         }
         b.x = old_width;
         b.y += 1;
         if b.y == b.scroll_bottom + 1 {
             b.y -= 1;
-            b.scroll(true);
+            b.scroll(true, erase);
         } else {
             if b.y >= rows {
                 b.y = rows - 1;
@@ -191,19 +230,21 @@ impl Emulator {
     // ---- カーソルの保存・モード ----
 
     pub fn save_cursor(&mut self) {
-        let charset = self.charset;
+        let (charset, attr) = (self.charset, self.attr);
         let b = self.buf();
         b.saved.x = b.x;
         b.saved.y = b.ybase + b.y;
         b.saved.charset = charset;
+        b.saved.attr = attr;
     }
 
     pub fn restore_cursor(&mut self) {
         let b = self.buf();
         b.x = b.saved.x;
         b.y = b.saved.y.saturating_sub(b.ybase);
-        let charset = b.saved.charset;
+        let (charset, attr) = (b.saved.charset, b.saved.attr);
         self.charset = charset;
+        self.attr = attr;
         self.restrict_cursor(None);
     }
 
@@ -230,7 +271,9 @@ impl Emulator {
 
     pub fn activate_alt(&mut self) {
         if !self.alt_active {
-            self.alt.fill_viewport_rows();
+            // 代替画面の行は、消去と同じ属性（背景色）で作る（xterm.js の `activateAltBuffer(eraseAttr)`）。
+            let erase = self.attr.erase();
+            self.alt.fill_viewport_rows(erase);
             self.alt.x = self.normal.x;
             self.alt.y = self.normal.y;
             self.alt_active = true;
@@ -273,6 +316,10 @@ impl Emulator {
         self.origin = false;
         self.wraparound = true;
         self.reverse_wraparound = false;
+        self.input.app_cursor_keys = false;
+        self.input.app_keypad = false;
+        self.input.bracketed_paste = false;
+        self.input.send_focus = false;
     }
 
     /// `CSI ! p`
@@ -288,6 +335,8 @@ impl Emulator {
         b.saved.x = 0;
         b.saved.y = b.ybase;
         b.saved.charset = None;
+        b.saved.attr = Attr::DEFAULT;
+        self.attr = Attr::DEFAULT;
     }
 
     /// `ESC c`
@@ -297,6 +346,8 @@ impl Emulator {
         self.alt = alt;
         self.alt_active = false;
         self.reset_modes();
+        self.input.mouse = MouseMode::None;
+        self.attr = Attr::DEFAULT;
         self.gsets = [None; 4];
         self.glevel = 0;
         self.charset = None;

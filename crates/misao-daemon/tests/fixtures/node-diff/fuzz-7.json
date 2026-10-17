@@ -395,6 +395,7 @@
     "kind": "screen",
     "at": 66,
     "text": "\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -407,6 +408,7 @@
     "kind": "screen",
     "at": 126,
     "text": "\n═══┐\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;31m═══\u001b[0m┐\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[4;1H",
     "cursor": {
      "x": 0,
      "y": 3
@@ -431,6 +433,7 @@
     "kind": "screen",
     "at": 191,
     "text": "\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[2;1H",
     "cursor": {
      "x": 0,
      "y": 1
@@ -443,6 +446,7 @@
     "kind": "screen",
     "at": 256,
     "text": "\n─│\n┌┐\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m─│\u001b[0m\u001b[K\u001b[3;1H\u001b[0m┌┐\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[?6h\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -460,6 +464,7 @@
     "kind": "screen",
     "at": 321,
     "text": "\n\nalp\nha\n\n\n  ",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0;1malp\u001b[0m\u001b[K\u001b[4;1H\u001b[0;1mha\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0;1m  \u001b[0m\u001b[K\u001b[?6h\u001b[2;3H",
     "cursor": {
      "x": 2,
      "y": 1
@@ -477,6 +482,7 @@
     "kind": "screen",
     "at": 381,
     "text": "✅\n ═9\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m✅\u001b[0m\u001b[K\u001b[2;1H\u001b[0m ═9\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[?7l\u001b[2;4H",
     "cursor": {
      "x": 3,
      "y": 1
@@ -489,6 +495,7 @@
     "kind": "screen",
     "at": 441,
     "text": "\n\n\n\n\n\n✅ ✅",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m✅ ✅\u001b[0m\u001b[K\u001b[?7l\u001b[2;1H",
     "cursor": {
      "x": 0,
      "y": 1
@@ -513,6 +520,7 @@
     "kind": "screen",
     "at": 506,
     "text": "\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[4h\u001b[?7l\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -530,6 +538,7 @@
     "kind": "screen",
     "at": 566,
     "text": "\ng\n| |\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0;1mg\u001b[0m\u001b[K\u001b[3;1H\u001b[0m| |\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -542,6 +551,7 @@
     "kind": "screen",
     "at": 626,
     "text": "\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[1;9H",
     "cursor": {
      "x": 8,
      "y": 0
@@ -554,6 +564,7 @@
     "kind": "screen",
     "at": 725,
     "text": "\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[1;9H",
     "cursor": {
      "x": 8,
      "y": 0

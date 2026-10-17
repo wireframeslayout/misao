@@ -168,8 +168,16 @@ pub fn subscribe(
     source.track(&progress);
     ctx.after_reply(move || {
         // 応答より先に通知しない。
-        let handle = tokio::spawn(pump(source, Arc::clone(&conn), progress, wake));
-        conn.register_subscription(key, handle.abort_handle());
+        let done = Arc::new(AtomicBool::new(false));
+        let handle = tokio::spawn({
+            let (conn, done, key) = (Arc::clone(&conn), Arc::clone(&done), key.clone());
+            async move {
+                pump(source, Arc::clone(&conn), progress, wake).await;
+                done.store(true, Ordering::Release);
+                conn.forget_subscription(&key, tokio::task::id());
+            }
+        });
+        conn.register_subscription(key, handle.abort_handle(), &done);
     });
     json!({"gap": gap, "head": head, "epoch": current_epoch})
 }

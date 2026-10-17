@@ -1,0 +1,137 @@
+//! `pane.attach` / `pane.detach`（Node 版の `pane-io` の attach / detach）。
+//! 複数のクライアントが 1 つの pane に入れる。pane のサイズは最後に操作したクライアントのものになり、
+//! 所有者が抜けたら残ったクライアントのうち最後に操作したもののサイズに戻る。
+
+use std::sync::Arc;
+
+use misao_protocol::ErrorCode;
+use serde_json::{Map, Value, json};
+
+use crate::connection::ConnHandle;
+use crate::core::Core;
+use crate::pane::{AttachRefused, Pane};
+use crate::params::{self, AttachMode, PaneAttachParams, PaneRefParams};
+use crate::rpc::RequestContext;
+use crate::rpc_error::{RpcFailure, RpcResult};
+
+type Raw<'a> = Option<&'a Map<String, Value>>;
+
+impl Core {
+    /// 応答の後に再生とライブへの切り替えを行う（応答より先に `pane.output` を出さない）。
+    pub(crate) fn pane_attach(&self, raw: Raw<'_>, ctx: &mut RequestContext) -> RpcResult<Value> {
+        let p: PaneAttachParams = params::parse("pane.attach", raw)?;
+        if p.mode == AttachMode::Cells {
+            return Err(RpcFailure::new(
+                ErrorCode::UNSUPPORTED,
+                "mode \"cells\" is not supported",
+            ));
+        }
+        let pane = self.state().registry.live(p.pane_id.as_str())?;
+        let conn = Arc::clone(&ctx.conn);
+        let client_id = p.client_id.as_str();
+        // サイズの指定の適用も pane の中の 1 つの臨界区間で行う。断られたら何も変わらない（古い attach もサイズも残る）。
+        let size = p.cols.zip(p.rows).map(|(cols, rows)| (cols.get(), rows.get()));
+        let attached = pane
+            .attach(&conn, client_id, p.replay, size)
+            .map_err(|refused| match refused {
+                AttachRefused::Closing => RpcFailure::new(ErrorCode::PANE_EXITED, "pane is closing"),
+                AttachRefused::Resize(e) => RpcFailure::internal(e),
+            })?;
+        if let Some((cols, rows)) = size.filter(|_| attached.resized) {
+            self.persist_soon();
+            self.events.emit(
+                "pane.resized",
+                json!({"cols": cols, "rows": rows, "clientId": client_id}),
+                Some(&pane.id),
+            );
+        }
+        if let Some(displaced) = attached.displaced {
+            self.report_inherited_size(&pane, displaced.inherited);
+            self.events.emit(
+                "client.detached",
+                json!({"clientId": displaced.client_id}),
+                Some(&pane.id),
+            );
+        }
+        if !attached.replaced {
+            self.events
+                .emit("client.attached", json!({"clientId": client_id}), Some(&pane.id));
+        }
+        let attachment = Arc::clone(&attached.attachment);
+        let pane_id = pane.id.clone();
+        if conn.is_closed() {
+            // 登録している間に接続が閉じた（`connection_closed` の走査の後に登録した attach を残さない）。
+            self.detach_from(&conn, &pane_id);
+        }
+        ctx.after_reply(move || {
+            // 応答前に同じ接続で再 attach / detach されたら、この attach の再生とキューは捨てる。
+            if conn
+                .attachment(&pane_id)
+                .is_some_and(|current| current.id == attachment.id)
+            {
+                attachment.go_live();
+            }
+        });
+        Ok(json!({"head": attached.head, "oldest": attached.oldest, "truncated": attached.truncated}))
+    }
+
+    pub(crate) fn pane_detach(&self, raw: Raw<'_>, ctx: &RequestContext) -> RpcResult<Value> {
+        let p: PaneRefParams = params::parse("pane.detach", raw)?;
+        self.detach_from(&ctx.conn, p.pane_id.as_str());
+        Ok(json!({"ok": true}))
+    }
+
+    /// 接続の attach を外す。接続の切断からも呼ばれるので、サイズの継承の保存は遅らせる（失敗しても RPC は落とさない）。
+    pub(crate) fn detach_from(&self, conn: &ConnHandle, pane_id: &str) {
+        let Some(attachment) = conn.take_attachment(pane_id) else {
+            return;
+        };
+        let pane = self.state().registry.live(pane_id).ok();
+        if let Some(pane) = pane {
+            // 同じ clientId が別の接続にも残っていれば clients から外さない（pane の中で 1 つの操作として行う）
+            self.report_inherited_size(&pane, pane.detach(attachment.id, &attachment.client_id));
+        }
+        self.events.emit(
+            "client.detached",
+            json!({"clientId": attachment.client_id}),
+            Some(pane_id),
+        );
+    }
+
+    /// 抜けたクライアントがサイズの所有者だったとき、サイズを継いだクライアントを知らせる。
+    fn report_inherited_size(&self, pane: &Pane, inherited: Result<Option<String>, String>) {
+        match inherited {
+            Ok(Some(owner)) => {
+                let (cols, rows) = pane.size();
+                self.events.emit(
+                    "pane.resized",
+                    json!({"cols": cols, "rows": rows, "clientId": owner}),
+                    Some(&pane.id),
+                );
+                self.persist_soon();
+            }
+            Ok(None) => {}
+            Err(e) => self
+                .log
+                .error(&format!("cannot restore the pane size after detach: {e}")),
+        }
+    }
+
+    /// 接続が閉じた。attach していた pane から外す。
+    pub(crate) fn connection_closed(&self, conn: &ConnHandle) {
+        for pane_id in conn.attached_pane_ids() {
+            self.detach_from(conn, &pane_id);
+        }
+    }
+
+    /// pane の close で、全接続の attach を外す（閉じた Pane への参照を残さない）。
+    pub(crate) fn release_attachments(&self, pane: &Pane) {
+        for attachment in pane.close_attachments() {
+            self.events.emit(
+                "client.detached",
+                json!({"clientId": attachment.client_id}),
+                Some(&pane.id),
+            );
+        }
+    }
+}

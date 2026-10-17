@@ -4,12 +4,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { MisaoClient } from '@misao/sdk';
+import { createTestIo } from '../helpers/io.js';
 import { buildDaemonOptions, pipeDataDir } from '../../src/commands/serve.js';
 import { MISAO_VERSION } from '../../src/version.js';
 import type { ResolvedConfig } from '../../src/config/index.js';
-import { run } from '../../src/run.js';
-import { createTestIo } from '../helpers/io.js';
-import type { TestIo } from '../helpers/io.js';
+import { runMisao, startMisao } from '../helpers/runner.js';
+import type { Running } from '../helpers/runner.js';
 import { waitFor } from '../helpers/daemon.js';
 
 const CONFIG: ResolvedConfig = {
@@ -40,7 +40,7 @@ test('buildDaemonOptions: --socket はソケットだけでなくデータの既
 });
 
 interface Serving {
-  io: TestIo;
+  io: Running;
   socket: string;
   dataDir: string;
   exit: Promise<number>;
@@ -52,10 +52,9 @@ async function startServe(dir: string, config: Record<string, unknown>): Promise
   const dataDir = path.join(dir, 'data');
   const configPath = path.join(dir, 'misao.json');
   fs.writeFileSync(configPath, JSON.stringify(config));
-  const io = createTestIo({ homeDir: dir, cwd: dir });
-  const exit = run(['serve', '--config', configPath, '--socket', socket, '--data', dataDir], io);
+  const io = startMisao(['serve', '--config', configPath, '--socket', socket, '--data', dataDir], { homeDir: dir, cwd: dir });
   await waitFor(() => fs.existsSync(socket));
-  return { io, socket, dataDir, exit };
+  return { io, socket, dataDir, exit: io.done };
 }
 
 test('serve: misao.json の上限と logLevel が実際のデーモンまで届き、SIGINT で shutdown して 0', async () => {
@@ -75,7 +74,7 @@ test('serve: misao.json の上限と logLevel が実際のデーモンまで届�
     assert.ok(fs.existsSync(path.join(s.dataDir, 'persistence.json')), '--data に persistence.json を置く');
     client.close();
 
-    s.io.emitSignal('SIGINT');
+    s.io.signal('SIGINT');
     assert.equal(await s.exit, 0);
     assert.equal(fs.existsSync(s.socket), false);
   } finally {
@@ -89,7 +88,7 @@ test('serve: 既定の logLevel (info) では listening を stderr に出し、S
     try {
       const s = await startServe(dir, {});
       await waitFor(() => s.io.err().includes('listening on'));
-      s.io.emitSignal(signal);
+      s.io.signal(signal);
       assert.equal(await s.exit, 0, signal);
       assert.match(s.io.err(), /shutting down/, signal);
     } finally {
@@ -99,9 +98,9 @@ test('serve: 既定の logLevel (info) では listening を stderr に出し、S
 });
 
 test('serve: 長すぎる --socket は使い方の誤り (2)', async () => {
-  const io = createTestIo({ homeDir: '/tmp/h', cwd: '/tmp' });
-  assert.equal(await run(['serve', '--socket', `/tmp/${'x'.repeat(200)}/misao.sock`], io), 2);
-  assert.match(io.err(), /--socket/);
+  const r = await runMisao(['serve', '--socket', `/tmp/${'x'.repeat(200)}/misao.sock`], { homeDir: '/tmp/h', cwd: '/tmp' });
+  assert.equal(r.code, 2);
+  assert.match(r.err, /--socket/);
 });
 
 test('buildDaemonOptions: 名前付きパイプは親ディレクトリが無いので dataDir が必須、あれば pid / state をそこへ置く', () => {

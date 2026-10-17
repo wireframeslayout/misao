@@ -5,7 +5,10 @@ use crate::config::Config;
 use crate::error::{CliError, ErrorKind};
 use crate::socket_path::{PathEnv, normalize_lexical, resolve_socket_path};
 
+#[cfg(unix)]
 const PID_FILE_NAME: &str = "daemon.pid";
+#[cfg(unix)]
+const STATE_FILE_NAME: &str = "persistence.json";
 
 pub struct ServeArgs {
     pub socket: Option<String>,
@@ -33,7 +36,7 @@ fn resolve_data_dir(env: &Env, dir: &str) -> PathBuf {
     }
 }
 
-/// 設定（`misao.json`）と引数から、ソケットパスと pid ファイルの置き場所を決める。
+/// 設定（`misao.json`）と引数から、ソケットパスと、pid ファイル・保存した状態の置き場所（data ディレクトリ）を決める。
 pub fn resolve_paths(env: &Env, config: &Config, args: &ServeArgs) -> Result<(PathBuf, PathBuf), CliError> {
     let socket = match &args.socket {
         Some(s) => {
@@ -50,7 +53,7 @@ pub fn resolve_paths(env: &Env, config: &Config, args: &ServeArgs) -> Result<(Pa
             .map(Path::to_path_buf)
             .unwrap_or_else(|| env.cwd.clone()),
     };
-    Ok((socket, data_dir.join(PID_FILE_NAME)))
+    Ok((socket, data_dir))
 }
 
 #[cfg(unix)]
@@ -60,8 +63,9 @@ pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), Cl
     use misao_daemon::{Daemon, DaemonOptions, Logger, builtin_profiles};
     use tokio::signal::unix::{SignalKind, signal};
 
-    let (socket_path, pid_path) = resolve_paths(env, config, &args)?;
-    if let (Some(_), Some(dir)) = (&args.data, pid_path.parent()) {
+    let (socket_path, data_dir) = resolve_paths(env, config, &args)?;
+    if args.data.is_some() {
+        let dir = data_dir.as_path();
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -82,7 +86,8 @@ pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), Cl
     let daemon = Daemon::start(DaemonOptions {
         version: Some(env!("CARGO_PKG_VERSION").to_string()),
         socket_path,
-        pid_path,
+        state_path: data_dir.join(STATE_FILE_NAME),
+        pid_path: data_dir.join(PID_FILE_NAME),
         limits: config.limits,
         log: Logger::stderr(config.log_level),
         profiles: builtin_profiles().map_err(|e| CliError::new(ErrorKind::Runtime, e))?,

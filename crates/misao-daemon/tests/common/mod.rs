@@ -17,8 +17,23 @@ pub fn core_with(limits: Limits) -> Arc<Core> {
         socket_path: PathBuf::from("/tmp/misao-test.sock"),
         limits,
         log: Logger::new(LogLevel::Error, |m| eprintln!("{m}")),
+        state_path: None,
         profiles: builtin_profiles().unwrap(),
     })
+    .unwrap()
+}
+
+/// 状態を `state_path` へ保存する（あれば復元する）中核。
+pub fn core_at(state_path: &std::path::Path) -> Arc<Core> {
+    Core::new(CoreOptions {
+        version: Some("test".to_string()),
+        socket_path: PathBuf::from("/tmp/misao-test.sock"),
+        limits: Limits::default(),
+        log: Logger::new(LogLevel::Error, |m| eprintln!("{m}")),
+        state_path: Some(state_path.to_path_buf()),
+        profiles: builtin_profiles().unwrap(),
+    })
+    .unwrap()
 }
 
 pub fn core() -> Arc<Core> {

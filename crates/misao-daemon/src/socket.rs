@@ -13,6 +13,7 @@ use crate::DaemonError;
 const DIR_MODE: u32 = 0o700;
 const SOCKET_MODE: u32 = 0o600;
 const GROUP_OTHER_BITS: u32 = 0o077;
+const GROUP_OTHER_WRITE: u32 = 0o022;
 
 fn parent_dir(socket_path: &Path) -> &Path {
     socket_path
@@ -44,6 +45,37 @@ pub fn ensure_socket_dir(socket_path: &Path) -> Result<(), DaemonError> {
     }
     if meta.mode() & GROUP_OTHER_BITS != 0 {
         return Err(DaemonError::SocketDirTooOpen {
+            dir: dir.to_path_buf(),
+            mode: meta.mode() & 0o777,
+        });
+    }
+    Ok(())
+}
+
+/// 保存した状態・pid ファイルの置き場所（`--data`）を用意する。ソケットのディレクトリと違って 0700 は求めない
+/// （中のファイルは 600 で作るので、読み取りの権限は問題にならない）。ディレクトリであること・シンボリックリンクでないこと・
+/// 所有者が現在の uid であること・group/other に書き込み権限が無いこと（別のユーザーがファイルを差し替えられない）を検証する。
+/// 無ければ 700 で作る。
+pub fn ensure_data_dir(file_in_dir: &Path) -> Result<(), DaemonError> {
+    let dir = parent_dir(file_in_dir);
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(DIR_MODE)
+        .create(dir)
+        .map_err(|e| DaemonError::io(format!("cannot create data directory {}", dir.display()), e))?;
+    let meta = fs::symlink_metadata(dir)
+        .map_err(|e| DaemonError::io(format!("cannot stat data directory {}", dir.display()), e))?;
+    if meta.file_type().is_symlink() {
+        return Err(DaemonError::DataDirIsSymlink(dir.to_path_buf()));
+    }
+    if !meta.is_dir() {
+        return Err(DaemonError::DataDirNotDirectory(dir.to_path_buf()));
+    }
+    if meta.uid() != getuid().as_raw() {
+        return Err(DaemonError::DataDirNotOwned(dir.to_path_buf()));
+    }
+    if meta.mode() & GROUP_OTHER_WRITE != 0 {
+        return Err(DaemonError::DataDirWritableByOthers {
             dir: dir.to_path_buf(),
             mode: meta.mode() & 0o777,
         });

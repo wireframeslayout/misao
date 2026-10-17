@@ -9,7 +9,7 @@ pub struct SizeDecision {
 
 /// 「最後に操作したクライアントのサイズを優先する」調停。pty には依存せず、
 /// 適用すべきサイズを返すだけ（適用は呼び出し側）。Node 版の `SizeArbiter`。
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SizeArbiter {
     /// 並び順 = 操作の新しさ（末尾が最新）。
     sizes: Vec<(String, u64, u64)>,
@@ -44,6 +44,19 @@ impl SizeArbiter {
         }
         Some(self.record(Some(client), cols, rows))
     }
+
+    /// クライアントの離脱。所有者だった場合は、残るクライアントのうち最後に操作したものの
+    /// サイズを返す（なければ None）。
+    pub fn forget(&mut self, client: &str) -> Option<SizeDecision> {
+        let was_owner = self.owner.as_deref() == Some(client);
+        self.sizes.retain(|(known, _, _)| known != client);
+        if !was_owner {
+            return None;
+        }
+        self.owner = None;
+        let (id, cols, rows) = self.sizes.last()?.clone();
+        Some(self.record(Some(&id), cols, rows))
+    }
 }
 
 #[cfg(test)]
@@ -72,6 +85,20 @@ mod tests {
         let d = a.claim("A").unwrap();
         assert_eq!((d.cols, d.rows, d.owner.as_deref()), (120, 40, Some("A")));
         assert_eq!(a.owner(), Some("A"));
+    }
+
+    #[test]
+    fn forget_hands_the_size_to_the_most_recent_remaining_client() {
+        let mut a = SizeArbiter::default();
+        a.record(Some("A"), 120, 40);
+        a.record(Some("B"), 80, 24);
+        a.record(Some("C"), 60, 20);
+        let d = a.forget("C").unwrap();
+        assert_eq!((d.cols, d.rows, d.owner.as_deref()), (80, 24, Some("B")));
+        assert_eq!(a.forget("A"), None, "not the owner");
+        assert_eq!(a.owner(), Some("B"));
+        assert_eq!(a.forget("B"), None, "nobody left");
+        assert_eq!(a.owner(), None);
     }
 
     #[test]

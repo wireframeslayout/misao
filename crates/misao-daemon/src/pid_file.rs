@@ -1,5 +1,6 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use nix::errno::Errno;
@@ -31,7 +32,12 @@ fn parse_pid(text: &str) -> Option<i32> {
 pub fn acquire_pid_file(pid_path: &Path, pid: u32) -> Result<(), DaemonError> {
     let ctx = |e| DaemonError::io(format!("cannot write {}", pid_path.display()), e);
     for _ in 0..2 {
-        match OpenOptions::new().write(true).create_new(true).open(pid_path) {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(pid_path)
+        {
             Ok(mut f) => return f.write_all(pid.to_string().as_bytes()).map_err(ctx),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(ctx(e)),

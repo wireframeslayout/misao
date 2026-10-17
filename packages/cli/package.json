@@ -17,7 +17,8 @@
     "misao": "dist/main.js"
   },
   "scripts": {
-    "test": "node --conditions=@misao/source --import tsx --test \"test/**/*.test.ts\""
+    "test": "node --conditions=@misao/source --import tsx --test \"test/**/*.test.ts\"",
+    "test:rust": "node --conditions=@misao/source --import tsx --test --test-force-exit \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@misao/daemon": "0.0.0",

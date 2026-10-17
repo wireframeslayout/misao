@@ -4,6 +4,7 @@
 //! 順序を一致させる）。判定を駆動するスレッドは `Pane` を知らず、このオブジェクトだけを持つので、`Pane` が捨てられても
 //! 残らない（`close` で止める）。
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -29,6 +30,8 @@ pub struct PaneObserver {
     /// 使いうるプロファイルと、pane の起動コマンド。前面のプログラムが変わるたびに、これで選び直す。
     profiles: Vec<Arc<Profile>>,
     cmd: Vec<String>,
+    /// 取り消された pane。タイトルも判定の変化も、イベントを出さない。
+    muted: AtomicBool,
 }
 
 /// `pane.info` の稼働判定とタイトル。
@@ -54,6 +57,7 @@ impl PaneObserver {
             epoch: Instant::now(),
             pane_id,
             events,
+            muted: AtomicBool::new(false),
         })
     }
 
@@ -65,7 +69,15 @@ impl PaneObserver {
         u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
+    /// 以後イベントを出さない。
+    pub fn mute(&self) {
+        self.muted.store(true, Ordering::Release);
+    }
+
     fn emit(&self, events: Vec<ViewEvent>) {
+        if self.muted.load(Ordering::Acquire) {
+            return;
+        }
         for event in events {
             match event {
                 ViewEvent::Title(title) => self.events.emit("pane.title", json!({"title": title}), Some(&self.pane_id)),
@@ -112,6 +124,10 @@ impl PaneObserver {
 
     pub fn snapshot(&self) -> ScreenSnapshot {
         self.lock().view.snapshot()
+    }
+
+    pub fn serialize_snapshot(&self) -> String {
+        self.lock().view.serialize_snapshot()
     }
 
     pub fn info(&self) -> ObservedInfo {

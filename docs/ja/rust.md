@@ -4,7 +4,8 @@
 
 misao のデーモンと CLI を Rust の単一バイナリ `misao` に書き直しています。配布は GitHub Releases です。
 SDK（`@misao/sdk`）と protocol（`@misao/protocol`、`PROTOCOL_VERSION` 0.3.0）は TypeScript のまま維持し、プロトコルは変えません。
-Rust 版が既存の e2e（`packages/e2e`）を全部通すまでは、Node 版が正式版です。
+Rust 版は既存の e2e（`packages/e2e`）と CLI のテスト（`packages/cli/test`）を全部通します（オプトインの Claude / Codex / systemd を除く）。
+バイナリの配布と AZITO の切り替え（#44）までは、Node 版が正式版です。
 
 関連文書: [プロトコル](../protocol.ja.md)、[CLI](../cli.ja.md)、[設定](../config.ja.md)。
 
@@ -20,7 +21,7 @@ crates/
   misao-daemon/         デーモンの本体: ソケット、pid ファイル、ログ、接続、RPC、作業場所 / 窓 / ペイン、PTY、リング、イベント、
                         画面（端末の解釈）、稼働判定（state-tracker・profile）、前面プロセス
     tests/fixtures/node-diff/  Node 版との差分テストの入力と期待値（`scripts/gen-rust-diff-fixtures.mjs` の生成物）
-  misao/                バイナリ: clap の CLI（`serve`、`--version`）、設定、ソケットパス
+  misao/                バイナリ: CLI の全サブコマンド（引数の解釈・クライアント・attach の端末制御）、設定、ソケットパス
 ```
 
 依存は一方向です: `misao` -> `misao-daemon` -> `misao-protocol`。
@@ -47,27 +48,27 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
 
 ## Node 版との対応
 
-| Node（`packages/`） | Rust（`crates/`） | 状況（第 3 段まで） |
+| Node（`packages/`） | Rust（`crates/`） | 状況（第 4 段まで） |
 |---|---|---|
 | `protocol`（Zod スキーマ、`ErrorCode`、framing） | `misao-protocol` | `server.info`・JSON-RPC・エラー・NDJSON の型。スキーマと照合済み |
 | `daemon/src/socket.ts` | `misao-daemon/src/socket.rs` | 完了（dir 700 / socket 600、所有者とシンボリックリンクの確認、古いソケット） |
 | `daemon/src/pid-file.ts` | `misao-daemon/src/pid_file.rs` | 完了 |
 | `daemon/src/daemon.ts`（`start` / `shutdown`） | `misao-daemon/src/daemon.rs` | 完了。起動の lock を終了まで保持する（下記） |
-| `daemon/src/daemon.ts`（ディスパッチ）、`rpc-error.ts`、`params.ts` | `core.rs`、`rpc.rs`、`rpc_error.rs`、`params.rs` | 完了（`pane.attach` / `pane.detach` / `pane.send_keys` / `window.focus` / `pane.respawn` は `NotImplemented`） |
+| `daemon/src/daemon.ts`（ディスパッチ）、`rpc-error.ts`、`params.ts` | `core.rs`、`rpc.rs`、`rpc_error.rs`、`params.rs` | 完了（`pane.send_keys` / `window.focus` / `pane.respawn` は Node 版と同じく `NotImplemented`） |
 | `daemon/src/connection.ts`、`stream.ts` | `connection.rs`、`stream.rs` | 完了（送信キューの高水位、pull 型の購読、追い越された購読者の切断） |
-| `daemon/src/layout.ts`、`layout-handlers.ts` | `layout.rs`、`layout_handlers.rs` | 完了（保存は第 4 段） |
-| `daemon/src/pane-registry.ts`、`pane-lifecycle.ts`、`pane-io.ts` | `registry.rs`、`pane_handlers.rs` | 完了（attach・保存を除く） |
+| `daemon/src/layout.ts`、`layout-handlers.ts` | `layout.rs`、`layout_handlers.rs` | 完了 |
+| `daemon/src/pane-registry.ts`、`pane-lifecycle.ts`、`pane-io.ts` | `registry.rs`、`pane_handlers.rs`、`pane_lifecycle.rs`、`attach_handlers.rs`、`attachment.rs` | 完了 |
 | `daemon/src/pane.ts` | `pane.rs`、`pty.rs`、`pane_view.rs`、`pane_observer.rs` | PTY（portable-pty）、入力、resize、終了検知、close、画面・タイトル・稼働判定との接続（`pane_view` が部品をつなぎ、`pane_observer` が lock・判定のスレッド・イベントを持つ） |
-| `@xterm/headless`、`daemon/src/screen.ts`（`viewportText`） | `screen.rs`、`screen_{emulator,perform,cursor,edit,buffer,line,reflow,charset}.rs`、`unicode_width{,_table}.rs` | 完了（`serializeSnapshot` は attach と一緒に第 4 段）。vte のパーサー + xterm.js と同じ意味の自前の画面（後述） |
+| `@xterm/headless`、`daemon/src/screen.ts`（`viewportText`） | `screen.rs`、`screen_{emulator,perform,cursor,edit,buffer,line,reflow,charset}.rs`、`unicode_width{,_table}.rs` | 完了（`serializeSnapshot` は `screen_snapshot.rs`、色・飾りは `screen_attr.rs`）。vte のパーサー + xterm.js と同じ意味の自前の画面（後述） |
 | `daemon/src/state-tracker.ts`、`byte-activity.ts`、`title-activity.ts` | `state_tracker.rs`、`byte_activity.rs`、`title_activity.rs` | 完了。閾値・窓・猶予は Node 版と同じ。タイマーは持たず、時刻は引数（後述） |
 | `daemon/src/profile.ts`（差し込み口だけ。規則は Node 版に無い） | `profile.rs`、`profiles/{claude,codex}.json` | 完了。規則をデータとして持ち、AZITO の画面規則から Claude / Codex を移植（後述） |
 | `daemon/src/foreground.ts` | `foreground.rs` | 完了（Linux は `/proc`、macOS は `ps`、Windows は未対応）|
 | `daemon/src/size-arbiter.ts`、`ring.ts`、`ansi.ts`、`child-env.ts`、`event-log.ts`、`limits.ts`、`ulid.ts` | `size_arbiter.rs`、`ring.rs`、`ansi.rs`、`child_env.rs`、`event_log.rs`、`limits.rs`、`ids.rs` | 完了 |
 | `daemon/src/log.ts` | `misao-daemon/src/log.rs` | 完了（stderr に `[misao <ISO 時刻>] msg`） |
 | `sdk-node/src/socket-path.ts` | `misao/src/socket_path.rs` | 完了（優先順位も 107 バイト制限も同じ） |
-| `cli/src/config/*` | `misao/src/config.rs` | `socket` / `logLevel` / `scrollback` / `rings` を使用。`keys` は型の検証のみ |
-| `cli` の `serve`、`--version` | `misao/src/{cli,serve}.rs` | 完了。他のコマンドは後続の段 |
-| 永続化・attach・`serializeSnapshot` | - | 未着手（第 4 段） |
+| `daemon/src/persistence.ts`、`state-persister.ts`、`attach.ts` | `persistence.rs`、`state_persister.rs`、`attach_handlers.rs`、`attachment.rs`、`screen_snapshot.rs`、`screen_attr.rs` | 完了（第 4 段。下記） |
+| `cli/src/config/*` | `misao/src/config.rs`、`keys.rs` | 完了（`keys` も使う） |
+| `cli/src/**`（全サブコマンド、attach、target、view） | `misao/src/{args,client,commands,attach,view,target,follow,connect,io,tty_sys}*` | 完了（第 4 段。下記） |
 
 第 1 段で意図的に違う点: `--help` は clap の生成（説明は日本語、フラグ名は英語）。`--version` は `misao <Cargo のバージョン>` で、
 リリーススクリプトが設定するようになる（第 6 段）まで `0.0.0`。Windows では接続口が後続の段のため、
@@ -97,8 +98,7 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
   Windows は `taskkill /T /F` でツリーごと止めます（`spawn_blocking` で実行。SIGHUP 相当の猶予は無く、最初から強制終了で、終了済みの pane の残りは追いません。Job Object による封じ込めは第 5 段）。
 - **`pane.write` の `dataB64`**: 不正な base64 は `InvalidParams` にします（Node の `Buffer.from` は黙って読み捨てる）。
 - **サイズ**: cols / rows は Zod と同じ範囲（安全な整数）をそのまま保持し、`pane.info` とイベントには元の値を返します。pty へ渡すときだけ 65535 に丸めます。
-- **未対応（後続の段）**: 状態の保存（再起動後の `stopped` の復元）、`preplace`（Node 版も未実装）。
-  画面・タイトル・稼働判定・`fgCommand` は第 3 段で入った（次の節）。
+- **未対応**: `preplace`（Node 版も未実装）。状態の保存と attach は第 4 段で入った（次の節）。
 - 子に `SHELL` が付く場合がある（portable-pty が `SHELL` を補う）。
 
 ## 第 3 段の振る舞い（画面と稼働判定）
@@ -164,6 +164,62 @@ Windows は ConPTY に前面プロセスグループが無く、誤った名前�
 
 `pane.info` / `pane.list` の組み立て（前面プロセスの取得を含む）は、全体の lock を離してから行います。lock の中では所属・ラベル・`Arc<Pane>` のスナップショットだけを取ります。`pane.list` の前面プロセスは、macOS では一覧ぶんをまとめて `ps -o pid=,comm= -p a,b,c` を 1 回だけ起動して引きます。
 
+## 第 4 段の振る舞い（保存・attach・CLI）
+
+### 状態の保存と復元
+
+`persistence.json`（`--data` または socket の親ディレクトリ）は **Node 版と同じ形式で、相互に読めます**（`packages/e2e/test/persistence.test.ts` が
+Node で保存 -> Rust で復元、Rust で保存 -> Node で復元を確かめる）。保存するのは workspace / window の定義と pane のメタ（`paneId`・`windowId`・`cmd`・`cwd`・`env`・`labels`・`cols`・`rows`）で、
+`env` は `pane.open` の `env` だけです（`ephemeralEnv` は保存しない）。書き方は、同じディレクトリにランダムな名前の一時ファイルを `O_EXCL`・`O_NOFOLLOW`・mode 600 で作り、書く -> ファイルを fsync -> rename -> 親ディレクトリを fsync、です
+（Node 版は固定名の一時ファイルに書いて fsync と rename だけで、ディレクトリの fsync と O_EXCL / O_NOFOLLOW はありません）。
+rename より前の失敗は元に戻しますが、**rename の後の親ディレクトリの fsync の失敗は戻しません**（ファイルは新しい内容に替わっているので、成功として扱い、警告をログに出す。EINVAL / ENOTSUP のようにディレクトリの fsync を持たないファイルシステムでは黙って成功にする）。
+データディレクトリ（`--data`）は、本人の所有・シンボリックリンクでない・ディレクトリ・group / other に書き込み権限が無い、を起動時に検証し、違反は起動エラーにします（Node 版は検証しない）。
+0755 の既存のディレクトリは許します（中のファイルは 600 で作るので、読み取りの権限は問題にならない）。ソケットのディレクトリは従来どおり 0700 が要件です。
+読み込みは `O_NOFOLLOW` で開き、通常のファイルであること・32 MiB 以下であることを確かめてから読みます。workspace・window・pane は各 1 万まで、`cmd` / `env` / `labels` は各 4096 要素まで、文字列は 1 MiB までで、
+超えるファイルは起動エラーです。保存するときも同じ上限で断る（読めないファイルを作らない）ので、上限に達した `pane.open` は保存の失敗として元に戻ります（Node 版にこれらの上限は無い）。
+
+- **再起動**: 保存してある pane は `stopped` で復元されます（`pid` は `null`、`agentState` は `unknown`）。ラベルの編集と `pane.close` はでき、
+  `pane.write` / `resize` / `screen` / `attach` / `subscribe_lines` は `PaneExited`（`pane is stopped`）です。`paneCount` と `pane.list` に含まれます。
+- **壊れたファイル**: `invalid persistence file <path>: <詳細>` で起動に失敗します（pid ファイルは残さない）。`version` が 1 でない、
+  必須項目の欠落・余計な項目、`cols` / `rows` が正の整数でない、ID の形式違反、workspace 名・window ID・pane ID の重複、存在しない window への所属が対象です。詳細の文言は serde のもので Zod とは違います。
+- **保存の時機**: `pane.open` / `pane.close` / `pane.set_label` / workspace・window の作成・rename・close は保存してからイベントを出します。
+  作成・rename・ラベルは保存に失敗したら元に戻します。`pane.open` が保存に失敗したら、作った layout も登録も戻し、起動した子はイベントを出さずに止めます。
+  `close` は子を止めてしまっているので戻さず、メモリは実態のまま `pane.closed` を出してから失敗を返します。サイズ（`cols` / `rows`）は 1 秒遅らせて保存し、失敗はログだけで、デーモンの終了時に残りを保存します。保存の最中に入ったサイズの予約は世代番号で見分け、取りこぼさず次の保存に回します。
+- **排他（Node 版との違い）**: Node 版は単一スレッドなので「変更 -> 保存 -> 失敗なら戻す」が割り込まれません。Rust 版は保存する状態を変える操作を `gate`（非同期の mutex）で 1 つずつ行い、
+  fsync は全体の状態の lock の外で行います（読み取り・入出力は待たない）。書き込みの順序づけの lock を取ってからスナップショットを作るので、古い状態が新しい状態を上書きしません。lock の順序は gate -> 書き込み -> 全体の状態です。
+
+### attach と複数クライアント
+
+`pane.attach`（`mode: raw`、`replay: raw | snapshot | none`）と `pane.detach` は Node 版と同じ契約です。再生は応答の後に送り、境界は `head` です
+（出力の取り込みと同じ lock の中で届け先の登録と `head` の読み取りを行うので、再生とライブの間に隙間も重なりも出ません）。
+`raw` は生出力リングの全体（`truncated` はリングが欠けているか）、`snapshot` は見えている行だけを描き直す 1 通知（`replay: "snapshot"`）で、`mode: cells` は `Unsupported` です。
+pane のサイズは最後に操作した（`pane.write` の `clientId`、`pane.attach` / `pane.resize` のサイズ）クライアントのもので、所有者が抜けると、残ったクライアントのうち最後に操作したもののサイズに戻ります。
+接続が切れたときも同じ後始末をします。attach・detach・close の後始末（pane 側の届け先、接続側の map、clients、サイズの所有者、「close が始まった」印）は pane の `order` の下で 1 つの線形化点として行い（接続側への登録まで `order` の中）、attach が失敗したときは古い attach を両側に残し、close が始まった後の attach は `PaneExited`（`pane is closing`）で断ります。
+送信キューは、メッセージを足したときの合計が 16 MiB を超えるなら、投入せずに接続を切ります（1 通で上限を飛び越えない）。応答前の attach が溜める出力も 16 MiB までで、超えたら attach を諦めて接続を切ります。
+snapshot は 1 通の通知です。画面は最大 1024 x 1024 セルで、文字だけなら約 1 MiB（base64 で約 1.4 MiB）ですが、ほぼ全セルで色や飾りが変わる最悪の画面（1 セルあたり最大 60 バイト程度の SGR）では 16 MiB を超ええます。
+その場合は上の規則で接続が切れ、クライアントは `replay: none` か `raw` で入り直します。現実の画面（数百 x 数十セル）では 1 MiB を大きく下回ります。同じ接続・同じ `clientId` の再 attach は届け先だけを差し替え、`client.detached` を出しません。
+
+Node 版と違う点: pane を `close` したとき、attach していたクライアントには `client.detached` を出しますが、所有者の交代による `pane.resized` は出しません（閉じる pane のサイズを変えても意味が無いため）。
+
+#### snapshot（色と飾り）
+
+画面モデルは第 3 段まで文字だけでしたが、snapshot が見た目を再現できるよう、セルに属性（太字・薄字・斜体・下線・点滅・反転・非表示・取り消し線、前景色・背景色: 標準 16 色 / 256 色 / RGB）を持たせました
+（セルは 16 バイトから 24 バイトになる）。`CSI m`（`;` 区切りも `:` 区切りも）、消去が背景色を引き継ぐ BCE、挿入・削除・スクロール、代替画面の初期化、カーソルの保存・復元、リセットで xterm.js と同じ意味にしています。
+入力モード（アプリケーションカーソル / キーパッド、括弧付き貼り付け、フォーカス通知、マウスの報告）も持ち、snapshot の末尾で復元します。カーソルの表示 / 非表示とスクロール領域を復元しないのは Node 版と同じです。
+差分テストは snapshot の文字列も Node 版（`serializeSnapshot`）と**完全に**突き合わせます（`snapshot-look` シナリオと、色を混ぜた乱数シナリオ）。xterm.js の癖で合わせたもの:
+`CSI T` だけは消去した行に背景色を引き継がない、代替画面の行は消去の属性で作る、`CSI 38:2:r:g:b` は r を色空間として読む、挿入モードの文字入力は現在の属性で空きを埋める。
+4000 本の追加の乱数シナリオのうち、画面の文字まで食い違うのは 3 本（0.1%、第 3 段の「再現しない内部状態」）、属性だけが食い違うのは 1 本（折り返しの再配置で xterm.js が属性を取り違える例）です。
+
+### CLI
+
+`misao` の全サブコマンド（`ls` / `attach` / `new` / `kill` / `status` / `send` / `screen` / `tail` / `events` / `label` / `schema` / `serve`）の出力形式・終了コード・メッセージ（日本語）・`--json` の出力・`--help` の文面は Node 版と同じです。
+正本は Node 版のソースとテストで、引数の解釈は `util.parseArgs` の strict と同じ振る舞いを**手書きで**実装しています（clap は使いません: エラーの文言・終了コード 2・`--json` のエラーを Node 版と一致させるため）。
+CLI は tokio の接続を持つクライアント（1 つの actor が接続を持ち、購読の応答を再生の通知より先に適用する。Node の SDK と同じ指数バックオフで再接続し、`since` / `epoch` を復元する）で、
+`attach` は端末を raw にして prefix キーの状態機械・SIGWINCH・終了シグナル・端末の復元（`TTY_RESET`）を扱います（Unix のみ。他の OS は後続の段）。
+Node 版との違い: raw モード中の panic は端末を戻して `[misao] 予期しないエラー` を出し終了コード 1 にする（Node の `uncaughtException`）、`misao.json` の `keys` / `rings` の未知のキーは警告（Node 版と同じ）。
+
+`misao.json`（`socket` / `logLevel` / `scrollback` / `rings` / `keys`）、制限値の既定、ログ（stderr に `[misao <ISO 時刻>] msg`）は Node 版と同じ検証・既定です。
+
 ## Node 版との差分テスト
 
 `scripts/gen-rust-diff-fixtures.mjs` が、記録した出力の列を Node 版の部品（`@xterm/headless` + `StateTracker` + `foreground`）に流し、
@@ -190,7 +246,7 @@ Rust 単独では、何を食わせても panic しないことを確かめる�
 
 調査用に、コミットしない乱数シナリオを多めに作れます: `node scripts/gen-rust-diff-fixtures.mjs --out /tmp/fz --extra-fuzz 3000`、
 `MISAO_NODE_DIFF_DIR=/tmp/fz cargo test -p misao-daemon node_diff`（`MISAO_FUZZ_EVERY=1` で全チャンクの後に画面を読む）。3000 本のうち 99.8% 以上が一致し、
-残りは上の「再現しない xterm.js の内部状態の食い違い」です。
+残りは上の「再現しない xterm.js の内部状態の食い違い」です（snapshot を足した後は 4000 本のうち 4 本）。
 
 ## プロトコル適合
 
@@ -215,34 +271,94 @@ pid ファイルでは排他できない形で）起動した新デーモンの�
 Node 版にはこの lock が無く、pid ファイルの場所が違う 2 つのデーモンを同時に起動すると、判定・削除・listen の間で競合する
 可能性があります。Node 版は直さず（置き換え予定のため）、ここに記録するだけにします。
 
-## Rust 版デーモンで e2e を動かす
+## Rust 版で e2e と CLI のテストを動かす
 
 `packages/e2e/test/helpers/daemon-process.ts` は `misao serve --config ... --socket ... --data ...` でデーモンを起動します。
-`MISAO_DAEMON_BIN` を指定すると、Node の CLI の代わりにその実行ファイルを使います。
+`MISAO_DAEMON_BIN` を指定すると、Node の CLI の代わりにその実行ファイルを使います。CLI を起動するテスト（`v5-catch-up` の attach など）と `packages/cli/test` は
+`MISAO_CLI_BIN` を指定するとそのバイナリを使います。
 
 ```bash
 cargo build --release -p misao
-MISAO_DAEMON_BIN=$PWD/target/release/misao npm run test:e2e -w @misao/e2e   # 全体
-MISAO_DAEMON_BIN=$PWD/target/release/misao npm run test:e2e:rust -w @misao/e2e   # 通る範囲（CI）
+B=$PWD/target/release/misao
+MISAO_DAEMON_BIN=$B MISAO_CLI_BIN=$B npm run test:e2e:rust -w @misao/e2e   # e2e の全部（CI）
+MISAO_DAEMON_BIN=$B MISAO_CLI_BIN=$B npm run test:rust -w misao             # CLI のテスト（CI）
 ```
 
-変数を指定しなければ何も変わりません。大量出力のテスト（`v3-line-markers`）は処理速度に左右されるので、`release` ビルドで動かしてください
-（debug ビルドでも通りますが、通常出力のテストに約 70 秒かかります）。`vim` が要ります。第 3 段の状況:
+変数を指定しなければ何も変わりません（Node 版）。大量出力のテスト（`v3-line-markers`）は処理速度に左右されるので `release` ビルドで動かしてください。`vim` が要ります。
 
-| テストファイル | Rust 版 | 理由 |
+| テストファイル | Rust 版 |
+|---|---|
+| `server-info`、`core-rpc`、`screen-rpc`、`v3-line-markers`、`v4-hub-restart`、`v5-key-collisions` | 通る |
+| `v2-attach-replay`、`v2-size-conflict`（`pane.attach`、raw / snapshot の再生、サイズの調停） | 通る |
+| `v5-catch-up`（Rust の CLI の attach） | 通る |
+| `persistence`（再起動後の `stopped` の復元。Node で保存 -> Rust、Rust で保存 -> Node の相互も） | 通る |
+| `v2-claude`、`v4-systemd`、claude / codex のケース | オプトイン。スキップ |
+
+`packages/cli/test` のうち、`run(argv, io)` でコマンドを動かすテスト（`commands.test.ts`、`commands/follow.test.ts`、`commands/serve.test.ts`、pty で attach する `attach/binary.test.ts`）は、`MISAO_CLI_BIN` があるとバイナリを子プロセスとして起動します
+（`MISAO_DAEMON_BIN` もあると、相手のデーモンも Rust 版）。Node の内部関数を呼ぶテスト（`args`、`target`、`send-keys`、`cli-io`、`config/*`、`view/*`、`attach/{session,loop,picker,prefix-filter,tty}`）は
+同じ観点を `cargo test -p misao` に移してあります。
+
+## AZITO の統合テストを Rust 版に向ける
+
+AZITO（`mission/misao-driver`）の `e2e/specs/misao.spec.ts`（`npm run e2e` は一時ハブ・一時ポート・一時 tmux で動く）と `packages/server` の `*.misaoIntegration.test.ts` は、
+`MISAO_CLI` に指した JS ファイルを `node <MISAO_CLI> serve ...` で起動します（`MisaoAgentInstaller` のテストは `import '<MISAO_CLI>'` する）。Rust 版を指す
+1 行のラッパー（`process.execve` で自分を Rust のバイナリに置き換えるので pid も保たれる。環境を引き継がないテストがあるので、パスはファイルに直接書く）を置けば、AZITO 側を変えずに流せます:
+
+```js
+const RUST = '/path/to/target/release/misao';
+process.execve(RUST, [RUST, ...process.argv.slice(2)], process.env);
+```
+
+結果（デーモンと CLI の両方が Rust 版）: `misao.spec.ts` 7 本が 3 回とも通過、`vitest --project misao-integration` の 10 ファイル 69 本が通過、misao 関連の単体テスト（541 本）も通過。
+デーモンだけ Rust 版にした 4 回の実行のうち 1 回、稼働検知のテストが完了行の表示で失敗しました（再現せず。同じイベント列を Node 版と Rust 版で比べると一致するので、
+ハブ側のタイミングと見ています）。
+
+## メモリと CPU の比較計測（#32 の条件）
+
+`scripts/bench-daemon.mjs` が、同じペイン数・同じ scrollback・同じ出力でデーモンのメモリ（RSS）と CPU を測ります（Linux 専用。一時ディレクトリのデーモンで、`~/.misao` には触れない）。
+
+```bash
+npm run build && cargo build --release -p misao
+node scripts/bench-daemon.mjs --panes 10,30,60 --patterns quiet,bulk,tui           # 既定: scrollback 5000
+node scripts/bench-daemon.mjs --panes 30 --patterns bulk --scrollback 20000         # 感度（--raw-bytes / --lines-bytes も）
+```
+
+RSS は `/proc/<pid>/status` の VmRSS、CPU は `/proc/<pid>/stat` の utime + stime（デーモン 1 プロセスだけ。pane の子は含まない）。出力は quiet（出力なし）/
+bulk（各 pane が約 6.9 MB = 10 万行を一気に出す）/ tui（Claude Code 風の 12 行を 10 回/秒で再描画、20 秒）。pane は 120 x 40。ヒープ（`heapUsed`）は外から測れないので RSS で比べます。
+測定環境: WSL2、22 論理コア、他のプロセスが動いている開発機（絶対値は目安）。
+
+| 出力 | pane 数 | Node 起動直後 | Node RSS | Rust 起動直後 | Rust RSS | Node CPU 時間 | Rust CPU 時間 |
+|---|---|---|---|---|---|---|---|
+| quiet | 10 | 72 MiB | 74 MiB | 6 MiB | 8 MiB | 0.1 s | 0.0 s |
+| quiet | 60 | 72 MiB | 96 MiB | 6 MiB | 16 MiB | 0.5 s | 0.8 s |
+| tui | 10 | 73 MiB | 87 MiB | 6 MiB | 13 MiB | 1.2 s / 20 s | 0.2 s / 21 s |
+| tui | 30 | 72 MiB | 119 MiB | 6 MiB | 28 MiB | 2.2 s / 21 s | 0.7 s / 21 s |
+| tui | 60 | 72 MiB | 167 MiB | 6 MiB | 51 MiB | 3.7 s / 21 s | 1.9 s / 22 s |
+| bulk | 10 | 72 MiB | 444 MiB | 6 MiB | 222 MiB | 6.8 s（6.7 s で完了） | 5.8 s（2.1 s で完了） |
+| bulk | 30 | 73 MiB | 1020 MiB | 6 MiB | 651 MiB | 38.8 s（33.5 s） | 39.9 s（6.3 s） |
+| bulk | 60 | - | -（メモリ不足を避け未計測） | 6 MiB | 1293 MiB | - | 99.3 s（13.6 s） |
+
+読み方:
+- **固定コスト**: Node 約 72 MiB（この版の依存を読み込んだ後。#32 の 35 MiB より増えている）に対し、Rust は約 6 MiB。
+- **ペインあたりのメモリ**: 静穏はどちらも小さく（Node 0.4 MiB、Rust 0.2 MiB）、TUI は Node 1.5 MiB、Rust 0.7 MiB。大量出力は scrollback 5000 行 + 行リング 4 MiB + 生リング 1 MiB が埋まった状態で、
+  Node 約 32-37 MiB、Rust 約 21.5 MiB（セルが 24 バイト: 文字 + 属性 + 幅 + 結合文字の箱）。60 ペインの大量出力でも Rust は 1.3 GiB で、ペイン数に比例します。
+- **CPU**: 同じ出力量を処理する CPU 時間の合計は大量出力で Node とほぼ同じ（Rust は端末の解釈と行の組み立てが pane ごとのスレッドに並列で乗るため、**完了までの時間は 5 倍短い**）。
+  静穏と TUI では Rust が 2-5 倍少ない。静穏の 60 ペインは pane の起動（pty と子の fork）の CPU が主で、Rust が多く見える。
+  Node は 1 スレッドなので大量出力中は 1 コア（約 110 %）で頭打ちになり、その間 RPC の応答も遅れます。
+
+scrollback と rings の感度（bulk、30 ペイン）:
+
+| 設定 | Node RSS | Rust RSS |
 |---|---|---|
-| `server-info.test.ts` | 通る | |
-| `core-rpc.test.ts`（第 2 段で追加。Node 版でも通る） | 通る | 作業場所 / 窓、ペインの起動・env・入力・resize・close、行の記録、イベントと再接続 |
-| `screen-rpc.test.ts`（第 3 段で追加。Node 版でも通る） | 通る | `pane.screen`・タイトル・`fgCommand`、vim の画面がサイズの所有者に追従すること（`v2-size-conflict` の画面の部分）、`pane.title` / `pane.state` の列 |
-| `v3-line-markers.test.ts` | 通る | 行ストリームのマーカー、遅い購読者、再購読 |
-| `v4-hub-restart.test.ts` | 通る | hub の再開（SDK の自動再接続と購読の復元）。画面の突き合わせに `pane.screen` を使う |
-| `v5-key-collisions.test.ts` | 通る | vim / bash に制御キーを送っても落ちない（`pane.screen` で確かめる） |
-| `v2-attach-replay`、`v2-size-conflict` | 通らない | `pane.attach`（第 4 段）が `not implemented` |
-| `v5-catch-up` | 通らない | CLI の attach（第 4 段）が必要 |
-| `v2-claude`、`v4-systemd` | オプトイン。スキップ | |
+| scrollback 1000 | 696 MiB | 313 MiB |
+| scrollback 5000（既定） | 1020 MiB | 651 MiB |
+| scrollback 20000 | 1874 MiB | 1919 MiB |
+| scrollback 5000、`rawBytes` 256 KiB、`linesBytes` 1 MiB | 865 MiB | 498 MiB |
+
+scrollback が大きいと Rust のセル（24 バイト）が Node の xterm.js（セル 12 バイト）を上回ります（20000 行で逆転）。セルを小さくする余地（結合文字を行の外に出す、属性を表に入れる）は残してあります。
 
 ## 移行計画
 
 issue で管理しています。#39（workspace・プロトコル適合・最小デーモン・CI）、#40 中核（RPC・作業場所/窓/ペイン・PTY・出力の記録・イベント）、
-#41 画面と稼働判定（この段）、#42 状態の保存・attach・CLI 全体（既存 e2e を全部通す）、#43 macOS と Windows、#44 バイナリ配布と AZITO の切り替え。
+#41 画面と稼働判定、#42 状態の保存・attach・CLI 全体（既存 e2e を全部通す。この段）、#43 macOS と Windows、#44 バイナリ配布と AZITO の切り替え。
 背景は #32（部品の検討）と #37（Windows）。

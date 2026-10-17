@@ -100,7 +100,7 @@ fn serves_server_info_with_secure_modes_and_cleans_up_on_sigterm() {
     );
     let unimplemented = request(
         &sock,
-        &json!({"jsonrpc": "2.0", "id": 2, "method": "pane.attach"}),
+        &json!({"jsonrpc": "2.0", "id": 2, "method": "pane.respawn"}),
     );
     assert_eq!(
         unimplemented["error"]["code"],

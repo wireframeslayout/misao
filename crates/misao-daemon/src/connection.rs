@@ -16,6 +16,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
 
+use crate::attachment::Attachment;
 use crate::core::Core;
 use crate::rpc;
 
@@ -37,10 +38,12 @@ pub struct ConnHandle {
     kill_tx: watch::Sender<bool>,
     /// `${stream}:${paneId}` → 購読タスク。同じキーの再購読は既存を置き換える（二重配信の防止）。
     subscriptions: Mutex<HashMap<String, AbortHandle>>,
+    /// paneId → この接続の attach。1 つの pane につき 1 つ（同じ clientId の再 attach は置き換える）。
+    attachments: Mutex<HashMap<String, Arc<Attachment>>>,
 }
 
 impl ConnHandle {
-    fn new() -> (Arc<Self>, UnboundedReceiver<Vec<u8>>) {
+    pub(crate) fn new() -> (Arc<Self>, UnboundedReceiver<Vec<u8>>) {
         let (tx, rx) = unbounded_channel();
         let conn = Arc::new(Self {
             tx: Mutex::new(Some(tx)),
@@ -49,6 +52,7 @@ impl ConnHandle {
             drain_tx: watch::Sender::new(0),
             kill_tx: watch::Sender::new(false),
             subscriptions: Mutex::new(HashMap::new()),
+            attachments: Mutex::new(HashMap::new()),
         });
         (conn, rx)
     }
@@ -68,21 +72,42 @@ impl ConnHandle {
         self.send(response);
     }
 
+    /// 組み立て済みの 1 行（NDJSON）を送信キューへ入れる。
+    pub fn send_bytes(&self, bytes: Vec<u8>) {
+        self.enqueue(bytes);
+    }
+
     fn enqueue(&self, bytes: Vec<u8>) {
         if self.is_closed() {
             return;
         }
-        if self.queued.load(Ordering::Acquire) > MAX_WRITABLE_BYTES {
+        let len = bytes.len();
+        // 溜まっているバイト数に、このメッセージのぶんを原子的に足して検査する。1 つのメッセージで上限を超える場合も
+        // 投入せずに接続を切る（読まないクライアントの検出と、大きな 1 通で上限を飛び越えることの防止）。
+        let mut queued = self.queued.load(Ordering::Acquire);
+        let reserved = loop {
+            let Some(total) = queued
+                .checked_add(len)
+                .filter(|total| *total <= MAX_WRITABLE_BYTES)
+            else {
+                break false;
+            };
+            match self
+                .queued
+                .compare_exchange_weak(queued, total, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(_) => break true,
+                Err(current) => queued = current,
+            }
+        };
+        if !reserved {
             self.destroy();
             return;
         }
-        let len = bytes.len();
         let guard = self.tx.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(tx) = guard.as_ref() {
-            self.queued.fetch_add(len, Ordering::AcqRel);
-            if tx.send(bytes).is_err() {
-                self.queued.fetch_sub(len, Ordering::AcqRel);
-            }
+        let sent = guard.as_ref().is_some_and(|tx| tx.send(bytes).is_ok());
+        if !sent {
+            self.queued.fetch_sub(len, Ordering::AcqRel);
         }
     }
 
@@ -115,6 +140,48 @@ impl ConnHandle {
         }
     }
 
+    pub fn attachment(&self, pane_id: &str) -> Option<Arc<Attachment>> {
+        self.attachments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(pane_id)
+            .cloned()
+    }
+
+    /// 登録して、同じ pane の古い attach を返す。
+    pub fn replace_attachment(&self, pane_id: &str, attachment: Arc<Attachment>) -> Option<Arc<Attachment>> {
+        self.attachments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(pane_id.to_string(), attachment)
+    }
+
+    pub fn take_attachment(&self, pane_id: &str) -> Option<Arc<Attachment>> {
+        self.attachments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(pane_id)
+    }
+
+    /// 指定の attach が今の attach のままなら外す（pane の close で、後から置き換わったものを消さない）。
+    pub fn remove_attachment_if(&self, pane_id: &str, attachment_id: u64) -> bool {
+        let mut attachments = self.attachments.lock().unwrap_or_else(PoisonError::into_inner);
+        if attachments.get(pane_id).is_some_and(|a| a.id == attachment_id) {
+            attachments.remove(pane_id);
+            return true;
+        }
+        false
+    }
+
+    pub fn attached_pane_ids(&self) -> Vec<String> {
+        self.attachments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .keys()
+            .cloned()
+            .collect()
+    }
+
     /// 同じキーの既存の購読を止める。
     pub fn cancel_subscription(&self, key: &str) {
         let removed = self
@@ -128,24 +195,41 @@ impl ConnHandle {
     }
 
     /// 購読タスクを登録する。接続が既に閉じていれば止める。
-    pub fn register_subscription(&self, key: String, handle: AbortHandle) {
+    /// `done` は購読タスクが終わる直前に立てる印（先に終わっていたら登録しない）。
+    pub fn register_subscription(&self, key: String, handle: AbortHandle, done: &AtomicBool) {
         let mut subs = self.subscriptions.lock().unwrap_or_else(PoisonError::into_inner);
         if self.is_closed() {
             handle.abort();
+            return;
+        }
+        if done.load(Ordering::Acquire) {
             return;
         }
         if let Some(old) = subs.insert(key, handle) {
             old.abort();
         }
     }
+
+    /// 購読タスクが自分で終わったとき、自分の登録を外す（pane の close などで終わった購読を残さない）。
+    /// 後から同じキーで置き換えられていれば、そちらは外さない。
+    pub fn forget_subscription(&self, key: &str, task: tokio::task::Id) {
+        let mut subs = self.subscriptions.lock().unwrap_or_else(PoisonError::into_inner);
+        if subs.get(key).is_some_and(|handle| handle.id() == task) {
+            subs.remove(key);
+        }
+    }
 }
 
-/// 接続のタスクが終わる（正常・abort のどちらでも）と接続を片付ける。
-struct ConnGuard(Arc<ConnHandle>);
+/// 接続のタスクが終わる（正常・abort のどちらでも）と接続を片付ける。attach していた pane からも外す。
+struct ConnGuard {
+    conn: Arc<ConnHandle>,
+    core: Arc<Core>,
+}
 
 impl Drop for ConnGuard {
     fn drop(&mut self) {
-        self.0.destroy();
+        self.conn.destroy();
+        self.core.connection_closed(&self.conn);
     }
 }
 
@@ -185,7 +269,10 @@ where
 {
     let (mut reader, writer) = tokio::io::split(stream);
     let (conn, rx) = ConnHandle::new();
-    let _guard = ConnGuard(Arc::clone(&conn));
+    let _guard = ConnGuard {
+        conn: Arc::clone(&conn),
+        core: Arc::clone(&core),
+    };
     let mut writer_task = tokio::spawn(write_loop(writer, rx, Arc::clone(&conn)));
     let mut killed = conn.kill_tx.subscribe();
     let mut splitter = LineSplitter::default();
@@ -218,4 +305,62 @@ where
         }
     }
     writer_task.abort();
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn a_message_that_would_exceed_the_queue_limit_is_not_queued_and_drops_the_connection() {
+        let (conn, _rx) = ConnHandle::new();
+        conn.send_bytes(vec![0; MAX_WRITABLE_BYTES - 10]);
+        assert!(!conn.is_closed());
+        conn.send_bytes(vec![0; 11]);
+        assert!(conn.is_closed(), "the 11 bytes that cross the limit are refused");
+        assert_eq!(
+            conn.queued.load(Ordering::Acquire),
+            MAX_WRITABLE_BYTES - 10,
+            "nothing over the limit was reserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_subscription_that_ends_by_itself_is_forgotten_and_a_replacement_is_kept() {
+        let (conn, _rx) = ConnHandle::new();
+        let done = AtomicBool::new(false);
+        let first = tokio::spawn(std::future::pending::<()>());
+        conn.register_subscription("lines:p".into(), first.abort_handle(), &done);
+        let second = tokio::spawn(std::future::pending::<()>());
+        conn.register_subscription("lines:p".into(), second.abort_handle(), &done);
+        conn.forget_subscription("lines:p", first.id()); // 置き換えられた古い購読の終了は、新しい購読を外さない
+        assert_eq!(conn.subscriptions.lock().unwrap().len(), 1);
+        conn.forget_subscription("lines:p", second.id());
+        assert!(conn.subscriptions.lock().unwrap().is_empty());
+        // 登録より先に終わっていた購読は登録しない
+        let third = tokio::spawn(std::future::pending::<()>());
+        conn.register_subscription("lines:q".into(), third.abort_handle(), &AtomicBool::new(true));
+        assert!(conn.subscriptions.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn one_huge_message_on_an_empty_queue_drops_the_connection() {
+        let (conn, _rx) = ConnHandle::new();
+        conn.send_bytes(vec![0; MAX_WRITABLE_BYTES + 1]);
+        assert!(conn.is_closed());
+        assert_eq!(conn.queued.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn a_pending_attachment_that_buffers_too_much_before_the_reply_drops_the_connection() {
+        let (conn, _rx) = ConnHandle::new();
+        let attachment = Attachment::new("p_x", "A", &conn, 0);
+        let chunk = vec![0u8; 1024 * 1024];
+        for seq in 1..=20u64 {
+            attachment.deliver(seq, "t", &chunk, &[]);
+        }
+        assert!(conn.is_closed(), "16 MiB waiting for the reply is the limit");
+        attachment.go_live(); // 切った後は何も送らない
+    }
 }

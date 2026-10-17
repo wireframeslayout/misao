@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeSet, VecDeque};
 
+use crate::screen_attr::Attr;
 use crate::screen_charset::Charset;
 use crate::screen_line::Line;
 
@@ -14,6 +15,7 @@ pub struct SavedCursor {
     pub x: usize,
     pub y: usize,
     pub charset: Option<Charset>,
+    pub attr: Attr,
 }
 
 pub struct Buffer {
@@ -57,15 +59,16 @@ impl Buffer {
         if has_scrollback { rows + scrollback } else { rows }
     }
 
-    pub fn blank_line(&self, is_wrapped: bool) -> Line {
-        Line::new(self.cols, is_wrapped)
+    /// 空行。`attr` は消去したセルの属性（背景色）。
+    pub fn blank_line(&self, is_wrapped: bool, attr: Attr) -> Line {
+        Line::filled(self.cols, is_wrapped, attr)
     }
 
     /// 行が無ければ、見えている行ぶんの空行を作る。
-    pub fn fill_viewport_rows(&mut self) {
+    pub fn fill_viewport_rows(&mut self, attr: Attr) {
         if self.lines.is_empty() {
             for _ in 0..self.rows {
-                self.lines.push_back(self.blank_line(false));
+                self.lines.push_back(self.blank_line(false, attr));
             }
         }
     }
@@ -100,8 +103,8 @@ impl Buffer {
     }
 
     /// 画面を 1 行スクロールする（`BufferService.scroll`）。スクロール領域の先頭が画面の先頭なら、消える行はスクロールバックに入る。
-    pub fn scroll(&mut self, is_wrapped: bool) {
-        let new_line = self.blank_line(is_wrapped);
+    pub fn scroll(&mut self, is_wrapped: bool, attr: Attr) {
+        let new_line = self.blank_line(is_wrapped, attr);
         let top = self.ybase + self.scroll_top;
         let bottom = self.ybase + self.scroll_bottom;
         if self.scroll_top == 0 {

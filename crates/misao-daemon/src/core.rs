@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+
 use std::time::Instant;
+use tokio::sync::Mutex as AsyncMutex;
 
 use misao_protocol::{ErrorCode, PROTOCOL_SCHEMA, PROTOCOL_VERSION, ServerInfo};
 use serde::Serialize;
@@ -14,10 +16,12 @@ use crate::layout::Layout;
 use crate::limits::Limits;
 use crate::log::Logger;
 use crate::params::{self, Empty, EventsSubscribeParams};
+use crate::persistence::{PersistedState, Version1, load_persisted_state};
 use crate::profile::Profile;
 use crate::registry::PaneRegistry;
 use crate::rpc::RequestContext;
 use crate::rpc_error::{RpcFailure, RpcResult};
+use crate::state_persister::StatePersister;
 use crate::stream;
 
 pub struct CoreOptions {
@@ -27,6 +31,9 @@ pub struct CoreOptions {
     pub socket_path: PathBuf,
     pub limits: Limits,
     pub log: Logger,
+    /// 状態の保存先（`persistence.json`）。起動時にここから復元する。None なら保存も復元もしない
+    /// （ソケットを持たない組み込み・テスト用）。
+    pub state_path: Option<PathBuf>,
     /// pane の稼働判定に使うプロファイル（`pane.open` の cmd で最初に一致したものを使う）。
     pub profiles: Vec<Arc<Profile>>,
 }
@@ -50,6 +57,13 @@ pub struct Core {
     pub(crate) profiles: Vec<Arc<Profile>>,
     /// 前面のプログラムの定期調査（profile の選び直し）。デーモンに 1 つ。
     pub(crate) sampler: ForegroundSampler,
+    /// 状態の保存。`state_path` が無ければ None。
+    pub(crate) persister: Option<Arc<StatePersister>>,
+    /// 保存する状態を変える操作（open / close / label / layout）を 1 つずつ行うための排他。
+    /// 状態を変えてから保存し、失敗したら戻すまでの間に、他の変更が割り込まないようにする。
+    /// fsync は全体の状態の lock の外で行うので、読み取り・入出力はこれを待たない。
+    /// lock の順序: gate -> 保存の書き込み -> 全体の状態。
+    pub(crate) gate: AsyncMutex<()>,
 }
 
 pub(crate) fn to_value<T: Serialize>(value: &T) -> RpcResult<Value> {
@@ -66,14 +80,26 @@ fn protocol_schema() -> RpcResult<Value> {
 }
 
 impl Core {
-    pub fn new(opts: CoreOptions) -> Arc<Self> {
+    /// 状態を復元して中核を作る。保存先のファイルが壊れていれば Err（起動を止める）。
+    pub fn new(opts: CoreOptions) -> Result<Arc<Self>, String> {
         let CoreOptions {
             version,
             socket_path,
             limits,
             log,
+            state_path,
             profiles,
         } = opts;
+        let restored = state_path
+            .as_deref()
+            .map(load_persisted_state)
+            .transpose()?
+            .unwrap_or_else(PersistedState::empty);
+        let mut layout = Layout::default();
+        layout.restore_persisted(restored.workspaces);
+        let mut registry = PaneRegistry::default();
+        registry.restore_stopped(restored.panes);
+        let persister = state_path.map(|path| Arc::new(StatePersister::new(&path, log.clone())));
         let core = Arc::new(Self {
             version,
             epoch: crate::ids::new_ulid(),
@@ -84,17 +110,72 @@ impl Core {
             profiles,
             sampler: ForegroundSampler::start(),
             events: Arc::new(EventLog::new(limits.events)),
-            state: Mutex::new(State {
-                layout: Layout::default(),
-                registry: PaneRegistry::default(),
-            }),
+            state: Mutex::new(State { layout, registry }),
+            persister,
+            gate: AsyncMutex::new(()),
         });
+        core.start_persist_timer();
         core.events.emit(
             "daemon.started",
             json!({"pid": std::process::id(), "protocolVersion": PROTOCOL_VERSION}),
             None,
         );
-        core
+        Ok(core)
+    }
+
+    /// 遅らせた保存（サイズ）の期限が来たら保存するスレッド。Core が捨てられると止まる。
+    fn start_persist_timer(self: &Arc<Self>) {
+        let Some(persister) = self.persister.clone() else {
+            return;
+        };
+        let core = Arc::downgrade(self);
+        std::thread::spawn(move || {
+            persister.run_timer(|| {
+                if let Some(core) = core.upgrade() {
+                    core.flush_persist(&core.gate.blocking_lock());
+                }
+            });
+        });
+    }
+
+    /// 遅らせている保存があれば今すぐ行う。失敗はログだけ（RPC は落とさない）。
+    pub(crate) fn flush_persist(&self, _gate: &tokio::sync::MutexGuard<'_, ()>) {
+        let Some(persister) = &self.persister else {
+            return;
+        };
+        if persister.has_pending()
+            && let Err(e) = self.persist()
+        {
+            persister.log_failure(&e.message);
+        }
+    }
+
+    /// 今の状態を保存する（`gate` を持っている間に呼ぶ）。失敗は呼び出し側が戻す。
+    pub(crate) fn persist(&self) -> RpcResult<()> {
+        let Some(persister) = &self.persister else {
+            return Ok(());
+        };
+        // 書き込みの順序づけを取ってからスナップショットを作る（古い状態が新しい状態を上書きしない）。
+        let guard = persister.write_guard();
+        let generation = persister.generation();
+        let snapshot = {
+            let state = self.state();
+            PersistedState {
+                version: Version1,
+                workspaces: state.layout.to_persisted().map_err(RpcFailure::internal)?,
+                panes: state.registry.to_persisted().map_err(RpcFailure::internal)?,
+            }
+        };
+        persister
+            .save(&guard, generation, &snapshot)
+            .map_err(RpcFailure::internal)
+    }
+
+    /// サイズのような、再起動後の表示用の付帯情報の保存を遅らせて予約する。
+    pub(crate) fn persist_soon(&self) {
+        if let Some(persister) = &self.persister {
+            persister.save_soon();
+        }
     }
 
     pub(crate) fn state(&self) -> MutexGuard<'_, State> {
@@ -117,21 +198,23 @@ impl Core {
                 protocol_schema()
             }
             "workspace.list" => self.workspace_list(raw),
-            "workspace.create" => self.workspace_create(raw),
-            "workspace.rename" => self.workspace_rename(raw),
+            "workspace.create" => self.workspace_create(raw).await,
+            "workspace.rename" => self.workspace_rename(raw).await,
             "workspace.close" => self.workspace_close(raw).await,
-            "window.create" => self.window_create(raw),
-            "window.rename" => self.window_rename(raw),
+            "window.create" => self.window_create(raw).await,
+            "window.rename" => self.window_rename(raw).await,
             "window.close" => self.window_close(raw).await,
             "events.subscribe" => self.events_subscribe(raw, ctx),
-            "pane.open" => self.pane_open(raw),
+            "pane.open" => self.pane_open(raw).await,
             "pane.info" => self.pane_info(raw),
             "pane.list" => self.pane_list(raw),
             "pane.write" => self.pane_write(raw),
             "pane.resize" => self.pane_resize(raw),
             "pane.screen" => self.pane_screen(raw),
             "pane.subscribe_lines" => self.pane_subscribe_lines(raw, ctx),
-            "pane.set_label" => self.pane_set_label(raw),
+            "pane.set_label" => self.pane_set_label(raw).await,
+            "pane.attach" => self.pane_attach(raw, ctx),
+            "pane.detach" => self.pane_detach(raw, ctx),
             "pane.close" => self.pane_close(raw).await,
             _ => Err(RpcFailure::new(
                 ErrorCode::NOT_IMPLEMENTED,
@@ -166,6 +249,14 @@ impl Core {
             uptime_sec: self.started_at.elapsed().as_secs(),
             pane_count: self.state().registry.len() as u64,
             event_head: self.events.head(),
+        }
+    }
+}
+
+impl Drop for Core {
+    fn drop(&mut self) {
+        if let Some(persister) = &self.persister {
+            persister.stop();
         }
     }
 }

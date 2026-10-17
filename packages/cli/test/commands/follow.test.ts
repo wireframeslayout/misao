@@ -1,22 +1,29 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { run } from '../../src/run.js';
-import { createTestIo } from '../helpers/io.js';
-import type { TestIo } from '../helpers/io.js';
+import { runMisao, startMisao } from '../helpers/runner.js';
 import { openTestPane, startTestDaemon, waitFor } from '../helpers/daemon.js';
 import type { TestDaemon } from '../helpers/daemon.js';
 
+interface Output {
+  out(): string;
+  err(): string;
+}
+
 /** 追い続けるコマンドを起動する。stop() で SIGINT を送り、終了コードを返す。 */
-function startFollow(daemon: TestDaemon, argv: string[]): { io: TestIo; stop(): Promise<number> } {
-  const io = createTestIo({ env: daemon.env, homeDir: daemon.dir });
-  const done = run(argv, io);
+function startFollow(daemon: TestDaemon, argv: string[]): { io: Output; stop(): Promise<number> } {
+  const running = startMisao(argv, { env: daemon.env, homeDir: daemon.dir });
   return {
-    io,
+    io: running,
     async stop() {
-      io.emitSignal('SIGINT');
-      return done;
+      running.signal('SIGINT');
+      return running.done;
     },
   };
+}
+
+/** 終わるコマンドを動かして、終了コードを返す。 */
+async function exitCode(daemon: TestDaemon, argv: string[]): Promise<number> {
+  return (await runMisao(argv, { env: daemon.env, homeDir: daemon.dir })).code;
 }
 
 const TWO_LINES = ['sh', '-c', 'echo first; sleep 0.5; echo second; sleep 60'];
@@ -96,9 +103,8 @@ test('tail / events: --epoch だけ (--since なし) は使い方の誤り (2)',
   const daemon = await startTestDaemon();
   try {
     const paneId = await openTestPane(daemon.client, TWO_LINES);
-    const io = (): TestIo => createTestIo({ env: daemon.env, homeDir: daemon.dir });
-    assert.equal(await run(['tail', paneId, '--epoch', '01M3AAAAAAAAAAAAAAAAAAAAAA'], io()), 2);
-    assert.equal(await run(['events', '--epoch', '01M3AAAAAAAAAAAAAAAAAAAAAA'], io()), 2);
+    assert.equal(await exitCode(daemon, ['tail', paneId, '--epoch', '01M3AAAAAAAAAAAAAAAAAAAAAA']), 2);
+    assert.equal(await exitCode(daemon, ['events', '--epoch', '01M3AAAAAAAAAAAAAAAAAAAAAA']), 2);
   } finally {
     await daemon.stop();
   }
@@ -107,9 +113,8 @@ test('tail / events: --epoch だけ (--since なし) は使い方の誤り (2)',
 test('tail: 対象がなければ 1、--since が不正なら 2', async () => {
   const daemon = await startTestDaemon();
   try {
-    const io = createTestIo({ env: daemon.env, homeDir: daemon.dir });
-    assert.equal(await run(['tail', 'nothing'], io), 1);
-    assert.equal(await run(['tail', 'nothing', '--since', 'x'], createTestIo({ env: daemon.env, homeDir: daemon.dir })), 2);
+    assert.equal(await exitCode(daemon, ['tail', 'nothing']), 1);
+    assert.equal(await exitCode(daemon, ['tail', 'nothing', '--since', 'x']), 2);
   } finally {
     await daemon.stop();
   }
@@ -126,7 +131,7 @@ test('events: ライブのイベントを NDJSON で追い、--pane で絞れる
     await daemon.client.request('pane.set_label', { paneId: b, set: { who: 'b' } });
     await daemon.client.request('pane.set_label', { paneId: a, set: { who: 'a' } });
     const { epoch } = await daemon.client.request('server.info', {});
-    const parse = (io: TestIo): Array<{ type: string; paneId?: string; seq: number; epoch: string }> =>
+    const parse = (io: Output): Array<{ type: string; paneId?: string; seq: number; epoch: string }> =>
       io.out().trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { type: string; paneId?: string; seq: number; epoch: string });
     await waitFor(() => parse(all.io).length >= 2 && parse(only.io).length >= 1);
     assert.equal(await all.stop(), 0);

@@ -76,6 +76,19 @@ impl<T> SeqRing<T> {
         self.pushed
     }
 
+    /// seq > since のエントリ（古い順）。
+    pub fn since(&self, since: u64) -> impl Iterator<Item = &RingEntry<T>> {
+        let skip = since.saturating_add(1).saturating_sub(self.oldest());
+        self.entries
+            .iter()
+            .skip(usize::try_from(skip).unwrap_or(usize::MAX))
+    }
+
+    /// since が保持範囲より古い、または head より先（= 送信側が再起動して seq が巻き戻った）なら欠落扱い。
+    pub fn has_gap(&self, since: u64) -> bool {
+        since + 1 < self.oldest() || since > self.head
+    }
+
     /// seq のエントリ。保持範囲外（追い出し済み・head より先）なら None。O(1)。
     pub fn entry(&self, seq: u64) -> Option<&RingEntry<T>> {
         let oldest = self.oldest();

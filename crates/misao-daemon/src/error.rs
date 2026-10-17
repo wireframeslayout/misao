@@ -15,6 +15,17 @@ pub enum DaemonError {
         dir = .dir.display()
     )]
     SocketDirTooOpen { dir: PathBuf, mode: u32 },
+    #[error("data directory {} is a symbolic link; use the real path", .0.display())]
+    DataDirIsSymlink(PathBuf),
+    #[error("data directory {} is not a directory", .0.display())]
+    DataDirNotDirectory(PathBuf),
+    #[error("data directory {} is not owned by the current user", .0.display())]
+    DataDirNotOwned(PathBuf),
+    #[error(
+        "data directory {dir} is writable by group/other (mode {mode:o}); run: chmod go-w {dir}",
+        dir = .dir.display()
+    )]
+    DataDirWritableByOthers { dir: PathBuf, mode: u32 },
     #[error("another daemon is already listening on {}", .0.display())]
     AlreadyListening(PathBuf),
     #[error("cannot determine whether {} is in use ({code}); refusing to remove it", .path.display())]
@@ -25,6 +36,9 @@ pub enum DaemonError {
     PidFileHeld { pid: i32, path: PathBuf },
     #[error("could not acquire {}: another process keeps recreating it", .0.display())]
     PidFileContended(PathBuf),
+    /// 保存した状態（`persistence.json`）が読めない。
+    #[error("{0}")]
+    State(String),
     #[error("{context}: {source}")]
     Io {
         context: String,

@@ -11,6 +11,7 @@ impl Pane {
     /// （デーモンの終了で接続のタスクが abort された後の `shutdown` が、SIGHUP と猶予を数え直さない）。
     pub async fn close(self: &Arc<Self>) {
         if !self.close_started.swap(true, Ordering::AcqRel) {
+            self.refuse_attach();
             let pane = Arc::clone(self);
             tokio::spawn(async move {
                 pane.run_close().await;

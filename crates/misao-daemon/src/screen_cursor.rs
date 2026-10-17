@@ -157,6 +157,7 @@ impl Emulator {
 
     pub fn line_feed(&mut self) {
         let (rows, cols, convert_eol) = (self.rows, self.cols, self.convert_eol);
+        let erase = self.attr.erase();
         let b = self.buf();
         if convert_eol {
             b.x = 0;
@@ -164,7 +165,7 @@ impl Emulator {
         b.y += 1;
         if b.y == b.scroll_bottom + 1 {
             b.y -= 1;
-            b.scroll(false);
+            b.scroll(false, erase);
         } else if b.y >= rows {
             b.y = rows - 1;
         } else {
@@ -179,11 +180,12 @@ impl Emulator {
     pub fn index(&mut self) {
         self.restrict_cursor(None);
         let rows = self.rows;
+        let erase = self.attr.erase();
         let b = self.buf();
         b.y += 1;
         if b.y == b.scroll_bottom + 1 {
             b.y -= 1;
-            b.scroll(false);
+            b.scroll(false, erase);
         } else if b.y >= rows {
             b.y = rows - 1;
         }
@@ -197,11 +199,12 @@ impl Emulator {
 
     pub fn reverse_index(&mut self) {
         self.restrict_cursor(None);
+        let erase = self.attr.erase();
         let b = self.buf();
         if b.y == b.scroll_top {
             let (top, bottom) = (b.ybase + b.scroll_top, b.ybase + b.scroll_bottom);
             b.lines.remove(bottom);
-            let blank = b.blank_line(false);
+            let blank = b.blank_line(false, erase);
             b.lines.insert(top, blank);
         } else {
             b.y = b.y.saturating_sub(1);

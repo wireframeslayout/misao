@@ -76,6 +76,7 @@
     "kind": "screen",
     "at": 200,
     "text": "header\n\n    indented\n\n~\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n-- INSERT --",
+    "snapshot": "\u001b[?1049h\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0mheader\u001b[0m\u001b[K\u001b[2;1H\u001b[0m\u001b[K\u001b[3;1H\u001b[0m    indented\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m~\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[15;1H\u001b[0m\u001b[K\u001b[16;1H\u001b[0m\u001b[K\u001b[17;1H\u001b[0m\u001b[K\u001b[18;1H\u001b[0m\u001b[K\u001b[19;1H\u001b[0m\u001b[K\u001b[20;1H\u001b[0m\u001b[K\u001b[21;1H\u001b[0m\u001b[K\u001b[22;1H\u001b[0m\u001b[K\u001b[23;1H\u001b[0m\u001b[K\u001b[24;1H\u001b[0m-- INSERT --\u001b[0m\u001b[K\u001b[2;1H",
     "cursor": {
      "x": 0,
      "y": 1
@@ -88,6 +89,7 @@
     "kind": "screen",
     "at": 400,
     "text": "header\n~\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nscrolled-in line\n\n\n-- INSERT --",
+    "snapshot": "\u001b[?1049h\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0mheader\u001b[0m\u001b[K\u001b[2;1H\u001b[0m~\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[15;1H\u001b[0m\u001b[K\u001b[16;1H\u001b[0m\u001b[K\u001b[17;1H\u001b[0m\u001b[K\u001b[18;1H\u001b[0m\u001b[K\u001b[19;1H\u001b[0m\u001b[K\u001b[20;1H\u001b[0m\u001b[K\u001b[21;1H\u001b[0mscrolled-in line\u001b[0m\u001b[K\u001b[22;1H\u001b[0m\u001b[K\u001b[23;1H\u001b[0m\u001b[K\u001b[24;1H\u001b[0m-- INSERT --\u001b[0m\u001b[K\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -100,6 +102,7 @@
     "kind": "screen",
     "at": 600,
     "text": "\nheader\n~\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nscrolled-in line\n\n",
+    "snapshot": "\u001b[?1049h\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0m\u001b[K\u001b[2;1H\u001b[0mheader\u001b[0m\u001b[K\u001b[3;1H\u001b[0m~\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[15;1H\u001b[0m\u001b[K\u001b[16;1H\u001b[0m\u001b[K\u001b[17;1H\u001b[0m\u001b[K\u001b[18;1H\u001b[0m\u001b[K\u001b[19;1H\u001b[0m\u001b[K\u001b[20;1H\u001b[0m\u001b[K\u001b[21;1H\u001b[0m\u001b[K\u001b[22;1H\u001b[0mscrolled-in line\u001b[0m\u001b[K\u001b[23;1H\u001b[0m\u001b[K\u001b[24;1H\u001b[0m\u001b[K\u001b[1;1H",
     "cursor": {
      "x": 0,
      "y": 0
@@ -112,6 +115,7 @@
     "kind": "screen",
     "at": 800,
     "text": "main screen line 1\nmain screen line 2\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0mmain screen line 1\u001b[0m\u001b[K\u001b[2;1H\u001b[0mmain screen line 2\u001b[0m\u001b[K\u001b[3;1H\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[15;1H\u001b[0m\u001b[K\u001b[16;1H\u001b[0m\u001b[K\u001b[17;1H\u001b[0m\u001b[K\u001b[18;1H\u001b[0m\u001b[K\u001b[19;1H\u001b[0m\u001b[K\u001b[20;1H\u001b[0m\u001b[K\u001b[21;1H\u001b[0m\u001b[K\u001b[22;1H\u001b[0m\u001b[K\u001b[23;1H\u001b[0m\u001b[K\u001b[24;1H\u001b[0m\u001b[K\u001b[3;1H",
     "cursor": {
      "x": 0,
      "y": 2
@@ -124,6 +128,7 @@
     "kind": "screen",
     "at": 1000,
     "text": "upin righabsline 1\nmain screen line 2\nsaved\n\n            line5\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "snapshot": "\u001b[0m\u001b[2J\u001b[H\u001b[1;1H\u001b[0mupin righabsline 1\u001b[0m\u001b[K\u001b[2;1H\u001b[0mmain screen line 2\u001b[0m\u001b[K\u001b[3;1H\u001b[0msaved\u001b[0m\u001b[K\u001b[4;1H\u001b[0m\u001b[K\u001b[5;1H\u001b[0m            line5\u001b[0m\u001b[K\u001b[6;1H\u001b[0m\u001b[K\u001b[7;1H\u001b[0m\u001b[K\u001b[8;1H\u001b[0m\u001b[K\u001b[9;1H\u001b[0m\u001b[K\u001b[10;1H\u001b[0m\u001b[K\u001b[11;1H\u001b[0m\u001b[K\u001b[12;1H\u001b[0m\u001b[K\u001b[13;1H\u001b[0m\u001b[K\u001b[14;1H\u001b[0m\u001b[K\u001b[15;1H\u001b[0m\u001b[K\u001b[16;1H\u001b[0m\u001b[K\u001b[17;1H\u001b[0m\u001b[K\u001b[18;1H\u001b[0m\u001b[K\u001b[19;1H\u001b[0m\u001b[K\u001b[20;1H\u001b[0m\u001b[K\u001b[21;1H\u001b[0m\u001b[K\u001b[22;1H\u001b[0m\u001b[K\u001b[23;1H\u001b[0m\u001b[K\u001b[24;1H\u001b[0m\u001b[K\u001b[5;18H",
     "cursor": {
      "x": 17,
      "y": 4
