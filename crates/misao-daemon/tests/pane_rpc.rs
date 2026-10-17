@@ -348,9 +348,14 @@ async fn open_failures_use_codes_and_leave_nothing_behind() {
 }
 
 /// `sh -c` でバックグラウンドの子を起動し、その pid をファイルに書かせる。
+/// `background` は `( ... )` の中身で、`ready` が済むまで（trap などの設定が終わるまで）pid を書かない。
 async fn spawn_with_background_child(c: &mut Client, tmp: &TempDir, background: &str) -> (String, String) {
-    let pid_file = tmp.path().join("child.pid");
-    let script = format!("{background} & echo $! > {}; wait", pid_file.display());
+    let (pid_file, ready) = (tmp.path().join("child.pid"), tmp.path().join("ready"));
+    let script = format!(
+        "({background}; touch {ready}; exec sleep 300) & pid=$!; while [ ! -e {ready} ]; do sleep 0.05; done; echo $pid > {pid_file}; wait",
+        ready = ready.display(),
+        pid_file = pid_file.display()
+    );
     let pane_id = open(c, sh(&script), json!({})).await;
     (pane_id, read_file_when_ready(&pid_file).await)
 }
@@ -359,7 +364,7 @@ async fn spawn_with_background_child(c: &mut Client, tmp: &TempDir, background: 
 async fn close_stops_the_whole_process_group() {
     let tmp = TempDir::new().unwrap();
     let mut c = connect(&core());
-    let (pane_id, child) = spawn_with_background_child(&mut c, &tmp, "sleep 300").await;
+    let (pane_id, child) = spawn_with_background_child(&mut c, &tmp, ":").await;
     assert!(is_alive(&child));
     c.ok("pane.close", json!({"paneId": pane_id})).await;
     wait_until("the background child to die", || async { !is_alive(&child) }).await;
@@ -374,7 +379,7 @@ async fn close_kills_a_child_that_ignores_sighup_after_the_grace_period() {
     let tmp = TempDir::new().unwrap();
     let mut c = connect(&core());
     // リーダー (sh) は SIGHUP で終わるが、背景の子は SIGHUP を無視する。
-    let (pane_id, child) = spawn_with_background_child(&mut c, &tmp, "(trap '' HUP; exec sleep 300)").await;
+    let (pane_id, child) = spawn_with_background_child(&mut c, &tmp, "trap '' HUP").await;
     let started = Instant::now();
     c.ok("pane.close", json!({"paneId": pane_id})).await;
     assert!(
@@ -389,8 +394,13 @@ async fn close_kills_a_child_that_ignores_sighup_after_the_grace_period() {
 
 #[tokio::test]
 async fn close_kills_a_leader_that_ignores_sighup_after_the_grace_period() {
+    let tmp = TempDir::new().unwrap();
+    let ready = tmp.path().join("ready");
     let mut c = connect(&core());
-    let pane_id = open(&mut c, sh("trap '' HUP; sleep 300 & wait"), json!({})).await;
+    // trap を設定し終えてから close する（起動直後の SIGHUP は trap より先に届くことがある）。
+    let script = format!("trap '' HUP; touch {}; sleep 300 & wait", ready.display());
+    let pane_id = open(&mut c, sh(&script), json!({})).await;
+    wait_until("the trap to be set", || async { ready.exists() }).await;
     let pid = info(&mut c, &pane_id).await["pid"].as_u64().unwrap().to_string();
     let started = Instant::now();
     c.ok("pane.close", json!({"paneId": pane_id})).await;
@@ -402,7 +412,7 @@ async fn close_kills_a_leader_that_ignores_sighup_after_the_grace_period() {
 async fn closing_a_window_or_workspace_closes_the_panes_inside() {
     let tmp = TempDir::new().unwrap();
     let mut c = connect(&core());
-    let (pane_id, child) = spawn_with_background_child(&mut c, &tmp, "sleep 300").await;
+    let (pane_id, child) = spawn_with_background_child(&mut c, &tmp, ":").await;
     let window_id = info(&mut c, &pane_id).await["window"]["id"]
         .as_str()
         .unwrap()
@@ -441,7 +451,7 @@ async fn shutdown_closes_every_pane_without_leaving_children() {
     let tmp = TempDir::new().unwrap();
     let core = core();
     let mut c = connect(&core);
-    let (_, child) = spawn_with_background_child(&mut c, &tmp, "sleep 300").await;
+    let (_, child) = spawn_with_background_child(&mut c, &tmp, ":").await;
     core.shutdown().await;
     assert!(!is_alive(&child));
 }
