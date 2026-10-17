@@ -27,7 +27,9 @@ impl Core {
 
     pub(crate) fn workspace_create(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: WorkspaceNameParams = params::parse("workspace.create", raw)?;
-        let info = self.state().layout.create_workspace(p.name.as_str())?;
+        // 状態の変更とイベントの発行は、同じ lock の中で行う（イベントの順序を状態の変更の順序に一致させる）。
+        let mut state = self.state();
+        let info = state.layout.create_workspace(p.name.as_str())?;
         self.events
             .emit("workspace.created", json!({"name": p.name.as_str()}), None);
         to_value(&info)
@@ -35,7 +37,8 @@ impl Core {
 
     pub(crate) fn workspace_rename(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: WorkspaceRenameParams = params::parse("workspace.rename", raw)?;
-        self.state()
+        let mut state = self.state();
+        state
             .layout
             .rename_workspace(p.name.as_str(), p.new_name.as_str())?;
         self.events.emit(
@@ -55,7 +58,8 @@ impl Core {
             self.state().layout.cancel_close_workspace(name);
             return Err(e);
         }
-        self.state().layout.close_workspace(name)?;
+        let mut state = self.state();
+        state.layout.close_workspace(name)?;
         for window_id in window_ids {
             self.events
                 .emit("window.closed", json!({"windowId": window_id}), None);
@@ -66,8 +70,8 @@ impl Core {
 
     pub(crate) fn window_create(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: WindowCreateParams = params::parse("window.create", raw)?;
-        let info = self
-            .state()
+        let mut state = self.state();
+        let info = state
             .layout
             .create_window(p.workspace.as_str(), p.name.as_str())?;
         self.events.emit(
@@ -80,7 +84,8 @@ impl Core {
 
     pub(crate) fn window_rename(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: WindowRenameParams = params::parse("window.rename", raw)?;
-        self.state()
+        let mut state = self.state();
+        state
             .layout
             .rename_window(p.window_id.as_str(), p.name.as_str())?;
         self.events.emit(
@@ -99,7 +104,8 @@ impl Core {
             self.state().layout.cancel_close_window(window_id);
             return Err(e);
         }
-        self.state().layout.close_window(window_id)?;
+        let mut state = self.state();
+        state.layout.close_window(window_id)?;
         self.events
             .emit("window.closed", json!({"windowId": window_id}), None);
         Ok(ok())

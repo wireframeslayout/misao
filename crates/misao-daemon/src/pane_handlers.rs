@@ -62,7 +62,7 @@ impl Core {
         }
         let labels = p.labels.unwrap_or_default();
         // layout（既定の遅延作成を含む）→ spawn → 登録を 1 つの単位として扱う。失敗したら layout を戻し、イベントは出さない。
-        let (pane, target) = {
+        let pane = {
             let mut state = self.state();
             let before = state.layout.snapshot();
             let attempt = state
@@ -73,7 +73,7 @@ impl Core {
                         cmd: p.cmd,
                         cwd: p.cwd,
                         env: p.env.unwrap_or_default(),
-                        // 保持するのは env のみ。ephemeralEnv は spawn で使い切り、ここから先には渡らない。
+                        // ephemeralEnv は spawn で使い切り、どこにも保持しない（保存する env の記録は第 4 段）。
                         ephemeral_env: p.ephemeral_env.unwrap_or_default(),
                         cols: p.cols.map(params::Dimension::get),
                         rows: p.rows.map(params::Dimension::get),
@@ -91,7 +91,9 @@ impl Core {
                         window_id: target.location.window.id.clone(),
                         labels: labels.clone(),
                     });
-                    (pane, target)
+                    // 状態の変更とイベントの発行は、同じ lock の中で行う（イベントの順序を状態の変更の順序に一致させる）。
+                    self.announce_opened(&pane, &labels, &target);
+                    pane
                 }
                 Err(e) => {
                     state.layout.restore(before);
@@ -99,7 +101,6 @@ impl Core {
                 }
             }
         };
-        self.announce_opened(&pane, &labels, &target);
         pane.start(Arc::clone(&self.events));
         Ok(json!({"paneId": pane.id}))
     }
@@ -158,7 +159,8 @@ impl Core {
     pub(crate) fn pane_write(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: PaneWriteParams = params::parse("pane.write", raw)?;
         p.require_one_payload("pane.write")?;
-        let pane = live_pane(&self.state().registry, p.pane_id.as_str())?;
+        let state = self.state(); // 入力・サイズの変更とイベントの発行を同じ lock の中で行う
+        let pane = live_pane(&state.registry, p.pane_id.as_str())?;
         if pane.state() == RunState::Exited {
             return Err(pane_exited());
         }
@@ -194,7 +196,8 @@ impl Core {
 
     pub(crate) fn pane_resize(&self, raw: Raw<'_>) -> RpcResult<Value> {
         let p: PaneResizeParams = params::parse("pane.resize", raw)?;
-        let pane = live_pane(&self.state().registry, p.pane_id.as_str())?;
+        let state = self.state();
+        let pane = live_pane(&state.registry, p.pane_id.as_str())?;
         let client = p.client_id.as_ref().map(params::Name::as_str);
         pane.resize(p.cols.get(), p.rows.get(), client)
             .map_err(RpcFailure::internal)?;
