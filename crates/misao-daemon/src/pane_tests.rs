@@ -100,7 +100,7 @@ fn the_input_channel_is_closed_when_the_child_exits() {
     wait_for("the pane to exit", || pane.state() == RunState::Exited);
     assert!(std::fs::read_to_string(pid_file).is_ok());
     wait_for("the input channel to be released", || lock(&pane.input).is_none());
-    crate::pty::kill_tree(pane.pid);
+    pane.tree.kill();
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn the_input_queue_refuses_input_beyond_its_limit_but_accepts_one_into_an_empty_
     assert!(pane.write(vec![0; 10]).is_ok(), "exactly at the limit");
     assert_eq!(pane.write(vec![0; 1]), Err(INPUT_QUEUE_BYTES));
     assert_eq!(pane.check_input_room(1), Err(INPUT_QUEUE_BYTES));
-    crate::pty::kill_tree(pane.pid);
+    pane.tree.kill();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -141,7 +141,7 @@ async fn close_after_a_natural_exit_releases_the_threads_and_the_master() {
     // 孫が pty を握っているので、reader はまだ EOF になっていない（Pane への参照を持ち続ける）。
     let weak = Arc::downgrade(&pane);
     pane.close().await;
-    assert_eq!(crate::pty::group_state(pane.pid), GroupState::Empty);
+    assert_eq!(pane.tree.group_state(), GroupState::Empty);
     drop(pane);
     // reader / 待機のスレッドが終われば、最後の参照（= master と writer）が解放される。
     wait_for("the pane to be freed", || weak.upgrade().is_none());
@@ -171,7 +171,10 @@ fn dropping_a_pane_without_close_reaps_the_exited_leader_even_while_a_child_hold
     assert_eq!(proc_state(leader), Some('Z'), "held as a zombie until reaped");
     drop(pane);
     wait_for("the leader to be reaped", || proc_state(leader).is_none());
-    crate::pty::kill_tree(survivor);
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(i32::try_from(survivor).unwrap()),
+        nix::sys::signal::Signal::SIGKILL,
+    );
 }
 
 #[cfg(target_os = "linux")]
@@ -246,7 +249,7 @@ async fn a_cancelled_close_does_not_restart_the_clean_up_for_the_next_close() {
         "SIGHUP exactly once"
     );
     assert_eq!(pane.state(), RunState::Exited);
-    assert_eq!(crate::pty::group_state(pane.pid), GroupState::Empty);
+    assert_eq!(pane.tree.group_state(), GroupState::Empty);
 }
 
 fn quiet_pane() -> Arc<Pane> {
@@ -305,7 +308,7 @@ fn a_resize_waits_for_the_output_being_ingested_and_the_output_waits_for_a_resiz
     drop(order);
     ingesting.join().unwrap();
     assert_eq!(pane.screen().text.trim(), "x");
-    crate::pty::kill_tree(pane.pid);
+    pane.tree.kill();
 }
 
 /// 出力と resize を別のスレッドから並行させても、画面は壊れない（順序そのものは上のテストが保証する）。
@@ -328,7 +331,7 @@ fn concurrent_output_and_resize_leave_a_consistent_screen() {
         resizer.join().unwrap();
         let text = pane.screen().text;
         assert_eq!(text.split('\n').count(), 3);
-        crate::pty::kill_tree(pane.pid);
+        pane.tree.kill();
     }
 }
 

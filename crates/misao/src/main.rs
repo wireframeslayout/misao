@@ -14,6 +14,7 @@ mod keys;
 mod layout_target;
 mod model;
 mod open_pane;
+mod pipe_name;
 mod prompt;
 mod send_keys;
 mod serve;
@@ -21,6 +22,8 @@ mod socket_path;
 mod target;
 mod tty_sys;
 mod view;
+#[cfg(windows)]
+mod win_user;
 
 use std::process::ExitCode;
 

@@ -1,20 +1,58 @@
+#![cfg_attr(windows, allow(unsafe_code))]
+
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-
-use nix::errno::Errno;
-use nix::sys::signal::kill;
-use nix::unistd::Pid;
 
 use crate::DaemonError;
 
 /// pid のプロセスが生きているか。EPERM は「存在するが権限がない」なので生存扱い。
+#[cfg(unix)]
 fn is_alive(pid: i32) -> bool {
+    use nix::errno::Errno;
+    use nix::sys::signal::kill;
+    use nix::unistd::Pid;
+
     match kill(Pid::from_raw(pid), None) {
         Ok(()) => true,
         Err(e) => e == Errno::EPERM,
     }
+}
+
+/// pid のプロセスが生きているか。開けない（権限が足りない）プロセスは「存在するが権限がない」なので生存扱い。
+#[cfg(windows)]
+fn is_alive(pid: i32) -> bool {
+    use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, GetLastError};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    use crate::win_security::Handle;
+
+    const STILL_ACTIVE: u32 = 259;
+    let Ok(pid) = u32::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: プロセスの状態を問い合わせる権限だけで開く。ハンドルは `Handle` が閉じる。
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        // SAFETY: 直前の Win32 呼び出しのエラーを読むだけ。
+        return unsafe { GetLastError() } == ERROR_ACCESS_DENIED;
+    }
+    let process = Handle(process);
+    let mut code = 0u32;
+    // SAFETY: `process` は有効なハンドルで、`code` は書き込める。
+    let ok = unsafe { GetExitCodeProcess(process.0, &mut code) };
+    ok == 0 || code == STILL_ACTIVE
+}
+
+/// 秘密のファイルとして作る（Unix は 600。Windows は置き場所のディレクトリの ACL による）。
+fn create_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options
 }
 
 /// 先頭の 10 進数を pid として読む（Node の `parseInt` と同じ。中身が pid でなければ None）。
@@ -32,12 +70,7 @@ fn parse_pid(text: &str) -> Option<i32> {
 pub fn acquire_pid_file(pid_path: &Path, pid: u32) -> Result<(), DaemonError> {
     let ctx = |e| DaemonError::io(format!("cannot write {}", pid_path.display()), e);
     for _ in 0..2 {
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(pid_path)
-        {
+        match create_options().open(pid_path) {
             Ok(mut f) => return f.write_all(pid.to_string().as_bytes()).map_err(ctx),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(ctx(e)),

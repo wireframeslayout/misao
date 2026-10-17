@@ -5,10 +5,15 @@ use crate::config::Config;
 use crate::error::{CliError, ErrorKind};
 use crate::socket_path::{PathEnv, normalize_lexical, resolve_socket_path};
 
-#[cfg(unix)]
 const PID_FILE_NAME: &str = "daemon.pid";
-#[cfg(unix)]
 const STATE_FILE_NAME: &str = "persistence.json";
+
+#[cfg(unix)]
+#[path = "serve_unix.rs"]
+mod sys;
+#[cfg(windows)]
+#[path = "serve_windows.rs"]
+mod sys;
 
 pub struct ServeArgs {
     pub socket: Option<String>,
@@ -16,8 +21,9 @@ pub struct ServeArgs {
 }
 
 /// `~` と相対パスを解決する（Node 版の `--socket` / `--data` と同じ: `~` 始まりはホーム、それ以外は cwd 基準）。
+/// Windows の名前付きパイプ（`\\.\pipe\...`）は、パスではないのでそのまま。
 fn resolve_user_path(env: &Env, value: &str) -> String {
-    if value.starts_with('~') {
+    if value.starts_with('~') || cfg!(windows) && crate::pipe_name::is_named_pipe_path(value) {
         value.to_string()
     } else {
         normalize_lexical(&env.cwd.join(value))
@@ -48,41 +54,39 @@ pub fn resolve_paths(env: &Env, config: &Config, args: &ServeArgs) -> Result<(Pa
     };
     let data_dir = match &args.data {
         Some(d) => resolve_data_dir(env, d),
-        None => socket
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| env.cwd.clone()),
+        None => default_data_dir(env, &socket)?,
     };
     Ok((socket, data_dir))
 }
 
+/// `--data` が無いときの pid ファイル・保存した状態の置き場所。Unix はソケットの親ディレクトリ。
+/// 名前付きパイプには親ディレクトリが無いので、misao のディレクトリ（`$MISAO_DIR` > `~/.misao`）にする。
 #[cfg(unix)]
-pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), CliError> {
-    use std::os::unix::fs::DirBuilderExt;
+fn default_data_dir(env: &Env, socket: &Path) -> Result<PathBuf, CliError> {
+    Ok(socket
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| env.cwd.clone()))
+}
 
+#[cfg(windows)]
+fn default_data_dir(env: &Env, _socket: &Path) -> Result<PathBuf, CliError> {
+    crate::pipe_name::windows_misao_dir(env.path.dir.as_deref(), &env.home)
+        .map(PathBuf::from)
+        .map_err(CliError::from)
+}
+
+/// デーモンを前面で起動し、停止の要求（Unix はシグナル、Windows はコンソールの終了と `misao stop`）で終了する。
+pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), CliError> {
     use misao_daemon::{Daemon, DaemonOptions, Logger, builtin_profiles};
-    use tokio::signal::unix::{SignalKind, signal};
 
     let (socket_path, data_dir) = resolve_paths(env, config, &args)?;
     if args.data.is_some() {
-        let dir = data_dir.as_path();
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(dir)
-            .map_err(|e| CliError::runtime(&e))?;
+        sys::create_data_dir(&data_dir).map_err(|e| CliError::runtime(&e))?;
     }
-    // 起動中に届いたシグナルも取りこぼさないよう、start の前に登録する。
-    let mut int = signal(SignalKind::interrupt()).map_err(|e| CliError::runtime(&e))?;
-    let mut term = signal(SignalKind::terminate()).map_err(|e| CliError::runtime(&e))?;
-    let mut hup = signal(SignalKind::hangup()).map_err(|e| CliError::runtime(&e))?;
-    let shutdown = async {
-        tokio::select! {
-            _ = int.recv() => {}
-            _ = term.recv() => {}
-            _ = hup.recv() => {}
-        }
-    };
+    // 起動中に届いた停止の要求も取りこぼさないよう、start の前に登録する。
+    let shutdown = sys::Shutdown::register().map_err(|e| CliError::runtime(&e))?;
+    let endpoint = socket_path.to_string_lossy().into_owned();
     let daemon = Daemon::start(DaemonOptions {
         version: Some(env!("CARGO_PKG_VERSION").to_string()),
         socket_path,
@@ -94,15 +98,15 @@ pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), Cl
     })
     .await
     .map_err(|e| CliError::runtime(&e))?;
-    daemon.run(shutdown).await;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), CliError> {
-    resolve_paths(env, config, &args)?;
-    Err(CliError::new(
-        ErrorKind::Runtime,
-        "serve is not supported on this platform yet (the Windows connection endpoint is tracked in docs/*/windows.md)",
-    ))
+    match shutdown.wait_future(&endpoint) {
+        Ok(wait) => {
+            daemon.run(wait).await;
+            Ok(())
+        }
+        Err(e) => {
+            // 停止の窓口を用意できなければ、止められないデーモンを残さず、ここで片付ける。
+            daemon.run(async {}).await;
+            Err(CliError::runtime(&e))
+        }
+    }
 }

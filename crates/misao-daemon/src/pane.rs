@@ -24,7 +24,7 @@ use crate::log::now_iso;
 use crate::pane_observer::PaneObserver;
 use crate::pane_view::{PaneView, ScreenSnapshot};
 use crate::profile::{Profile, select_profile};
-use crate::pty::{self, ExitInfo, GroupState, PtyProcess, SpawnRequest};
+use crate::pty::{self, ExitInfo, GroupState, ProcessTree, PtyProcess, SpawnRequest};
 use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
 use crate::stream::{Progress, Wakeup};
@@ -115,6 +115,8 @@ pub struct Pane {
     pub cmd: Vec<String>,
     pub cwd: String,
     pub pid: u32,
+    /// 子のプロセスツリー（Unix はプロセスグループ、Windows は Job Object）。close はこれを止める。
+    tree: ProcessTree,
     inner: Mutex<Inner>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     handoff: Mutex<Option<Handoff>>,
@@ -177,7 +179,7 @@ impl Inner {
     }
 }
 
-/// プロセスの停止はブロックしうる（Windows の `taskkill` など）ので、非同期のタスクを止めないよう別のスレッドで行う。
+/// プロセスの停止はブロックしうる（signal の送信や Job Object の操作）ので、非同期のタスクを止めないよう別のスレッドで行う。
 async fn blocking(f: impl FnOnce() + Send + 'static) {
     let _ = tokio::task::spawn_blocking(f).await;
 }
@@ -218,6 +220,7 @@ impl Pane {
         let env = build_child_env(std::env::vars_os(), &id, opts.socket_path, &overrides);
         let PtyProcess {
             pid,
+            tree,
             master,
             reader,
             writer,
@@ -234,6 +237,7 @@ impl Pane {
             cmd: opts.cmd,
             cwd,
             pid,
+            tree,
             inner: Mutex::new(Inner {
                 state: RunState::Running,
                 exit: None,
@@ -327,11 +331,11 @@ impl Pane {
         });
         let pane = Arc::clone(self);
         std::thread::spawn(move || {
-            let exit = pty::wait_exit(child, pane.pid);
+            let exit = pane.tree.wait_exit(child);
             // リーダーを回収しない環境（`pty::LEADER_HELD`）では、close まで pid が再利用されない。
             // そうでない環境では、終了時に残りがいたかを記録し、いなければ close はグループに触れない。
             pane.survivors_at_exit
-                .store(pty::group_state(pane.pid) != GroupState::Empty, Ordering::Release);
+                .store(pane.tree.group_state() != GroupState::Empty, Ordering::Release);
             pane.exit_seen.store(true, Ordering::Release);
             pane.wakeup.notify();
             // 残りの出力を読み切ってから終了を報告する（終了直前の出力を取りこぼさない）。

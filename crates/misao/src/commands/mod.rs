@@ -11,6 +11,7 @@ mod screen;
 mod send;
 mod shared;
 mod status;
+mod stop;
 mod tail;
 
 use std::path::PathBuf;
@@ -39,7 +40,7 @@ pub struct CommandSpec {
 
 pub const SERVE_USAGE: &str = "misao serve [--socket PATH] [--data DIR]";
 
-pub const COMMANDS: [CommandSpec; 12] = [
+pub const COMMANDS: [CommandSpec; 13] = [
     CommandSpec {
         name: "ls",
         summary: "ペインの一覧を表示する（blocked が先頭）",
@@ -75,6 +76,12 @@ pub const COMMANDS: [CommandSpec; 12] = [
         name: "status",
         summary: "デーモンの稼働状況を表示する",
         usage: status::USAGE,
+        options: &[],
+    },
+    CommandSpec {
+        name: "stop",
+        summary: "稼働中のデーモンを止める（ペインはすべて閉じる）",
+        usage: stop::USAGE,
         options: &[],
     },
     CommandSpec {
@@ -115,7 +122,7 @@ pub const COMMANDS: [CommandSpec; 12] = [
     },
     CommandSpec {
         name: "serve",
-        summary: "デーモンを前面で起動する（SIGTERM / SIGINT で終了）",
+        summary: "デーモンを前面で起動する（SIGTERM / SIGINT / misao stop で終了）",
         usage: SERVE_USAGE,
         options: &[string("socket"), string("data")],
     },
@@ -133,6 +140,7 @@ pub async fn run_command(name: &str, ctx: CommandContext<'_>) -> Result<i32, Cli
         "new" => new::run(ctx).await,
         "kill" => kill::run(ctx).await,
         "status" => status::run(ctx).await,
+        "stop" => stop::run(ctx).await,
         "send" => send::run(ctx).await,
         "screen" => screen::run(ctx).await,
         "tail" => tail::run(ctx).await,
