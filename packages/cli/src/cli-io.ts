@@ -34,10 +34,16 @@ export interface CliIo {
 }
 
 /**
- * ログインシェルを読む。シェルが無い (Windows) か、ユーザー情報を取れない (passwd に無い uid で
- * os.userInfo() が投げる) 環境では null。シェルが要るのは new / 一覧の n だけで、そこで usage エラーにする。
+ * ログインシェルを読む。ユーザー情報を取れない (passwd に無い uid で os.userInfo() が投げる) 環境では null。
+ * Windows には passwd のログインシェルが無いので、cmd.exe を指す %COMSPEC% を使う (PowerShell は既定にしない。
+ * 無ければ null)。シェルが要るのは new / 一覧の n だけで、そこで usage エラーにする。
  */
-export function readLoginShell(readUserInfo: () => { shell: string | null }): string | null {
+export function readLoginShell(
+  readUserInfo: () => { shell: string | null },
+  platform: NodeJS.Platform = process.platform,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | null {
+  if (platform === 'win32') return env.COMSPEC ? env.COMSPEC : null;
   try {
     return readUserInfo().shell;
   } catch {

@@ -1,9 +1,10 @@
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
-use std::path::Path;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 
 use nix::errno::Errno;
+use nix::fcntl::{Flock, FlockArg};
 use nix::unistd::getuid;
 use tokio::net::{UnixListener, UnixStream};
 
@@ -50,6 +51,31 @@ pub fn ensure_socket_dir(socket_path: &Path) -> Result<(), DaemonError> {
     Ok(())
 }
 
+/// 起動の排他ロックの置き場所（ソケットの隣）。
+fn lock_path(socket_path: &Path) -> PathBuf {
+    let mut name = socket_path.as_os_str().to_owned();
+    name.push(".lock");
+    PathBuf::from(name)
+}
+
+/// ソケットの隣の lock ファイルを flock して返す。古いソケットの判定から bind が終わるまで、
+/// 返り値（Drop で解除）を保持する。`--data` に依存しないので、pid ファイルの場所が違う起動同士も排他できる。
+/// lock ファイルは消さない（消すと別の起動が別 inode をロックして排他が崩れる）。
+pub fn lock_socket_start(socket_path: &Path) -> Result<Flock<File>, DaemonError> {
+    let path = lock_path(socket_path);
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .mode(SOCKET_MODE)
+        .open(&path)
+        .map_err(|e| DaemonError::io(format!("cannot open {}", path.display()), e))?;
+    Flock::lock(file, FlockArg::LockExclusiveNonblock).map_err(|(_, errno)| match errno {
+        Errno::EWOULDBLOCK => DaemonError::StartInProgress(socket_path.to_path_buf()),
+        other => DaemonError::io(format!("cannot lock {}", path.display()), io::Error::from(other)),
+    })
+}
+
 /// Unix ソケットで listen し、ソケットファイルを mode 600 にする。
 ///
 /// 接続の可否は親ディレクトリ（`ensure_socket_dir` で 700 を検証済み）で守り、listen 後に chmod 600 する。
@@ -57,8 +83,16 @@ pub fn ensure_socket_dir(socket_path: &Path) -> Result<(), DaemonError> {
 pub fn listen_unix_socket(socket_path: &Path) -> Result<UnixListener, DaemonError> {
     let listener = UnixListener::bind(socket_path)
         .map_err(|e| DaemonError::io(format!("cannot listen on {}", socket_path.display()), e))?;
-    fs::set_permissions(socket_path, fs::Permissions::from_mode(SOCKET_MODE))
-        .map_err(|e| DaemonError::io(format!("cannot chmod {}", socket_path.display()), e))?;
+    // ここに来た時点でソケットファイルは自分が作ったもの。chmod に失敗したら片付ける。
+    // bind 自体の失敗ではパスを消さない（先に起動した稼働中のデーモンのソケットかもしれない）。
+    if let Err(e) = fs::set_permissions(socket_path, fs::Permissions::from_mode(SOCKET_MODE)) {
+        drop(listener);
+        let _ = fs::remove_file(socket_path);
+        return Err(DaemonError::io(
+            format!("cannot chmod {}", socket_path.display()),
+            e,
+        ));
+    }
     Ok(listener)
 }
 
@@ -128,6 +162,29 @@ mod tests {
         symlink(&real, &link).unwrap();
         let err = ensure_socket_dir(&link.join("misao.sock")).unwrap_err();
         assert!(matches!(err, DaemonError::SocketDirIsSymlink(_)), "{err}");
+    }
+
+    #[test]
+    fn second_start_lock_is_refused_until_the_first_is_dropped() {
+        let root = TempDir::new().unwrap();
+        let sock = root.path().join("misao.sock");
+        let first = lock_socket_start(&sock).unwrap();
+        let err = lock_socket_start(&sock).unwrap_err();
+        assert!(matches!(err, DaemonError::StartInProgress(_)), "{err}");
+        drop(first);
+        assert!(lock_socket_start(&sock).is_ok());
+    }
+
+    #[tokio::test]
+    async fn bind_failure_does_not_remove_the_path() {
+        let root = TempDir::new().unwrap();
+        let sock = root.path().join("misao.sock");
+        let _live = listen_unix_socket(&sock).unwrap();
+        assert!(listen_unix_socket(&sock).is_err());
+        assert!(
+            sock.exists(),
+            "the live daemon's socket must survive a failed bind"
+        );
     }
 
     #[tokio::test]

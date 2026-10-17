@@ -19,6 +19,8 @@ pub enum DaemonError {
     AlreadyListening(PathBuf),
     #[error("cannot determine whether {} is in use ({code}); refusing to remove it", .path.display())]
     SocketStateUnknown { path: PathBuf, code: String },
+    #[error("another daemon is starting on {}; try again once it is up", .0.display())]
+    StartInProgress(PathBuf),
     #[error("another daemon (pid {pid}) holds {}", .path.display())]
     PidFileHeld { pid: i32, path: PathBuf },
     #[error("could not acquire {}: another process keeps recreating it", .0.display())]

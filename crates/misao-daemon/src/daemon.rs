@@ -2,7 +2,7 @@ use std::fs;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use misao_protocol::{
     ErrorCode, Incoming, LineSplitter, METHODS, PROTOCOL_SCHEMA, PROTOCOL_VERSION, Request, Response,
@@ -11,11 +11,12 @@ use misao_protocol::{
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::watch;
 use tokio::task::JoinSet;
 
-use crate::socket::{ensure_socket_dir, listen_unix_socket, remove_stale_socket};
+use crate::socket::{ensure_socket_dir, listen_unix_socket, lock_socket_start, remove_stale_socket};
 use crate::{DaemonError, Logger, acquire_pid_file};
+
+const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 pub struct DaemonOptions {
     /// デーモンのビルド版（リリースの version）。指定すると `server.info` の version で報告する。
@@ -54,7 +55,8 @@ impl Daemon {
         } = opts;
         ensure_socket_dir(&socket_path)?;
         acquire_pid_file(&pid_path, std::process::id())?;
-        // pid ファイルで排他を取った後は、socket_path にあるファイルを自分のものとして扱える。
+        // 古いソケットの判定から bind が終わるまで、ソケットの隣の lock で他の起動を締め出す。
+        // (pid ファイルは --data 次第で場所が変わるので、ソケットに対する排他はこちらで取る。)
         let listener = match Self::listen(&socket_path, &log).await {
             Ok(listener) => listener,
             Err(e) => {
@@ -83,17 +85,15 @@ impl Daemon {
     }
 
     async fn listen(socket_path: &std::path::Path, log: &Logger) -> Result<UnixListener, DaemonError> {
+        let _lock = lock_socket_start(socket_path)?;
         if remove_stale_socket(socket_path).await? {
             log.info("removed stale socket");
         }
-        listen_unix_socket(socket_path).inspect_err(|_| {
-            let _ = fs::remove_file(socket_path);
-        })
+        listen_unix_socket(socket_path)
     }
 
     /// `shutdown` が完了するまで接続を受け付け、完了したら接続を切ってソケットと pid ファイルを消す。
     pub async fn run(self, shutdown: impl Future<Output = ()>) {
-        let (stop_tx, stop_rx) = watch::channel(false);
         let mut conns = JoinSet::new();
         tokio::pin!(shutdown);
         loop {
@@ -101,17 +101,23 @@ impl Daemon {
                 () = &mut shutdown => break,
                 accepted = self.listener.accept() => match accepted {
                     Ok((stream, _)) => {
-                        conns.spawn(serve_connection(stream, Arc::clone(&self.shared), stop_rx.clone()));
+                        conns.spawn(serve_connection(stream, Arc::clone(&self.shared)));
                     }
                     // accept 失敗（EMFILE など）でデーモンごと落ちないよう、その接続だけを諦める。
-                    Err(e) => self.shared.log.error(&format!("server error: {e}")),
+                    Err(e) => {
+                        self.shared.log.error(&format!("server error: {e}"));
+                        // EMFILE などが続いても CPU を使い切らない。
+                        tokio::time::sleep(ACCEPT_RETRY_DELAY).await;
+                    }
                 },
                 Some(_) = conns.join_next() => {}
             }
         }
         self.shared.log.info("shutting down");
-        let _ = stop_tx.send(true);
         drop(self.listener);
+        // 応答を読まないクライアントで send が止まっていても終われるよう、接続のタスクは打ち切る
+        // (Node 版の socket.destroy() 相当)。
+        conns.abort_all();
         while conns.join_next().await.is_some() {}
         for f in [&self.socket_path, &self.pid_path] {
             let _ = fs::remove_file(f);
@@ -119,16 +125,13 @@ impl Daemon {
     }
 }
 
-async fn serve_connection(mut stream: UnixStream, shared: Arc<Shared>, mut stop: watch::Receiver<bool>) {
+async fn serve_connection(mut stream: UnixStream, shared: Arc<Shared>) {
     let mut splitter = LineSplitter::default();
     let mut buf = vec![0u8; 64 * 1024];
     loop {
-        let n = tokio::select! {
-            _ = stop.changed() => return,
-            read = stream.read(&mut buf) => match read {
-                Ok(0) | Err(_) => return,
-                Ok(n) => n,
-            },
+        let n = match stream.read(&mut buf).await {
+            Ok(0) | Err(_) => return,
+            Ok(n) => n,
         };
         let lines = match splitter.push(&buf[..n]) {
             Ok(lines) => lines,

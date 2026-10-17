@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { MisaoClient } from '@misao/sdk';
-import { buildDaemonOptions } from '../../src/commands/serve.js';
+import { buildDaemonOptions, pipeDataDir } from '../../src/commands/serve.js';
 import { MISAO_VERSION } from '../../src/version.js';
 import type { ResolvedConfig } from '../../src/config/index.js';
 import { run } from '../../src/run.js';
@@ -102,4 +102,25 @@ test('serve: 長すぎる --socket は使い方の誤り (2)', async () => {
   const io = createTestIo({ homeDir: '/tmp/h', cwd: '/tmp' });
   assert.equal(await run(['serve', '--socket', `/tmp/${'x'.repeat(200)}/misao.sock`], io), 2);
   assert.match(io.err(), /--socket/);
+});
+
+test('buildDaemonOptions: 名前付きパイプは親ディレクトリが無いので dataDir が必須、あれば pid / state をそこへ置く', () => {
+  const socket = '\\\\.\\pipe\\misao-u-0123456789abcdef';
+  assert.throws(() => buildDaemonOptions(CONFIG, { socket }), /pass dataDir/);
+  const options = buildDaemonOptions(CONFIG, { socket, dataDir: '/data' });
+  assert.equal(options.socketPath, socket);
+  assert.equal(options.pidPath, path.join('/data', 'daemon.pid'));
+  assert.equal(options.statePath, path.join('/data', 'persistence.json'));
+});
+
+test('pipeDataDir: パイプ指定なら misao のディレクトリ ($MISAO_DIR > ~/.misao)、Unix ソケットなら undefined。pidPath はその配下になる', () => {
+  const socket = '\\\\.\\pipe\\misao-u-0123456789abcdef';
+  const withDir = createTestIo({ env: { MISAO_DIR: '/m/dir' }, homeDir: '/home/u' });
+  assert.equal(pipeDataDir(withDir, socket), '/m/dir');
+  assert.equal(
+    buildDaemonOptions(CONFIG, { socket, dataDir: pipeDataDir(withDir, socket) }).pidPath,
+    path.join('/m/dir', 'daemon.pid'),
+  );
+  assert.equal(pipeDataDir(createTestIo({ homeDir: '/home/u' }), socket), path.join('/home/u', '.misao'));
+  assert.equal(pipeDataDir(withDir, '/run/misao/misao.sock'), undefined);
 });

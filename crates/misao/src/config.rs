@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use misao_daemon::LogLevel;
 use serde_json::{Map, Value};
 
-use crate::socket_path::{PathEnv, config_candidates_in_dirs};
+use crate::socket_path::{DirOrigin, PathEnv, config_candidates_in_dirs};
 
 const KNOWN_KEYS: [&str; 5] = ["keys", "scrollback", "rings", "socket", "logLevel"];
 
@@ -28,6 +28,8 @@ fn fail<T>(message: String) -> Result<T, ConfigError> {
 pub struct Config {
     /// `misao.json` の `socket`（未解決。`~/` 展開と長さの検査は呼び出し側で行う）。
     pub socket: Option<String>,
+    /// デーモンのログ閾値。`serve`（unix のみ）が使う。
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub log_level: LogLevel,
 }
 
@@ -71,15 +73,15 @@ fn candidates(input: &LoadInput<'_>) -> Result<Vec<Candidate>, ConfigError> {
         });
     }
     let dir_env = input.env.dir.as_deref();
-    for (i, path) in config_candidates_in_dirs(dir_env, input.home)?
-        .into_iter()
-        .enumerate()
-    {
-        let from_env = dir_env.is_some_and(|d| !d.is_empty()) && i == 0;
+    for (path, origin) in config_candidates_in_dirs(dir_env, input.home)? {
+        let origin = match origin {
+            DirOrigin::MisaoDir => "$MISAO_DIR",
+            DirOrigin::Default => "default",
+        };
         out.push(Candidate {
             path,
             explicit: false,
-            origin: if from_env { "$MISAO_DIR" } else { "default" }.into(),
+            origin: origin.into(),
         });
     }
     Ok(out)
@@ -175,6 +177,7 @@ fn validate(obj: &Map<String, Value>) -> Vec<String> {
 }
 
 #[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use tempfile::TempDir;
 

@@ -124,4 +124,31 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: npm ci
       - run: cargo build --locked -p misao
-      - run: npm run test:e2e:rust
+      - run: npm run test:e2e:rust -w @misao/e2e
+
+  # 試験的 (Issue #37): Windows ネイティブで型検査と単体テストが通るか、node-pty のネイティブ導入が通るかを見る。
+  # 結果は必須チェックにしない（continue-on-error）。POSIX 前提のテストが落ちるうちは赤のままで構わない。
+  windows-experimental:
+    name: Windows (experimental)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: node-pty native binding
+        if: always()
+        timeout-minutes: 2
+        run: node -e "const p=require('node-pty'); const t=p.spawn('cmd.exe',['/c','echo conpty-ok'],{name:'xterm-256color',cols:80,rows:24}); let o=''; t.onData(d=>o+=d); t.onExit(()=>{console.log(o); process.exit(o.includes('conpty-ok')?0:1)})"
+      - run: npm run build
+        if: always()
+      - run: npm run typecheck
+        if: always()
+      - run: npm test
+        if: always()
+        # 失敗の一覧を最後まで取るため、止まらないテストがあってもジョブ全体の上限より先に打ち切る
+        timeout-minutes: 12

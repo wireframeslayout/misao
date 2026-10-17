@@ -1,6 +1,6 @@
 //! ソケットパスの解決。`packages/sdk-node/src/socket-path.ts` と同じ規則。
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// `sockaddr_un.sun_path` は Linux で 108 バイト（終端 NUL を含む）。
 pub const MAX_SOCKET_PATH_BYTES: usize = 107;
@@ -25,11 +25,32 @@ fn set(value: Option<&str>) -> Option<&str> {
     value.filter(|v| !v.is_empty())
 }
 
+/// 字句的な正規化（Node の `path.resolve` / `path.join` と同じ: `.` を捨て、`..` で 1 つ戻る）。
+/// シンボリックリンクは解決しない。ルートより上への `..` は捨てる。
+pub fn normalize_lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                let can_pop = matches!(out.components().next_back(), Some(Component::Normal(_)));
+                if can_pop {
+                    out.pop();
+                } else if !out.has_root() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 fn expand_home(source: &str, value: &str, home: &str) -> Result<PathBuf, PathError> {
     let expanded = if value == "~" {
         PathBuf::from(home)
     } else if let Some(rest) = value.strip_prefix("~/") {
-        Path::new(home).join(rest)
+        normalize_lexical(&Path::new(home).join(rest))
     } else {
         PathBuf::from(value)
     };
@@ -65,10 +86,13 @@ pub fn resolve_misao_dirs(dir_env: Option<&str>, home: &str) -> Result<Vec<(Path
 }
 
 /// `$MISAO_DIR` > `~/.misao` の順で、設定ファイル `misao.json` の候補を返す。
-pub fn config_candidates_in_dirs(dir_env: Option<&str>, home: &str) -> Result<Vec<PathBuf>, PathError> {
+pub fn config_candidates_in_dirs(
+    dir_env: Option<&str>,
+    home: &str,
+) -> Result<Vec<(PathBuf, DirOrigin)>, PathError> {
     Ok(resolve_misao_dirs(dir_env, home)?
         .into_iter()
-        .map(|(d, _)| d.join(CONFIG_FILE_NAME))
+        .map(|(dir, origin)| (normalize_lexical(&dir.join(CONFIG_FILE_NAME)), origin))
         .collect())
 }
 
@@ -81,7 +105,7 @@ pub fn resolve_socket_path(env: &PathEnv, explicit: Option<&str>, home: &str) ->
         expand_home("socket path", path, home)?
     } else {
         let dirs = resolve_misao_dirs(env.dir.as_deref(), home)?;
-        dirs[0].0.join(SOCKET_FILE_NAME)
+        normalize_lexical(&dirs[0].0.join(SOCKET_FILE_NAME))
     };
     let bytes = resolved.as_os_str().len();
     if bytes > MAX_SOCKET_PATH_BYTES {
@@ -94,6 +118,7 @@ pub fn resolve_socket_path(env: &PathEnv, explicit: Option<&str>, home: &str) ->
 }
 
 #[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -154,6 +179,20 @@ mod tests {
             err.to_string(),
             "MISAO_SOCKET must be an absolute path or start with \"~/\": rel.sock"
         );
+    }
+
+    #[test]
+    fn normalizes_dot_segments_like_node_path_join() {
+        assert_eq!(
+            resolve(&env(None, Some("/d/./x/../y")), None).unwrap(),
+            PathBuf::from("/d/y/misao.sock")
+        );
+        assert_eq!(
+            resolve(&env(None, Some("~/a/../b")), None).unwrap(),
+            PathBuf::from("/home/u/b/misao.sock")
+        );
+        assert_eq!(normalize_lexical(Path::new("/../a//b/.")), PathBuf::from("/a/b"));
+        assert_eq!(normalize_lexical(Path::new("a/../../b")), PathBuf::from("../b"));
     }
 
     #[test]

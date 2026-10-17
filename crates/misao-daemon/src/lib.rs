@@ -20,4 +20,4 @@ pub use error::DaemonError;
 #[cfg(unix)]
 pub use pid_file::acquire_pid_file;
 #[cfg(unix)]
-pub use socket::{ensure_socket_dir, listen_unix_socket, remove_stale_socket};
+pub use socket::{ensure_socket_dir, listen_unix_socket, lock_socket_start, remove_stale_socket};

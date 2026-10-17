@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as path from 'node:path';
 import {
   ErrorCode,
   PROTOCOL_VERSION,
@@ -29,7 +30,7 @@ import type { AgentProfile } from './profile.js';
 import { loadPersistedState, savePersistedState } from './persistence.js';
 import type { PersistedState } from './persistence.js';
 import { StatePersister } from './state-persister.js';
-import { ensureSocketDir, listenUnixSocket, removeStaleSocket } from './socket.js';
+import { endpointFiles, listenEndpoint, prepareEndpoint, removeStaleEndpoint, warnIfDefaultDacl } from './endpoint.js';
 import { subscribeStream } from './stream.js';
 import type { RequestContext } from './stream.js';
 import { ulid } from './ulid.js';
@@ -153,24 +154,25 @@ export class Daemon {
   }
 
   async start(): Promise<void> {
-    await ensureSocketDir(this.socketPath);
+    await prepareEndpoint(this.socketPath, path.dirname(this.pidPath));
     acquirePidFile(this.pidPath, process.pid);
     // pid ファイルで排他を取った後は、socketPath にあるファイルを自分のものとして扱える。
     try {
       this.loadState();
-      if (await removeStaleSocket(this.socketPath)) this.log.info('removed stale socket');
+      if (await removeStaleEndpoint(this.socketPath)) this.log.info('removed stale socket');
     } catch (e) {
       fs.rmSync(this.pidPath, { force: true });
       throw e;
     }
     try {
       this.server = net.createServer((socket) => this.accept(socket));
-      await listenUnixSocket(this.server, this.socketPath);
+      const protection = await listenEndpoint(this.server, this.socketPath);
+      warnIfDefaultDacl(protection, (m) => this.log.warn(m));
       // listen 後の accept 失敗 (EMFILE など) でデーモンごと落ちないよう、その接続だけを諦める。
       this.server.on('error', (e) => this.log.error(`server error: ${e.message}`));
     } catch (e) {
       this.server?.close();
-      for (const f of [this.socketPath, this.pidPath]) fs.rmSync(f, { force: true });
+      for (const f of [...endpointFiles(this.socketPath), this.pidPath]) fs.rmSync(f, { force: true });
       throw e;
     }
     this.events.emit('daemon.started', { pid: process.pid, protocolVersion: PROTOCOL_VERSION });
@@ -192,7 +194,7 @@ export class Daemon {
       this.io.release(p.id);
       p.dispose();
     }
-    for (const f of [this.socketPath, this.pidPath]) fs.rmSync(f, { force: true });
+    for (const f of [...endpointFiles(this.socketPath), this.pidPath]) fs.rmSync(f, { force: true });
   }
 
   // ---- 接続 / ディスパッチ ----

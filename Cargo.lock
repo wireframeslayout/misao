@@ -528,11 +528,9 @@ dependencies = [
  "misao-daemon",
  "misao-protocol",
  "nix",
- "serde",
  "serde_json",
  "tempfile",
  "thiserror",
- "time",
  "tokio",
 ]
 

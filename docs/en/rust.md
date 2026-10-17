@@ -76,6 +76,15 @@ The file is committed, so `cargo test` needs no Node.
   responses produced by the Rust types satisfy the exported schema.
 - `server.schema` in the Rust daemon returns the embedded `schema/protocol.json`.
 
+## Startup exclusion (difference from the Node build)
+
+The Rust daemon takes an exclusive `flock` on `<socket>.lock` (next to the socket, independent of
+`--data`) from the stale-socket check until `bind` finishes, so two concurrent starts cannot remove each
+other's socket. A failed `bind` never deletes the path; only a socket whose `chmod` failed after our own
+`bind` is removed. The lock file itself is left in place on purpose. The Node daemon does not have this
+lock: its check-then-unlink-then-listen sequence can race when two daemons start at the same moment
+with different pid-file locations. It is not fixed in the Node build (it is replaced instead).
+
 ## Running the e2e suite against the Rust daemon
 
 `packages/e2e/test/helpers/daemon-process.ts` starts the daemon with `misao serve --config ... --socket ...

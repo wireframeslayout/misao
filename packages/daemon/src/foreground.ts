@@ -57,8 +57,6 @@ const INTERPRETERS: readonly (readonly [RegExp, InterpreterSyntax])[] = [
 const MAX_COMMAND_NAME_LENGTH = 64;
 /** 制御文字・書式文字 (bidi・ゼロ幅など)・行区切り・段落区切り。端末や表に流れても表示を乱さないよう取り除く。 */
 const UNSAFE_CHARS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
-/** 非 Linux では /proc が無いので node-pty の値を使う。起動時に一度だけ決める。 */
-const IS_LINUX = process.platform === 'linux';
 
 /** /proc/<pid>/stat から前面プロセスグループ ID (tpgid) を取り出す。取れなければ undefined。 */
 export function parseForegroundPgid(stat: string): number | undefined {
@@ -115,11 +113,20 @@ function scriptBasename(script: string): string {
 
 /**
  * 前面プロセスのコマンド名。Linux は pty の前面プロセスグループのリーダーの cmdline から、
- * それ以外は node-pty の `process` から得る。取れなければ undefined (応答は落とさない)。
+ * macOS などの他の Unix は node-pty の `process` から得る。取れなければ undefined (応答は落とさない)。
+ *
+ * win32 は未対応で、常に undefined を返す。ConPTY には前面プロセスグループが無く、
+ * node-pty の `process` は spawn 時の端末名 (xterm-256color) を返すだけで、プロセス名ではない。
+ * 誤ったコマンド名を報告するより、報告しないことを選ぶ。
  */
-export function readForegroundCommand(pid: number, ptyProcess: () => string): string | undefined {
+export function readForegroundCommand(
+  pid: number,
+  ptyProcess: () => string,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (platform === 'win32') return undefined;
   try {
-    if (!IS_LINUX) return sanitizeCommandName(ptyProcess());
+    if (platform !== 'linux') return sanitizeCommandName(ptyProcess());
     const pgid = parseForegroundPgid(readFileSync(`/proc/${pid}/stat`, 'utf8'));
     if (pgid === undefined) return undefined;
     const argv = readFileSync(`/proc/${pgid}/cmdline`, 'utf8').split('\0');

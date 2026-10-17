@@ -207,3 +207,84 @@ fn unparseable_line_gets_a_parse_error_and_the_connection_survives() {
     assert_eq!(serde_json::from_str::<Value>(&second).unwrap()["id"], 9);
     terminate(&mut child);
 }
+
+fn wait_exit(child: &mut Child, within: Duration) -> Option<std::process::ExitStatus> {
+    let deadline = Instant::now() + within;
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().unwrap() {
+            return Some(status);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    None
+}
+
+#[test]
+fn sigterm_finishes_even_when_a_client_never_reads_its_responses() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    let mut child = serve(dir);
+    let mut stream = UnixStream::connect(dir.join("run/misao.sock")).unwrap();
+    // server.schema (数十 KB) の応答を読まずに溜めさせ、デーモン側の送信を詰まらせる。
+    let req = r#"{"jsonrpc":"2.0","id":1,"method":"server.schema"}"#;
+    stream
+        .write_all(format!("{req}\n").repeat(600).as_bytes())
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    kill(Pid::from_raw(child.id().try_into().unwrap()), Signal::SIGTERM).unwrap();
+    let status = wait_exit(&mut child, Duration::from_secs(5));
+    if status.is_none() {
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+    assert!(
+        status.is_some_and(|s| s.success()),
+        "daemon did not exit on SIGTERM: {status:?}"
+    );
+    assert!(!dir.join("run/misao.sock").exists() && !dir.join("run/daemon.pid").exists());
+    drop(stream);
+}
+
+#[test]
+fn concurrent_starts_on_one_socket_leave_exactly_one_daemon_and_keep_its_socket() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    let sock = dir.join("run/misao.sock");
+    fs::create_dir(dir.join("run")).unwrap();
+    fs::set_permissions(
+        dir.join("run"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o700),
+    )
+    .unwrap();
+    // pid ファイルの場所を変えて、ソケットに対する排他だけが効く状況にする。
+    let mut children: Vec<Child> = (0..6)
+        .map(|i| {
+            bin(dir)
+                .args(["serve", "--socket"])
+                .arg(&sock)
+                .arg("--data")
+                .arg(dir.join(format!("data{i}")))
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap()
+        })
+        .collect();
+    std::thread::sleep(Duration::from_secs(2));
+    let mut alive = Vec::new();
+    for c in &mut children {
+        if c.try_wait().unwrap().is_none() {
+            alive.push(c.id());
+        }
+    }
+    assert_eq!(alive.len(), 1, "exactly one daemon should survive: {alive:?}");
+    let res = request(
+        &sock,
+        &json!({"jsonrpc": "2.0", "id": 1, "method": "server.info"}),
+    );
+    assert_eq!(res["result"]["pid"], alive[0]);
+    for c in &mut children {
+        if c.try_wait().unwrap().is_none() {
+            terminate(c);
+        }
+    }
+}

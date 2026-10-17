@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::cli::Env;
 use crate::config::Config;
 use crate::error::{CliError, ErrorKind};
-use crate::socket_path::{PathEnv, resolve_socket_path};
+use crate::socket_path::{PathEnv, normalize_lexical, resolve_socket_path};
 
 const PID_FILE_NAME: &str = "daemon.pid";
 
@@ -14,10 +14,12 @@ pub struct ServeArgs {
 
 /// `~` と相対パスを解決する（Node 版の `--socket` / `--data` と同じ: `~` 始まりはホーム、それ以外は cwd 基準）。
 fn resolve_user_path(env: &Env, value: &str) -> String {
-    if value.starts_with('~') || Path::new(value).is_absolute() {
+    if value.starts_with('~') {
         value.to_string()
     } else {
-        env.cwd.join(value).to_string_lossy().into_owned()
+        normalize_lexical(&env.cwd.join(value))
+            .to_string_lossy()
+            .into_owned()
     }
 }
 
@@ -27,7 +29,7 @@ fn resolve_data_dir(env: &Env, dir: &str) -> PathBuf {
     } else if let Some(rest) = dir.strip_prefix("~/") {
         Path::new(&env.home).join(rest)
     } else {
-        env.cwd.join(dir)
+        normalize_lexical(&env.cwd.join(dir))
     }
 }
 

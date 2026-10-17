@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::sync::Arc;
 
 use time::OffsetDateTime;
@@ -52,7 +53,10 @@ impl Logger {
 
     /// stderr に `[misao <ISO 時刻>] <msg>` の形式で書く（Node 版の `misao serve` と同じ）。
     pub fn stderr(level: LogLevel) -> Self {
-        Self::new(level, |msg| eprintln!("[misao {}] {msg}", now_iso()))
+        Self::new(level, |msg| {
+            // stderr が閉じられていても (EPIPE) panic しない。
+            let _ = writeln!(std::io::stderr().lock(), "[misao {}] {msg}", now_iso());
+        })
     }
 
     fn at(&self, target: LogLevel, msg: &str) {

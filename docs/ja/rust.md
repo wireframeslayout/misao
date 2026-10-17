@@ -73,6 +73,14 @@ target/debug/misao serve --socket /tmp/misao-try/misao.sock --data /tmp/misao-tr
   `server.info` の項目（名前と必須かどうか）、Rust の型が作る JSON-RPC 応答が、書き出したスキーマを満たすことを確かめます。
 - Rust 版デーモンの `server.schema` は、埋め込んだ `schema/protocol.json` を返します。
 
+## 起動の排他（Node 版との違い）
+
+Rust 版デーモンは、古いソケットの判定から `bind` が終わるまで、ソケットの隣の `<socket>.lock`（`--data` に依存しない）を
+`flock` で排他します。同時に起動した 2 つが互いのソケットを消すことはありません。`bind` に失敗してもパスは消さず、
+自分の `bind` の後に `chmod` が失敗したソケットだけを消します。lock ファイルは意図的に残します。
+Node 版にはこの lock が無く、pid ファイルの場所が違う 2 つのデーモンを同時に起動すると、判定・削除・listen の間で競合する
+可能性があります。Node 版は直さず（置き換え予定のため）、ここに記録するだけにします。
+
 ## Rust 版デーモンで e2e を動かす
 
 `packages/e2e/test/helpers/daemon-process.ts` は `misao serve --config ... --socket ... --data ...` でデーモンを起動します。
