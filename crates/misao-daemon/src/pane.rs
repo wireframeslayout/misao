@@ -36,6 +36,7 @@ mod close;
 #[path = "pane_lines.rs"]
 mod lines;
 
+pub use attach::AttachRefused;
 pub use lines::LinesSource;
 
 /// close の SIGHUP から SIGKILL までの猶予（Node 版の `KILL_GRACE_MS`）。
@@ -431,9 +432,7 @@ impl Pane {
     /// client のサイズを記録し、そのクライアントをサイズ所有者にして pty へ適用する。
     pub fn resize(&self, cols: u64, rows: u64, client: Option<&str>) -> Result<(), String> {
         let _order = lock(&self.order);
-        let mut inner = lock(&self.inner);
-        let decision = inner.sizes.record(client, cols, rows);
-        self.apply(&mut inner, &decision)
+        self.resize_locked(cols, rows, client)
     }
 
     /// client が所有者でなく、サイズを記録済みなら、そのサイズへ戻す。変更したら true。
@@ -447,16 +446,29 @@ impl Pane {
         Ok(true)
     }
 
+    /// 決まったサイズを pty・画面・記録へ適用する。pty が失敗したら何も変えない（先に pty を変える）。
     fn apply(&self, inner: &mut Inner, decision: &SizeDecision) -> Result<(), String> {
-        inner.cols = decision.cols;
-        inner.rows = decision.rows;
-        self.observer.resize(decision.cols, decision.rows);
         if inner.state == RunState::Running {
             lock(&self.master)
                 .resize(pty::pty_size(decision.cols, decision.rows))
                 .map_err(|e| format!("cannot resize the pty: {e:#}"))?;
         }
+        inner.cols = decision.cols;
+        inner.rows = decision.rows;
+        self.observer.resize(decision.cols, decision.rows);
         Ok(())
+    }
+
+    /// `order` を持っている間に呼ぶ `resize`。適用に失敗したら、サイズ調停の記録も元に戻す。
+    pub(super) fn resize_locked(&self, cols: u64, rows: u64, client: Option<&str>) -> Result<(), String> {
+        let mut inner = lock(&self.inner);
+        let before = inner.sizes.clone();
+        let decision = inner.sizes.record(client, cols, rows);
+        let applied = self.apply(&mut inner, &decision);
+        if applied.is_err() {
+            inner.sizes = before;
+        }
+        applied
     }
 
     /// `pane.info` の本体（所属の workspace / window とラベルは Daemon が渡す。Pane は親もラベルも知らない）。

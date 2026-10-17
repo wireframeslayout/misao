@@ -9,7 +9,7 @@ pub struct SizeDecision {
 
 /// 「最後に操作したクライアントのサイズを優先する」調停。pty には依存せず、
 /// 適用すべきサイズを返すだけ（適用は呼び出し側）。Node 版の `SizeArbiter`。
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SizeArbiter {
     /// 並び順 = 操作の新しさ（末尾が最新）。
     sizes: Vec<(String, u64, u64)>,

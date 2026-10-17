@@ -405,3 +405,57 @@ async fn an_attach_racing_a_close_is_either_refused_or_detached_before_pane_clos
         );
     }
 }
+
+#[tokio::test]
+async fn an_attach_with_a_size_during_a_close_fails_without_changing_size_events_or_saving() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let state_path = tmp.path().join("persistence.json");
+    let core = common::core_at(&state_path);
+    let mut owner = connect(&core);
+    // SIGHUP を無視する子: close は猶予（3 秒）の間「始まっている」状態が続く
+    let pane_id = open(&mut owner, "trap '' HUP; sleep 30").await;
+    let before = std::fs::read_to_string(&state_path).unwrap();
+    let head = owner.ok("server.info", json!({})).await["eventHead"]
+        .as_u64()
+        .unwrap();
+    let mut closer = connect(&core);
+    let closing = {
+        let id = pane_id.clone();
+        tokio::spawn(async move { closer.ok("pane.close", json!({"paneId": id})).await })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let mut view = connect(&core);
+    let failed = view
+        .call(
+            "pane.attach",
+            json!({"paneId": pane_id, "clientId": "A", "cols": 90, "rows": 30, "replay": "snapshot"}),
+        )
+        .await;
+    assert_eq!(failed["error"]["code"], 1002, "{failed}");
+    let i = info(&mut owner, &pane_id).await;
+    assert_eq!((i["cols"].as_u64(), i["rows"].as_u64()), (Some(40), Some(10)));
+    assert_eq!(
+        (i["sizeOwner"].clone(), i["clients"].clone()),
+        (Value::Null, json!([]))
+    );
+    // 保存の予約も無い（1.5 秒待っても、ファイルは変わらない）
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert_eq!(std::fs::read_to_string(&state_path).unwrap(), before);
+    closing.await.unwrap();
+    let mut events = connect(&core);
+    let replay = events.ok("events.subscribe", json!({"since": head})).await;
+    assert_eq!(replay["gap"], false);
+    let mut kinds = Vec::new();
+    while !kinds.contains(&"pane.closed".to_string()) {
+        kinds.push(
+            events.next_notification().await["params"]["type"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+    }
+    assert!(
+        !kinds.contains(&"pane.resized".to_string()) && !kinds.contains(&"client.attached".to_string()),
+        "{kinds:?}"
+    );
+}

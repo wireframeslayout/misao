@@ -343,7 +343,7 @@ fn a_close_waits_for_an_attach_paused_between_the_pane_side_and_the_connection_s
     pane.pause_next_attach(Arc::clone(&arrived), Arc::clone(&release));
     let attacher = {
         let (pane, conn) = (Arc::clone(&pane), Arc::clone(&conn));
-        std::thread::spawn(move || pane.attach(&conn, "A", crate::params::Replay::None).is_ok())
+        std::thread::spawn(move || pane.attach(&conn, "A", crate::params::Replay::None, None).is_ok())
     };
     arrived.wait(); // attach は pane 側に登録済みで、order を持ったまま止まっている
     let closer = {
@@ -368,7 +368,10 @@ fn a_close_waits_for_an_attach_paused_between_the_pane_side_and_the_connection_s
     assert!(conn.attachment(&pane.id).is_none(), "and on the connection side");
     assert!(!pane.has_attachment_for("A"));
     // close の後の attach は断る
-    assert!(pane.attach(&conn, "B", crate::params::Replay::None).is_err());
+    assert!(
+        pane.attach(&conn, "B", crate::params::Replay::None, None)
+            .is_err()
+    );
     assert!(conn.attachment(&pane.id).is_none());
 }
 
@@ -377,9 +380,14 @@ fn a_close_waits_for_an_attach_paused_between_the_pane_side_and_the_connection_s
 fn a_refused_attach_leaves_the_old_attachment_on_both_sides() {
     let pane = quiet_pane();
     let (conn, _rx) = ConnHandle::new();
-    let first = pane.attach(&conn, "A", crate::params::Replay::None).unwrap();
+    let first = pane
+        .attach(&conn, "A", crate::params::Replay::None, None)
+        .unwrap();
     pane.refuse_attach();
-    assert!(pane.attach(&conn, "A", crate::params::Replay::None).is_err());
+    assert!(
+        pane.attach(&conn, "A", crate::params::Replay::None, None)
+            .is_err()
+    );
     assert_eq!(conn.attachment(&pane.id).map(|a| a.id), Some(first.attachment.id));
     assert!(pane.has_attachment_for("A"));
 }
@@ -389,8 +397,11 @@ fn a_refused_attach_leaves_the_old_attachment_on_both_sides() {
 fn attaching_with_another_client_id_on_the_same_connection_displaces_the_old_client() {
     let pane = quiet_pane();
     let (conn, _rx) = ConnHandle::new();
-    pane.attach(&conn, "A", crate::params::Replay::None).unwrap();
-    let second = pane.attach(&conn, "B", crate::params::Replay::None).unwrap();
+    pane.attach(&conn, "A", crate::params::Replay::None, None)
+        .unwrap();
+    let second = pane
+        .attach(&conn, "B", crate::params::Replay::None, None)
+        .unwrap();
     assert_eq!(second.displaced.as_ref().map(|d| d.client_id.as_str()), Some("A"));
     assert!(!second.replaced);
     assert!(!pane.has_attachment_for("A") && pane.has_attachment_for("B"));
@@ -398,4 +409,28 @@ fn attaching_with_another_client_id_on_the_same_connection_displaces_the_old_cli
         conn.attachment(&pane.id).map(|a| a.id),
         Some(second.attachment.id)
     );
+}
+
+/// close が始まった後の attach はサイズも変えない（サイズ・所有者・画面とも元のまま）。
+#[test]
+fn an_attach_refused_because_of_a_close_does_not_resize_the_pane() {
+    let pane = quiet_pane();
+    let (conn, _rx) = ConnHandle::new();
+    pane.refuse_attach();
+    let refused = pane.attach(&conn, "A", crate::params::Replay::Snapshot, Some((50, 20)));
+    assert!(matches!(refused, Err(crate::pane::AttachRefused::Closing)));
+    assert_eq!(pane.size(), (10, 3));
+    assert!(!pane.has_attachment_for("A"));
+    assert_eq!(
+        pane.screen().text.split('\n').count(),
+        3,
+        "the screen was not resized"
+    );
+    // 成功したときだけサイズが変わる
+    let open = quiet_pane();
+    let attached = open
+        .attach(&conn, "A", crate::params::Replay::None, Some((50, 20)))
+        .unwrap();
+    assert!(attached.resized);
+    assert_eq!(open.size(), (50, 20));
 }

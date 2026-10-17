@@ -11,6 +11,8 @@ pub struct Attached {
     pub truncated: bool,
     /// 同じ接続・同じ clientId の attach を置き換えた（クライアントとしては残っている）。
     pub replaced: bool,
+    /// 指定のサイズを適用した（呼び出し側が `pane.resized` を出し、保存を予約する）。
+    pub resized: bool,
     /// 同じ接続の別の clientId の attach を外した（その clientId と、サイズを継いだ先）。
     pub displaced: Option<Displaced>,
 }
@@ -21,9 +23,14 @@ pub struct Displaced {
     pub inherited: Result<Option<String>, String>,
 }
 
-/// close が始まった pane への attach。
+/// attach を断った理由。どちらも pane の状態を何も変えていない。
 #[derive(Debug)]
-pub struct AttachRefused;
+pub enum AttachRefused {
+    /// close が始まっている。
+    Closing,
+    /// 指定のサイズを適用できなかった（pty の resize の失敗）。
+    Resize(String),
+}
 
 impl Pane {
     /// 出力の届け先に加え、`clients` に載せる。届け先の登録と head の読み取りは、出力の取り込みと同じ lock（`order`）の中で
@@ -35,10 +42,16 @@ impl Pane {
         conn: &Arc<ConnHandle>,
         client_id: &str,
         replay: Replay,
+        size: Option<(u64, u64)>,
     ) -> Result<Attached, AttachRefused> {
         let order = lock(&self.order);
         if lock(&self.inner).attach_closed {
-            return Err(AttachRefused);
+            return Err(AttachRefused::Closing);
+        }
+        // 指定のサイズの適用は、close の確認から snapshot・登録までと同じ臨界区間で行う（断られたら何も変えない）。
+        if let Some((cols, rows)) = size {
+            self.resize_locked(cols, rows, Some(client_id))
+                .map_err(AttachRefused::Resize)?;
         }
         let (head, oldest, truncated, entries) = {
             let inner = lock(&self.inner);
@@ -101,6 +114,7 @@ impl Pane {
             oldest,
             truncated,
             replaced,
+            resized: size.is_some(),
             displaced,
         })
     }

@@ -9,7 +9,7 @@ use serde_json::{Map, Value, json};
 
 use crate::connection::ConnHandle;
 use crate::core::Core;
-use crate::pane::Pane;
+use crate::pane::{AttachRefused, Pane};
 use crate::params::{self, AttachMode, PaneAttachParams, PaneRefParams};
 use crate::rpc::RequestContext;
 use crate::rpc_error::{RpcFailure, RpcResult};
@@ -29,21 +29,22 @@ impl Core {
         let pane = self.state().registry.live(p.pane_id.as_str())?;
         let conn = Arc::clone(&ctx.conn);
         let client_id = p.client_id.as_str();
-        // サイズの指定は先に適用する（snapshot が新しいサイズの画面になる）。失敗したら何も変えない（古い attach は残る）。
-        if let (Some(cols), Some(rows)) = (p.cols, p.rows) {
-            pane.resize(cols.get(), rows.get(), Some(client_id))
-                .map_err(RpcFailure::internal)?;
+        // サイズの指定の適用も pane の中の 1 つの臨界区間で行う。断られたら何も変わらない（古い attach もサイズも残る）。
+        let size = p.cols.zip(p.rows).map(|(cols, rows)| (cols.get(), rows.get()));
+        let attached = pane
+            .attach(&conn, client_id, p.replay, size)
+            .map_err(|refused| match refused {
+                AttachRefused::Closing => RpcFailure::new(ErrorCode::PANE_EXITED, "pane is closing"),
+                AttachRefused::Resize(e) => RpcFailure::internal(e),
+            })?;
+        if let Some((cols, rows)) = size.filter(|_| attached.resized) {
             self.persist_soon();
             self.events.emit(
                 "pane.resized",
-                json!({"cols": cols.get(), "rows": rows.get(), "clientId": client_id}),
+                json!({"cols": cols, "rows": rows, "clientId": client_id}),
                 Some(&pane.id),
             );
         }
-        // 登録・差し替え（pane 側と接続側）は pane の中で 1 つの操作として行う。close が始まっていれば古い attach を残して断る。
-        let attached = pane
-            .attach(&conn, client_id, p.replay)
-            .map_err(|_| RpcFailure::new(ErrorCode::PANE_EXITED, "pane is closing"))?;
         if let Some(displaced) = attached.displaced {
             self.report_inherited_size(&pane, displaced.inherited);
             self.events.emit(
