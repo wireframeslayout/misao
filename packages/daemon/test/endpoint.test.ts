@@ -133,9 +133,9 @@ test('removeStaleEndpoint(pipe): 待ち受けがいれば例外 (パイプ名の
 });
 
 test('warnIfDefaultDacl: default-dacl のときだけ警告する', () => {
+  const messages: string[] = [];
   warnIfDefaultDacl('posix-mode', (m) => messages.push(m));
   assert.equal(messages.length, 0);
-  assert.deepEqual(messages, []);
   warnIfDefaultDacl('default-dacl', (m) => messages.push(m));
   assert.equal(messages.length, 1);
   assert.match(messages[0]!, /default DACL/);
