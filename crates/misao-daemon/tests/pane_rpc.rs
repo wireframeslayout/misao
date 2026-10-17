@@ -486,3 +486,50 @@ async fn sizes_beyond_16_bits_are_reported_as_given_and_only_clamped_for_the_pty
         INVALID_PARAMS
     );
 }
+
+/// リーダーだけが自然に終了し、SIGHUP を無視する子がグループに残った pane を作る。
+async fn pane_whose_leader_exited_leaving_a_survivor(c: &mut Client, tmp: &TempDir) -> (String, String) {
+    let (pid_file, ready) = (tmp.path().join("survivor.pid"), tmp.path().join("ready"));
+    let script = format!(
+        "(trap '' HUP; touch {ready}; exec sleep 300) & pid=$!; while [ ! -e {ready} ]; do sleep 0.05; done; echo $pid > {pid_file}",
+        ready = ready.display(),
+        pid_file = pid_file.display()
+    );
+    let pane_id = open(c, sh(&script), json!({})).await;
+    let survivor = read_file_when_ready(&pid_file).await;
+    let i = wait_exit(c, &pane_id).await;
+    assert_eq!(i["exitCode"], 0);
+    assert!(is_alive(&survivor), "the survivor outlives the leader");
+    (pane_id, survivor)
+}
+
+#[tokio::test]
+async fn closing_a_pane_whose_leader_already_exited_still_stops_the_surviving_group() {
+    let tmp = TempDir::new().unwrap();
+    let mut c = connect(&core());
+    let (pane_id, survivor) = pane_whose_leader_exited_leaving_a_survivor(&mut c, &tmp).await;
+    let started = Instant::now();
+    c.ok("pane.close", json!({"paneId": pane_id})).await;
+    assert!(
+        !is_alive(&survivor),
+        "close must not return while a child of the pane is still running"
+    );
+    assert!(
+        started.elapsed() >= Duration::from_secs(2),
+        "SIGHUP first, SIGKILL after the grace period"
+    );
+    assert_eq!(
+        c.err_code("pane.info", json!({"paneId": pane_id})).await,
+        PANE_NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn shutdown_stops_the_surviving_group_of_an_exited_pane() {
+    let tmp = TempDir::new().unwrap();
+    let core = core();
+    let mut c = connect(&core);
+    let (_, survivor) = pane_whose_leader_exited_leaving_a_survivor(&mut c, &tmp).await;
+    core.shutdown().await;
+    assert!(!is_alive(&survivor));
+}

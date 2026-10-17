@@ -103,8 +103,8 @@ pub struct Pane {
     /// 行リングの head。新しい行が入るたびに進む。
     lines_tx: watch::Sender<u64>,
     exited_tx: watch::Sender<bool>,
-    /// 終了後の後片付け（close のときのプロセスグループの掃除）まで済んだら true。
-    settled_tx: watch::Sender<bool>,
+    /// リーダーの終了時に、プロセスグループに他のプロセスが残っていたか（Unix のみ）。
+    survivors_at_exit: AtomicBool,
     /// close が始まった時刻（SIGHUP を送った時刻）。2 回目以降の close は何もせず終了を待つ。
     closing: Mutex<Option<Instant>>,
     released: AtomicBool,
@@ -123,6 +123,11 @@ impl Inner {
         let size = text.chars().map(char::len_utf16).sum::<usize>() + LINE_ENTRY_OVERHEAD;
         self.lines.push(text, size, ts);
     }
+}
+
+/// プロセスの停止はブロックしうる（Windows の `taskkill` など）ので、非同期のタスクを止めないよう別のスレッドで行う。
+async fn blocking(f: impl FnOnce() + Send + 'static) {
+    let _ = tokio::task::spawn_blocking(f).await;
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -185,7 +190,7 @@ impl Pane {
             input: Mutex::new(None),
             lines_tx: watch::Sender::new(0),
             exited_tx: watch::Sender::new(false),
-            settled_tx: watch::Sender::new(false),
+            survivors_at_exit: AtomicBool::new(false),
             closing: Mutex::new(None),
             released: AtomicBool::new(false),
             exit_seen: AtomicBool::new(false),
@@ -233,6 +238,10 @@ impl Pane {
         let pane = Arc::clone(self);
         std::thread::spawn(move || {
             let exit = pty::wait_exit(child, pane.pid);
+            // リーダーが居なくなった今、グループに残ったプロセスがいるか。いる間は pgid は再利用されないので、
+            // 後の close はそれを頼りに（無関係なプロセスグループを誤って止めずに）掃除できる。
+            pane.survivors_at_exit
+                .store(pty::tree_alive(pane.pid), Ordering::Release);
             pane.exit_seen.store(true, Ordering::Release);
             pane.wakeup.notify();
             // 残りの出力を読み切ってから終了を報告する（終了直前の出力を取りこぼさない）。
@@ -240,7 +249,6 @@ impl Pane {
                 // 孫が pty を握っていて EOF が来ない。ここまでに読めた分で打ち切る。
             }
             pane.on_exit(exit, &events);
-            pane.settle();
         });
     }
 
@@ -290,25 +298,6 @@ impl Pane {
             Some(&self.id),
         );
         self.exited_tx.send_replace(true);
-    }
-
-    /// リーダーの終了後の後片付け。close のときは、グループに残ったプロセスを猶予の後に SIGKILL で掃除する。
-    fn settle(&self) {
-        let deadline = lock(&self.closing).map(|started| started + KILL_GRACE);
-        if let Some(deadline) = deadline {
-            while pty::tree_alive(self.pid) {
-                if Instant::now() >= deadline {
-                    pty::kill_tree(self.pid);
-                    let give_up = Instant::now() + GROUP_KILL_WAIT;
-                    while pty::tree_alive(self.pid) && Instant::now() < give_up {
-                        std::thread::sleep(GROUP_POLL_INTERVAL);
-                    }
-                    break;
-                }
-                std::thread::sleep(GROUP_POLL_INTERVAL);
-            }
-        }
-        self.settled_tx.send_replace(true);
     }
 
     pub fn state(&self) -> RunState {
@@ -382,29 +371,55 @@ impl Pane {
     }
 
     /// SIGHUP → 3 秒 → SIGKILL（プロセスグループ全体）。リーダーの終了と、グループに残ったプロセスの
-    /// 掃除まで済んだら戻る。並行して呼ばれても SIGHUP と kill タイマーは 1 回だけ。
+    /// 掃除まで済んだら戻る。リーダーが既に（自然に）終了していても、グループに残ったプロセスがいれば同じ手順で止める。
+    /// 並行して呼ばれても SIGHUP は 1 回だけで、猶予は最初の呼び出しから数える。
     pub async fn close(self: &Arc<Self>) {
-        let first = {
+        let pid = self.pid;
+        let (started, first) = {
             let mut closing = lock(&self.closing);
-            let first = closing.is_none() && self.state() == RunState::Running;
-            if first {
-                *closing = Some(Instant::now());
+            match *closing {
+                Some(started) => (started, false),
+                None => {
+                    let now = Instant::now();
+                    *closing = Some(now);
+                    (now, true)
+                }
             }
-            first
         };
         self.wakeup.notify();
-        if first {
-            pty::hangup_tree(self.pid);
-            let pane = Arc::clone(self);
-            tokio::spawn(async move {
-                tokio::time::sleep(KILL_GRACE).await;
-                if pane.state() == RunState::Running {
-                    pty::kill_tree(pane.pid);
-                }
-            });
+        let deadline = started + KILL_GRACE;
+        let was_running = self.state() == RunState::Running;
+        let has_survivors = self.survivors_at_exit.load(Ordering::Acquire);
+        if first && (was_running || has_survivors) {
+            blocking(move || pty::hangup_tree(pid)).await;
         }
-        let mut settled = self.settled_tx.subscribe();
-        let _ = settled.wait_for(|done| *done).await;
+        let mut exited = self.exited_tx.subscribe();
+        if tokio::time::timeout_at(deadline.into(), exited.wait_for(|e| *e))
+            .await
+            .is_err()
+        {
+            blocking(move || pty::kill_tree(pid)).await;
+            let _ = exited.wait_for(|e| *e).await;
+        }
+        if was_running || self.survivors_at_exit.load(Ordering::Acquire) {
+            self.sweep_group(deadline).await;
+        }
+    }
+
+    /// グループに残ったプロセスが消えるのを待ち、猶予が過ぎても残っていれば SIGKILL する。
+    async fn sweep_group(&self, deadline: Instant) {
+        let pid = self.pid;
+        while pty::tree_alive(pid) {
+            if Instant::now() >= deadline {
+                blocking(move || pty::kill_tree(pid)).await;
+                let give_up = Instant::now() + GROUP_KILL_WAIT;
+                while pty::tree_alive(pid) && Instant::now() < give_up {
+                    tokio::time::sleep(GROUP_POLL_INTERVAL).await;
+                }
+                return;
+            }
+            tokio::time::sleep(GROUP_POLL_INTERVAL).await;
+        }
     }
 
     /// 閉じた Pane への参照を購読に残さないための印。待っている購読を起こして止める。
@@ -473,5 +488,52 @@ mod tests {
         );
         // 直近のチャンクは、容量を超えていても 1 つは残る。それ以外は容量に収まる。
         assert!(pane.raw_bytes() <= 4096 + READ_CHUNK);
+    }
+
+    /// リーダーが自然に終了し、SIGHUP を無視する子が残った pane。
+    fn pane_with_a_survivor(dir: &Path) -> (Arc<Pane>, PathBuf) {
+        let (pid_file, ready) = (dir.join("survivor.pid"), dir.join("ready"));
+        let script = format!(
+            "(trap '' HUP; touch {ready}; exec sleep 300) & pid=$!; while [ ! -e {ready} ]; do sleep 0.05; done; echo $pid > {pid}",
+            ready = ready.display(),
+            pid = pid_file.display()
+        );
+        let socket = PathBuf::from("/tmp/unused.sock");
+        let pane = Pane::spawn(PaneOpenOptions {
+            cmd: vec!["sh".into(), "-c".into(), script],
+            cwd: None,
+            env: BTreeMap::new(),
+            ephemeral_env: BTreeMap::new(),
+            cols: None,
+            rows: None,
+            socket_path: &socket,
+            raw_ring_bytes: 1024,
+            lines_ring_bytes: 1024,
+        })
+        .unwrap();
+        pane.start(Arc::new(EventLog::new(10)));
+        (pane, pid_file)
+    }
+
+    fn wait_for(what: &str, mut cond: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !cond() {
+            assert!(Instant::now() < deadline, "timed out waiting for {what}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn close_after_a_natural_exit_releases_the_threads_and_the_master() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (pane, _) = pane_with_a_survivor(tmp.path());
+        wait_for("the pane to exit", || pane.state() == RunState::Exited);
+        // 孫が pty を握っているので、reader はまだ EOF になっていない（Pane への参照を持ち続ける）。
+        let weak = Arc::downgrade(&pane);
+        pane.close().await;
+        assert!(!crate::pty::tree_alive(pane.pid));
+        drop(pane);
+        // reader / 待機のスレッドが終われば、最後の参照（= master と writer）が解放される。
+        wait_for("the pane to be freed", || weak.upgrade().is_none());
     }
 }
