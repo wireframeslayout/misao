@@ -194,3 +194,84 @@ async fn an_exited_pane_has_no_foreground_command() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
+
+#[cfg(target_os = "linux")]
+/// 名前が `claude` の perl スクリプト（前面プロセスの名前はスクリプト名の `claude` になる）。許可プロンプトを出して、少し待って終わる。
+fn fake_claude_script(dir: &std::path::Path, seconds: u32) -> std::path::PathBuf {
+    let path = dir.join("claude");
+    let rule = "─".repeat(40);
+    let script = format!(
+        "#!/usr/bin/perl\nbinmode(STDOUT, ':utf8');\n$| = 1;\nprint \"Do you want to proceed?\\r\\n {rule}\\r\\n ❯ 1. Yes\\r\\n   2. No\\r\\n\";\nsleep {seconds};\n"
+    );
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+#[cfg(target_os = "linux")]
+async fn wait_info(c: &mut Client, pane: &str, what: &str, cond: impl Fn(&Value) -> bool) -> Value {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let info = c.ok("pane.info", json!({"paneId": pane})).await;
+        if cond(&info) {
+            return info;
+        }
+        assert!(Instant::now() < deadline, "timed out waiting for {what}: {info}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// シェルに文字列で渡した claude（`sh -lc "dir/claude"`）も、claude の profile で判定する。
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_claude_started_through_sh_lc_is_judged_by_the_claude_profile() {
+    let tmp = TempDir::new().unwrap();
+    let fake = fake_claude_script(tmp.path(), 30);
+    let mut c = connect(&core());
+    let command = format!("cd {} && ./claude", tmp.path().display());
+    let pane = open(
+        &mut c,
+        json!(["sh", "-lc", command]),
+        json!({"cols": 60, "rows": 10}),
+    )
+    .await;
+    let info = wait_info(&mut c, &pane, "blocked by the claude profile", |i| {
+        i["agentState"] == "blocked"
+    })
+    .await;
+    assert_eq!(info["decidedBy"], "claude");
+    drop(fake);
+}
+
+/// 対話シェルを起動した後で始めた claude は、前面のプログラムが変わった時点で profile が付き、終わると外れる。
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_claude_started_inside_an_interactive_shell_gets_and_loses_its_profile() {
+    let tmp = TempDir::new().unwrap();
+    let fake = fake_claude_script(tmp.path(), 3);
+    let mut c = connect(&core());
+    c.ok("events.subscribe", json!({})).await;
+    let pane = open(&mut c, json!(["sh", "-i"]), json!({"cols": 60, "rows": 12})).await;
+    assert_ne!(
+        c.ok("pane.info", json!({"paneId": pane})).await["decidedBy"],
+        "claude"
+    );
+    c.ok(
+        "pane.write",
+        json!({"paneId": pane, "data": format!("{}\n", fake.display())}),
+    )
+    .await;
+    let info = wait_info(&mut c, &pane, "the claude profile", |i| {
+        i["decidedBy"] == "claude"
+    })
+    .await;
+    assert_eq!(info["agentState"], "blocked");
+    // claude が終わってシェルが前面に戻ると、profile が外れて、title / bytes 段だけで決め直す。
+    let info = wait_info(&mut c, &pane, "the profile to be dropped", |i| {
+        i["decidedBy"] != "claude"
+    })
+    .await;
+    assert_ne!(info["agentState"], "blocked", "{info}");
+    let change = next_event(&mut c, "pane.state").await;
+    assert_eq!(change["data"]["decidedBy"], "claude");
+}

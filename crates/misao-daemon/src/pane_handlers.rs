@@ -17,7 +17,6 @@ use crate::params::{
     self, InputSource, PaneListParams, PaneOpenParams, PaneRefParams, PaneResizeParams, PaneSetLabelParams,
     PaneWriteParams, SubscribeLinesParams,
 };
-use crate::profile::select_profile;
 use crate::registry::{PaneEntry, PaneRegistry};
 use crate::rpc::RequestContext;
 use crate::rpc_error::{RpcFailure, RpcResult};
@@ -106,7 +105,6 @@ impl Core {
                 .layout
                 .resolve_window(p.window_id.as_ref().map(params::WindowId::as_str))
                 .and_then(|target| {
-                    let profile = select_profile(&self.profiles, &p.cmd);
                     let pane = Pane::spawn(PaneOpenOptions {
                         cmd: p.cmd,
                         cwd: p.cwd,
@@ -119,7 +117,7 @@ impl Core {
                         raw_ring_bytes: self.limits.raw_ring_bytes,
                         lines_ring_bytes: self.limits.lines_ring_bytes,
                         scrollback: self.limits.scrollback,
-                        profile,
+                        profiles: self.profiles.clone(),
                         events: Arc::clone(&self.events),
                     })
                     .map_err(|e| RpcFailure::invalid_params(format!("spawn failed: {e}")))?;

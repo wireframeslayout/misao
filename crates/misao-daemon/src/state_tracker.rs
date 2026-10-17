@@ -147,6 +147,30 @@ impl StateTracker {
         self.profile_timer = Some(self.deadline(now + delay));
     }
 
+    /// この pane に使うプロファイルを替える（前面のプログラムが変わったとき）。同じものなら何もしない。
+    /// 外すと、プロファイルの意見も判定の履歴も捨て、title / bytes 段だけで決め直す（どの段も意見を持たなければ `unknown` / `none`）。
+    /// 付けると、いまの状態のまま、画面の判定を予約する（結果は 120ms 以内に出る）。title / bytes 段の履歴は残す。
+    pub fn set_profile(&mut self, profile: Option<Arc<Profile>>, now: u64) {
+        let same = match (&self.profile, &profile) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        if same || self.is_exited {
+            return;
+        }
+        self.profile = profile;
+        self.profile_verdict = None;
+        self.profile_timer = None;
+        self.profile_wait_since = None;
+        if self.profile.is_some() {
+            self.notify_screen_updated(now);
+        } else {
+            self.decide(AgentState::Unknown, "none");
+            self.evaluate(now);
+        }
+    }
+
     pub fn notify_input(&mut self, now: u64) {
         self.bytes.notify_input(now);
     }

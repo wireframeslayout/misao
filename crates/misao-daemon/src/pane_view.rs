@@ -70,6 +70,14 @@ impl PaneView {
         events
     }
 
+    /// 前面のプログラムが変わって、使うプロファイルが替わった。
+    pub fn set_profile(&mut self, profile: Option<Arc<Profile>>, now: u64) -> Vec<ViewEvent> {
+        self.tracker.set_profile(profile, now);
+        let mut events = Vec::new();
+        self.drain_into(&mut events);
+        events
+    }
+
     pub fn input(&mut self, now: u64) {
         self.tracker.notify_input(now);
     }

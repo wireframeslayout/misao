@@ -1,0 +1,51 @@
+{
+ "scrollback": 5000,
+ "name": "claude-via-shell",
+ "cmd": [
+  "/bin/zsh",
+  "-lc",
+  "cd /w && FOO=1 exec 'claude' --x"
+ ],
+ "cols": 80,
+ "rows": 24,
+ "steps": [
+  {
+   "at": 0,
+   "op": "output",
+   "data": "\u001b]0;✳ Claude Code\u0007"
+  },
+  {
+   "at": 200,
+   "op": "output",
+   "data": "\u001b[G⏺ Do you want to proceed?\n────────────────────────────────────────────────────────────────────────────────\n ❯ 1. Yes\n   2. No\n────────────────────────────────────────────────────────────────────────────────\n  ? for shortcuts\n"
+  },
+  {
+   "at": 500,
+   "op": "info"
+  }
+ ],
+ "end": 3000,
+ "expect": {
+  "profile": "claude",
+  "log": [
+   {
+    "kind": "title",
+    "at": 0,
+    "title": "✳ Claude Code"
+   },
+   {
+    "kind": "state",
+    "at": 320,
+    "state": "blocked",
+    "decidedBy": "claude",
+    "prev": "unknown"
+   },
+   {
+    "kind": "info",
+    "at": 500,
+    "agentState": "blocked",
+    "decidedBy": "claude"
+   }
+  ]
+ }
+}

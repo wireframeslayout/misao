@@ -15,13 +15,13 @@ use tokio::sync::watch;
 use crate::ansi::AnsiLineAssembler;
 use crate::child_env::build_child_env;
 use crate::event_log::EventLog;
-use crate::foreground::ForegroundQuery;
+use crate::foreground::{ForegroundQuery, read_foreground_commands};
 use crate::ids::new_pane_id;
 use crate::limits::{INPUT_QUEUE_BYTES, LINE_ENTRY_OVERHEAD};
 use crate::log::now_iso;
 use crate::pane_observer::PaneObserver;
 use crate::pane_view::{PaneView, ScreenSnapshot};
-use crate::profile::Profile;
+use crate::profile::{Profile, select_profile};
 use crate::pty::{self, ExitInfo, GroupState, PtyProcess, SpawnRequest};
 use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
@@ -59,8 +59,8 @@ pub struct PaneOpenOptions<'a> {
     pub lines_ring_bytes: usize,
     /// 画面モデルのスクロールバック行数。
     pub scrollback: usize,
-    /// この pane の稼働判定に使うプロファイル。無ければ title / bytes 段だけで判定する。
-    pub profile: Option<Arc<Profile>>,
+    /// 稼働判定に使いうるプロファイル。pane の起動コマンドと前面のプログラムで選ぶ（無ければ title / bytes 段だけで判定する）。
+    pub profiles: Vec<Arc<Profile>>,
     /// `pane.title` / `pane.state` / `pane.exited` を出す先。
     pub events: Arc<EventLog>,
 }
@@ -183,8 +183,15 @@ impl Pane {
         let id = new_pane_id();
         let observer = PaneObserver::new(
             id.clone(),
-            PaneView::new(cols, rows, opts.scrollback, opts.profile),
+            PaneView::new(
+                cols,
+                rows,
+                opts.scrollback,
+                select_profile(&opts.profiles, &opts.cmd),
+            ),
             Arc::clone(&opts.events),
+            opts.profiles,
+            opts.cmd.clone(),
         );
         let mut overrides = opts.env;
         overrides.extend(opts.ephemeral_env);
@@ -269,6 +276,11 @@ impl Pane {
             // （portable-pty は drop のときに改行と EOF を pty へ書くが、子が居ない pty なので害はない）。
         });
         let observer = Arc::clone(&self.observer);
+        let weak = Arc::downgrade(self);
+        observer.set_probe(Box::new(move || {
+            let query = weak.upgrade()?.foreground_query()?;
+            read_foreground_commands(&[query]).pop().flatten()
+        }));
         std::thread::spawn(move || observer.run());
         let (drained_tx, drained_rx) = mpsc::channel::<()>();
         // reader はブロッキングの read の間 Pane を強参照しない。孫が pty を握って EOF が来なくても、

@@ -37,7 +37,7 @@ fn the_raw_ring_keeps_only_the_newest_bytes_up_to_its_capacity() {
         raw_ring_bytes: 4096,
         lines_ring_bytes: 1024,
         scrollback: 100,
-        profile: None,
+        profiles: Vec::new(),
         events: Arc::new(EventLog::new(10)),
     })
     .unwrap();
@@ -76,7 +76,7 @@ fn pane_with_a_survivor(dir: &Path) -> (Arc<Pane>, PathBuf) {
         raw_ring_bytes: 1024,
         lines_ring_bytes: 1024,
         scrollback: 100,
-        profile: None,
+        profiles: Vec::new(),
         events: Arc::new(EventLog::new(10)),
     })
     .unwrap();
@@ -116,7 +116,7 @@ fn the_input_queue_refuses_input_beyond_its_limit_but_accepts_one_into_an_empty_
         raw_ring_bytes: 1024,
         lines_ring_bytes: 1024,
         scrollback: 100,
-        profile: None,
+        profiles: Vec::new(),
         events: Arc::new(EventLog::new(10)),
     })
     .unwrap();
@@ -213,7 +213,7 @@ async fn a_cancelled_close_does_not_restart_the_clean_up_for_the_next_close() {
         raw_ring_bytes: 1024,
         lines_ring_bytes: 1024,
         scrollback: 100,
-        profile: None,
+        profiles: Vec::new(),
         events: Arc::new(EventLog::new(10)),
     })
     .unwrap();

@@ -130,6 +130,14 @@ function claudeApiError() {
   return { name: 'claude-api-error', cmd: ['claude'], cols, rows: 24, steps, end: 8000 };
 }
 
+function shellWrappedClaude() {
+  // シェルへ文字列で渡した claude も、claude の profile で判定する
+  const cols = 80;
+  const steps = [out(0, title('✳ Claude Code')), out(200, inkFrame(0, claudeFrame(cols, { above: ['⏺ Do you want to proceed?'], box: [' ❯ 1. Yes', '   2. No'] })))];
+  steps.push(info(500));
+  return { name: 'claude-via-shell', cmd: ['/bin/zsh', '-lc', 'cd /w && FOO=1 exec \'claude\' --x'], cols, rows: 24, steps, end: 3000 };
+}
+
 function codexSession() {
   const steps = [out(0, title('codex'))];
   steps.push(out(300, ` OpenAI Codex\r\n\r\n ▌ Ask Codex to do anything\r\n`));
@@ -369,6 +377,7 @@ export const scenarios = [
   claudeSession(),
   claudeQuestion(),
   claudeApiError(),
+  shellWrappedClaude(),
   codexSession(),
   bytesOnly(),
   titleOnly(),

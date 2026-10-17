@@ -1,4 +1,4 @@
-// Rust 版の profile (crates/misao-daemon/src/profile/*.json) と突き合わせるための、JS による参照実装。
+// Rust 版の profile (crates/misao-daemon/src/profiles/*.json) と突き合わせるための、JS による参照実装。
 // 規則の出どころは AZITO の画面規則 (agentScreenRules.ts の CLAUDE_SCREEN_RULES / CODEX_SCREEN_RULES と
 // splitPromptBox)。Rust 側はこれをデータ (JSON) として持つ。ここは「規則をコードで書いたらこうなる」という
 // 別実装で、判定の差分テストで両者が同じ列を出すことを確かめる。
@@ -136,23 +136,46 @@ function classify(rules, screen) {
   return best.state === 'working' || best.state === 'blocked' || best.state === 'idle' ? best.state : null;
 }
 
-/** cmd[0] の basename (先頭の env ラッパーは飛ばす)。Rust 側の cmd_program と同じ規則。 */
+const isAssignment = (w) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w);
+/** パスの最後の要素 (/ と \ で区切る) から .exe (大文字小文字を問わない) を除いたもの。Rust 側の base_name と同じ。 */
+const baseName = (s) => (s ?? '').split(/[\\/]/).pop().replace(/\.exe$/i, '');
+
+/** cmd[0] の basename (先頭の env ラッパーは飛ばす)。Rust 側の program_name と同じ規則。 */
 export function programName(cmd) {
-  let i = 0;
-  const base = (s) => (s ?? '').split('/').pop().replace(/\.exe$/i, '');
-  if (base(cmd[0]) === 'env') {
-    i = 1;
-    while (i < cmd.length) {
-      const a = cmd[i];
-      if (a === '-u' || a === '--unset' || a === '-C' || a === '--chdir') i += 2;
-      else if (a.startsWith('-') || /^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) i += 1;
-      else break;
+  if (baseName(cmd[0]) !== 'env') return baseName(cmd[0]);
+  let i = 1;
+  while (i < cmd.length) {
+    const a = cmd[i];
+    if (a === '-u' || a === '--unset' || a === '-C' || a === '--chdir') i += 2;
+    else if (a.startsWith('-') || isAssignment(a)) i += 1;
+    else break;
+  }
+  return i < cmd.length ? baseName(cmd[i]) : '';
+}
+
+const SHELLS = ['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish'];
+const COMMAND_PREFIXES = ['exec', 'command', 'nohup', 'env'];
+
+/** 起動コマンドが実行しようとしているプログラム名。シェルへ文字列で渡すときは、その各コマンドの先頭の語。Rust 側の command_programs と同じ。 */
+export function commandPrograms(cmd) {
+  const launcher = programName(cmd);
+  if (!SHELLS.includes(launcher)) return [launcher];
+  let script;
+  for (let i = 1; i < cmd.length; i++) {
+    if (cmd[i].startsWith('-') && !cmd[i].startsWith('--') && cmd[i].includes('c')) {
+      script = cmd[i + 1];
+      break;
     }
   }
-  return base(cmd[i]);
+  if (script === undefined) return [launcher];
+  return script
+    .split(/[&|;\n]/)
+    .map((segment) => segment.split(/\s+/).filter((w) => w !== '').find((w) => !isAssignment(w) && !COMMAND_PREFIXES.includes(w) && !w.startsWith('-')))
+    .filter((w) => w !== undefined)
+    .map((w) => baseName(w.replace(/^['"]+|['"]+$/g, '')));
 }
 
 export const referenceProfiles = [
-  { name: 'claude', matches: (cmd) => programName(cmd) === 'claude', classify: (screen) => classify(CLAUDE_RULES, screen) },
-  { name: 'codex', matches: (cmd) => programName(cmd) === 'codex', classify: (screen) => classify(CODEX_RULES, screen) },
+  { name: 'claude', matches: (cmd) => commandPrograms(cmd).includes('claude'), classify: (screen) => classify(CLAUDE_RULES, screen) },
+  { name: 'codex', matches: (cmd) => commandPrograms(cmd).includes('codex'), classify: (screen) => classify(CODEX_RULES, screen) },
 ];

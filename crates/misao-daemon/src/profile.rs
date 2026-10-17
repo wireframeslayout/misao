@@ -281,46 +281,104 @@ impl Profile {
         }
     }
 
-    fn matches(&self, cmd: &[String]) -> bool {
-        let program = program_name(cmd);
-        self.programs.contains(&program)
+    fn runs(&self, program: &str) -> bool {
+        self.programs.iter().any(|p| p == program)
+    }
+}
+
+/// パスの最後の要素（`/` と `\` で区切る）から、拡張子 `.exe`（大文字小文字を問わない）を除いたもの。
+fn base_name(word: &str) -> String {
+    let name = word.rsplit(['/', '\\']).next().unwrap_or_default();
+    let stem_len = name.len().checked_sub(4).filter(|&i| name.is_char_boundary(i));
+    match stem_len {
+        Some(i) if name[i..].eq_ignore_ascii_case(".exe") => name[..i].to_string(),
+        _ => name.to_string(),
     }
 }
 
 /// `cmd` の実行ファイル名。先頭が `env` なら、そのオプションと `NAME=VALUE` を飛ばした次の語を見る。
 fn program_name(cmd: &[String]) -> String {
-    let base = |s: &str| {
-        let name = s.rsplit(['/', '\\']).next().unwrap_or_default();
-        name.strip_suffix(".exe")
-            .or_else(|| name.strip_suffix(".EXE"))
-            .unwrap_or(name)
-            .to_string()
-    };
     let mut words = cmd.iter();
     let Some(first) = words.next() else {
         return String::new();
     };
-    if base(first) != "env" {
-        return base(first);
+    if base_name(first) != "env" {
+        return base_name(first);
     }
-    let is_assignment = |w: &str| {
-        w.split_once('=').is_some_and(|(name, _)| {
-            name.chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        })
-    };
     while let Some(word) = words.next() {
         match word.as_str() {
             "-u" | "--unset" | "-C" | "--chdir" => {
                 words.next();
             }
             w if w.starts_with('-') || is_assignment(w) => {}
-            w => return base(w),
+            w => return base_name(w),
         }
     }
     String::new()
+}
+
+fn is_assignment(word: &str) -> bool {
+    word.split_once('=').is_some_and(|(name, _)| {
+        name.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    })
+}
+
+const SHELLS: [&str; 6] = ["sh", "bash", "zsh", "dash", "ksh", "fish"];
+/// 先頭に付いても、その次の語が本体のコマンドであるもの。
+const COMMAND_PREFIXES: [&str; 4] = ["exec", "command", "nohup", "env"];
+
+/// 起動コマンドが実行しようとしているプログラム名。`sh -lc "cd d && claude --x"` のようにシェルへ文字列で渡すときは、
+/// その文字列の各コマンド（`&&` `||` `;` `|` `&` で区切った先頭の語）。そうでなければ `program_name` の 1 つ。
+fn command_programs(cmd: &[String]) -> Vec<String> {
+    let launcher = program_name(cmd);
+    if !SHELLS.contains(&launcher.as_str()) {
+        return vec![launcher];
+    }
+    let script = cmd.iter().enumerate().skip(1).find_map(|(i, arg)| {
+        let is_command_flag = arg.starts_with('-') && !arg.starts_with("--") && arg.contains('c');
+        is_command_flag.then(|| cmd.get(i + 1)).flatten()
+    });
+    let Some(script) = script else {
+        return vec![launcher];
+    };
+    script
+        .split(['&', '|', ';', '\n'])
+        .filter_map(|segment| {
+            let word = segment
+                .split_whitespace()
+                .find(|w| !is_assignment(w) && !COMMAND_PREFIXES.contains(w) && !w.starts_with('-'))?;
+            Some(base_name(word.trim_matches(['\'', '"'])))
+        })
+        .collect()
+}
+
+/// pane に使うプロファイル。前面プロセス名（`fg`）が分かればそれで選ぶ（シェルの中で後から始めたエージェントも拾う）。
+/// 前面が分からないとき、起動コマンドがシェル以外のとき、シェルがシェルのままのときは、起動コマンドが実行しようとしたプログラムで選ぶ。
+/// シェルの前面が別のプログラムなら、プロファイルなし。
+pub fn select_profile_for(
+    profiles: &[Arc<Profile>],
+    cmd: &[String],
+    fg: Option<&str>,
+) -> Option<Arc<Profile>> {
+    if let Some(name) = fg
+        && let Some(profile) = profiles.iter().find(|p| p.runs(name))
+    {
+        return Some(Arc::clone(profile));
+    }
+    // シェルの前面が別のプログラムなら、シェルが実行しようとしたものではない（たとえば claude が終わって git が前面）。
+    // シェル以外が起動コマンドなら（claude 自身や、sh のラッパースクリプト）、前面の名前が違っても起動コマンドで選ぶ。
+    let launcher = program_name(cmd);
+    if SHELLS.contains(&launcher.as_str()) && fg.is_some_and(|name| name != launcher) {
+        return None;
+    }
+    let programs = command_programs(cmd);
+    profiles
+        .iter()
+        .find(|p| programs.iter().any(|program| p.runs(program)))
+        .cloned()
 }
 
 /// 同梱のプロファイル（Claude Code / Codex）。
@@ -335,9 +393,9 @@ pub fn builtin_profiles() -> Result<Vec<Arc<Profile>>, String> {
         .collect()
 }
 
-/// cmd に最初に matches したプロファイル。
+/// 起動コマンドだけで選ぶ（前面プロセスが分かる前の最初の選択）。
 pub fn select_profile(profiles: &[Arc<Profile>], cmd: &[String]) -> Option<Arc<Profile>> {
-    profiles.iter().find(|p| p.matches(cmd)).cloned()
+    select_profile_for(profiles, cmd, None)
 }
 
 #[cfg(test)]
@@ -376,10 +434,39 @@ mod tests {
             pick(&["env", "-u", "CLAUDE_X", "FOO=1", "claude"]),
             Some("claude".into())
         );
-        assert_eq!(pick(&["C:\\bin\\claude.exe"]), Some("claude".into()));
+        assert_eq!(pick(&["C:\\bin\\claude.EXE"]), Some("claude".into()));
         assert_eq!(pick(&["bash"]), None);
         assert_eq!(pick(&["env"]), None);
         assert_eq!(pick(&[]), None);
+    }
+
+    #[test]
+    fn shell_wrapped_commands_are_judged_by_the_program_they_run() {
+        let profiles = builtin_profiles().unwrap();
+        let pick =
+            |c: &[&str], fg: Option<&str>| select_profile_for(&profiles, &cmd(c), fg).map(|p| p.name.clone());
+        assert_eq!(
+            pick(&["/bin/zsh", "-lc", "claude --model x"], None),
+            Some("claude".into())
+        );
+        assert_eq!(
+            pick(&["bash", "-c", "cd /w && ANTHROPIC=1 exec codex 'a b'"], None),
+            Some("codex".into())
+        );
+        assert_eq!(
+            pick(&["sh", "-c", "ls | grep x; claude"], None),
+            Some("claude".into())
+        );
+        assert_eq!(
+            pick(&["zsh", "-lc", "claude"], Some("zsh")),
+            Some("claude".into())
+        );
+        assert_eq!(pick(&["zsh", "-lc", "claude"], Some("git")), None);
+        assert_eq!(pick(&["zsh", "-l"], None), None);
+        assert_eq!(pick(&["zsh", "-i"], Some("claude")), Some("claude".into()));
+        assert_eq!(pick(&["zsh", "-i"], Some("zsh")), None);
+        assert_eq!(pick(&["claude"], Some("node")), Some("claude".into()));
+        assert_eq!(pick(&["python3", "-c", "claude"], None), None);
     }
 
     #[test]

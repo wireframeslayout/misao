@@ -129,7 +129,7 @@ mod tests {
             raw_ring_bytes: 1024,
             lines_ring_bytes: 1024,
             scrollback: 100,
-            profile: None,
+            profiles: Vec::new(),
             events: Arc::new(EventLog::new(10)),
         })
         .unwrap()
