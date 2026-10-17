@@ -18,8 +18,8 @@ pub struct SpawnRequest<'a> {
     pub cmd: &'a [String],
     pub cwd: &'a str,
     pub env: Vec<(OsString, OsString)>,
-    pub cols: u32,
-    pub rows: u32,
+    pub cols: u64,
+    pub rows: u64,
 }
 
 pub struct PtyProcess {
@@ -30,9 +30,9 @@ pub struct PtyProcess {
     pub child: Box<dyn Child + Send + Sync>,
 }
 
-/// 端末のサイズ。pty の寸法は 16 bit なので、超える値は上限に丸める。
-pub fn pty_size(cols: u32, rows: u32) -> PtySize {
-    let clamp = |n: u32| u16::try_from(n).unwrap_or(u16::MAX);
+/// 端末のサイズ。pty の寸法は 16 bit なので、pty へ渡すときだけ上限に丸める（報告する値は元のまま）。
+pub fn pty_size(cols: u64, rows: u64) -> PtySize {
+    let clamp = |n: u64| u16::try_from(n).unwrap_or(u16::MAX);
     PtySize {
         rows: clamp(rows),
         cols: clamp(cols),

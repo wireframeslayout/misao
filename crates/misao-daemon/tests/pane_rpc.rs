@@ -455,3 +455,34 @@ async fn shutdown_closes_every_pane_without_leaving_children() {
     core.shutdown().await;
     assert!(!is_alive(&child));
 }
+
+#[tokio::test]
+async fn sizes_beyond_16_bits_are_reported_as_given_and_only_clamped_for_the_pty() {
+    let tmp = TempDir::new().unwrap();
+    let out = tmp.path().join("out");
+    let mut c = connect(&core());
+    let script = format!("read x; stty size > {}", out.display());
+    let pane_id = open(&mut c, sh(&script), json!({"cols": 100_000, "rows": 70_000})).await;
+    let i = info(&mut c, &pane_id).await;
+    assert_eq!(
+        (i["cols"].as_u64(), i["rows"].as_u64()),
+        (Some(100_000), Some(70_000))
+    );
+    c.ok(
+        "pane.resize",
+        json!({"paneId": pane_id, "cols": 9_007_199_254_740_991u64, "rows": 3}),
+    )
+    .await;
+    let i = info(&mut c, &pane_id).await;
+    assert_eq!(i["cols"].as_u64(), Some(9_007_199_254_740_991));
+    c.ok("pane.write", json!({"paneId": pane_id, "data": "\n"})).await;
+    assert_eq!(read_file_when_ready(&out).await, "3 65535");
+    assert_eq!(
+        c.err_code(
+            "pane.resize",
+            json!({"paneId": pane_id, "cols": 9_007_199_254_740_992u64, "rows": 3})
+        )
+        .await,
+        INVALID_PARAMS
+    );
+}

@@ -1,8 +1,8 @@
 /// 適用すべきサイズの決定。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SizeDecision {
-    pub cols: u32,
-    pub rows: u32,
+    pub cols: u64,
+    pub rows: u64,
     /// このサイズを決めたクライアント。clientId なしの resize では None。
     pub owner: Option<String>,
 }
@@ -12,7 +12,7 @@ pub struct SizeDecision {
 #[derive(Debug, Default)]
 pub struct SizeArbiter {
     /// 並び順 = 操作の新しさ（末尾が最新）。
-    sizes: Vec<(String, u32, u32)>,
+    sizes: Vec<(String, u64, u64)>,
     owner: Option<String>,
 }
 
@@ -22,7 +22,7 @@ impl SizeArbiter {
     }
 
     /// client のサイズを記録し、そのクライアントを所有者にする。client なしは所有者を None にする。
-    pub fn record(&mut self, client: Option<&str>, cols: u32, rows: u32) -> SizeDecision {
+    pub fn record(&mut self, client: Option<&str>, cols: u64, rows: u64) -> SizeDecision {
         if let Some(id) = client {
             self.sizes.retain(|(known, _, _)| known != id);
             self.sizes.push((id.to_string(), cols, rows));

@@ -30,8 +30,8 @@ const READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// close で、リーダーの終了後にグループの残りが消えるのを確かめる間隔と、SIGKILL 後に待つ上限。
 const GROUP_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const GROUP_KILL_WAIT: Duration = Duration::from_secs(2);
-const DEFAULT_COLS: u32 = 80;
-const DEFAULT_ROWS: u32 = 24;
+const DEFAULT_COLS: u64 = 80;
+const DEFAULT_ROWS: u64 = 24;
 const READ_CHUNK: usize = 16 * 1024;
 /// 行ストリームの購読者の遅れがリング容量のこの割合を超えたら、追いつくまで pty を読まない（子の書き込みを止める）。
 /// 超えるまでは読み続け、リングが遅い購読者を吸収する。
@@ -45,8 +45,8 @@ pub struct PaneOpenOptions<'a> {
     pub env: BTreeMap<String, String>,
     /// spawn 時に子の環境へ足すだけで、Pane は保持しない。env と同じキーならこちらが勝つ。
     pub ephemeral_env: BTreeMap<String, String>,
-    pub cols: Option<u32>,
-    pub rows: Option<u32>,
+    pub cols: Option<u64>,
+    pub rows: Option<u64>,
     pub socket_path: &'a Path,
     /// 生出力リングの上限バイト数。
     pub raw_ring_bytes: usize,
@@ -73,8 +73,8 @@ struct Inner {
     state: RunState,
     exit: Option<ExitInfo>,
     last_output_at: Option<String>,
-    cols: u32,
-    rows: u32,
+    cols: u64,
+    rows: u64,
     sizes: SizeArbiter,
     /// 生の出力（pty から読んだままのバイト列）。attach の再生に使う（後続の段）。
     raw: SeqRing<Vec<u8>>,
@@ -346,7 +346,7 @@ impl Pane {
         lock(&self.inner).state
     }
 
-    pub fn size(&self) -> (u32, u32) {
+    pub fn size(&self) -> (u64, u64) {
         let inner = lock(&self.inner);
         (inner.cols, inner.rows)
     }
@@ -359,7 +359,7 @@ impl Pane {
     }
 
     /// client のサイズを記録し、そのクライアントをサイズ所有者にして pty へ適用する。
-    pub fn resize(&self, cols: u32, rows: u32, client: Option<&str>) -> Result<(), String> {
+    pub fn resize(&self, cols: u64, rows: u64, client: Option<&str>) -> Result<(), String> {
         let mut inner = lock(&self.inner);
         let decision = inner.sizes.record(client, cols, rows);
         self.apply(&mut inner, &decision)

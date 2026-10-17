@@ -89,23 +89,27 @@ fn integer(n: &Number) -> Option<i128> {
     }
 }
 
-/// 正の整数（cols / rows）。
+/// JavaScript の安全な整数の上限（Zod の `z.int()` が受ける範囲）。
+const MAX_SAFE_INTEGER: i128 = 9_007_199_254_740_991;
+
+/// 正の整数（cols / rows）。値はそのまま保持し、pty へ渡すときだけ 16 bit に丸める。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "Number")]
-pub struct Dimension(u32);
+pub struct Dimension(u64);
 
 impl TryFrom<Number> for Dimension {
     type Error = String;
     fn try_from(n: Number) -> Result<Self, String> {
         integer(&n)
-            .filter(|v| *v >= 1)
-            .map(|v| Self(u32::try_from(v).unwrap_or(u32::MAX)))
+            .filter(|v| (1..=MAX_SAFE_INTEGER).contains(v))
+            .and_then(|v| u64::try_from(v).ok())
+            .map(Self)
             .ok_or_else(|| format!("invalid value {n}: expected a positive integer"))
     }
 }
 
 impl Dimension {
-    pub fn get(self) -> u32 {
+    pub fn get(self) -> u64 {
         self.0
     }
 }
