@@ -10,7 +10,7 @@ use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::log::Logger;
-use crate::persistence::{PersistedState, save_persisted_state};
+use crate::persistence::{PersistedState, SaveError, save_persisted_state};
 
 /// サイズ変更の保存を遅らせる時間。連続した resize を 1 回の保存にまとめる。
 const SIZE_SAVE_DELAY: Duration = Duration::from_secs(1);
@@ -74,7 +74,12 @@ impl StatePersister {
                 issues.join("; ")
             ));
         }
-        save_persisted_state(&self.path, state).map_err(|e| e.to_string())?;
+        match save_persisted_state(&self.path, state) {
+            Ok(()) => {}
+            // rename の後の durability だけの失敗。ファイルは新しい内容なので成功として扱い（戻さない）、警告を残す。
+            Err(e @ SaveError::AfterRename(_)) => self.log.warn(&format!("persistence.json: {e}")),
+            Err(e) => return Err(e.to_string()),
+        }
         let mut soon = lock(&self.soon);
         if soon.generation == generation {
             soon.pending = false;

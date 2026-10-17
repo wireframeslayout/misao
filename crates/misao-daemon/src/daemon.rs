@@ -11,7 +11,9 @@ use tokio::task::JoinSet;
 use crate::connection::serve_connection;
 use crate::core::{Core, CoreOptions};
 use crate::profile::Profile;
-use crate::socket::{ensure_socket_dir, listen_unix_socket, lock_socket_start, remove_stale_socket};
+use crate::socket::{
+    ensure_data_dir, ensure_socket_dir, listen_unix_socket, lock_socket_start, remove_stale_socket,
+};
 use crate::{DaemonError, Limits, Logger, acquire_pid_file};
 
 const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(50);
@@ -54,8 +56,9 @@ impl Daemon {
             profiles,
         } = opts;
         ensure_socket_dir(&socket_path)?;
-        // 保存した状態の置き場所も、ソケットのディレクトリと同じ規則（所有者・mode・シンボリックリンク）で検証する。
-        ensure_socket_dir(&state_path)?;
+        // 保存した状態の置き場所（`--data`）は、本人の所有・シンボリックリンクでない・group/other が書けない、を検証する。
+        // 0755 の既存のディレクトリは許す（ソケットのディレクトリの 0700 の要件とは別）。
+        ensure_data_dir(&state_path)?;
         acquire_pid_file(&pid_path, std::process::id())?;
         // pid ファイルで排他を取った後に、保存した状態を読む。壊れていれば起動を止める（pid ファイルは残さない）。
         let core = match Core::new(CoreOptions {

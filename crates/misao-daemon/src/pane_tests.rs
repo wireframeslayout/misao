@@ -351,10 +351,20 @@ fn a_close_waits_for_an_attach_paused_between_the_pane_side_and_the_connection_s
         std::thread::spawn(move || pane.close_attachments().len())
     };
     std::thread::sleep(Duration::from_millis(200));
-    assert!(conn.attachment(&pane.id).is_none(), "the connection side is not registered yet");
+    assert!(
+        conn.attachment(&pane.id).is_none(),
+        "the connection side is not registered yet"
+    );
     release.wait(); // attach を再開する
-    assert!(attacher.join().unwrap(), "the attach that started before the close completes");
-    assert_eq!(closer.join().unwrap(), 1, "the close released it on the pane side");
+    assert!(
+        attacher.join().unwrap(),
+        "the attach that started before the close completes"
+    );
+    assert_eq!(
+        closer.join().unwrap(),
+        1,
+        "the close released it on the pane side"
+    );
     assert!(conn.attachment(&pane.id).is_none(), "and on the connection side");
     assert!(!pane.has_attachment_for("A"));
     // close の後の attach は断る
@@ -384,5 +394,8 @@ fn attaching_with_another_client_id_on_the_same_connection_displaces_the_old_cli
     assert_eq!(second.displaced.as_ref().map(|d| d.client_id.as_str()), Some("A"));
     assert!(!second.replaced);
     assert!(!pane.has_attachment_for("A") && pane.has_attachment_for("B"));
-    assert_eq!(conn.attachment(&pane.id).map(|a| a.id), Some(second.attachment.id));
+    assert_eq!(
+        conn.attachment(&pane.id).map(|a| a.id),
+        Some(second.attachment.id)
+    );
 }

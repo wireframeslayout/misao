@@ -211,9 +211,30 @@ fn open_for_read(path: &Path) -> io::Result<File> {
     options.open(path)
 }
 
+/// 保存の失敗。rename より前なら元のファイルは無傷（呼び出し側は変更を戻す）、後ならファイルは新しい内容になっている
+/// （durability だけの失敗: 戻してはいけない）。
+#[derive(Debug)]
+pub enum SaveError {
+    BeforeRename(io::Error),
+    AfterRename(io::Error),
+}
+
+impl std::fmt::Display for SaveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BeforeRename(e) => write!(f, "{e}"),
+            Self::AfterRename(e) => write!(
+                f,
+                "the file was replaced but its directory could not be synced: {e}"
+            ),
+        }
+    }
+}
+
 /// 同じディレクトリにランダムな名前の一時ファイルを排他的に（O_EXCL、シンボリックリンクを辿らない）作り、
 /// 書く -> ファイルを fsync -> rename -> 親ディレクトリを fsync する（途中で落ちても、電源断でも、元のファイルは壊れない）。
-pub fn save_persisted_state(path: &Path, state: &PersistedState) -> io::Result<()> {
+/// ディレクトリの fsync が使えないファイルシステム（EINVAL / ENOTSUP）では、黙って成功にする。
+pub fn save_persisted_state(path: &Path, state: &PersistedState) -> Result<(), SaveError> {
     let dir = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -224,11 +245,26 @@ pub fn save_persisted_state(path: &Path, state: &PersistedState) -> io::Result<(
         .unwrap_or_default();
     let tmp = dir.join(format!(".{name}.{}.tmp", crate::ids::new_ulid()));
     let written = write_synced(&tmp, state).and_then(|()| fs::rename(&tmp, path));
-    if written.is_err() {
+    if let Err(e) = written {
         let _ = fs::remove_file(&tmp);
-        return written;
+        return Err(SaveError::BeforeRename(e));
     }
-    sync_dir(dir)
+    classify_dir_sync(sync_dir(dir)).map_err(SaveError::AfterRename)
+}
+
+/// ディレクトリの fsync を持たないファイルシステムの「できない」は、失敗として扱わない。
+fn classify_dir_sync(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Err(e) if is_sync_unsupported(&e) => Ok(()),
+        other => other,
+    }
+}
+
+fn is_sync_unsupported(e: &io::Error) -> bool {
+    // EINVAL(22)、ENOTSUP / EOPNOTSUPP(95 Linux、45 / 102 macOS)
+    e.kind() == io::ErrorKind::Unsupported
+        || e.kind() == io::ErrorKind::InvalidInput
+        || matches!(e.raw_os_error(), Some(22 | 95 | 45 | 102))
 }
 
 fn write_synced(tmp: &Path, state: &PersistedState) -> io::Result<()> {
@@ -396,6 +432,22 @@ mod tests {
         let path = dir.path().join("persistence.json");
         fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
         assert!(load_persisted_state(&path).unwrap_err().contains("state:"));
+    }
+
+    #[test]
+    fn a_directory_sync_that_the_filesystem_cannot_do_is_not_a_failure_but_other_errors_are() {
+        for raw in [22, 95] {
+            assert!(
+                classify_dir_sync(Err(io::Error::from_raw_os_error(raw))).is_ok(),
+                "{raw}"
+            );
+        }
+        assert!(classify_dir_sync(Err(io::Error::from(io::ErrorKind::Unsupported))).is_ok());
+        assert!(
+            classify_dir_sync(Err(io::Error::from_raw_os_error(5))).is_err(),
+            "EIO is a real failure"
+        );
+        assert!(classify_dir_sync(Ok(())).is_ok());
     }
 
     #[test]

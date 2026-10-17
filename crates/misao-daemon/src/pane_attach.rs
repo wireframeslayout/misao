@@ -30,7 +30,12 @@ impl Pane {
     /// 行うので、再生が覆う範囲（〜head）とライブで届く範囲（head〜）に隙間も重なりも出ない。
     /// close が始まっていれば Err（古い attach は pane 側にも接続側にもそのまま残る）。
     /// pane 側の登録・差し替え、接続側の map の登録・差し替え、close の解除は、すべて `order` の中で行う（1 つの線形化点）。
-    pub fn attach(&self, conn: &Arc<ConnHandle>, client_id: &str, replay: Replay) -> Result<Attached, AttachRefused> {
+    pub fn attach(
+        &self,
+        conn: &Arc<ConnHandle>,
+        client_id: &str,
+        replay: Replay,
+    ) -> Result<Attached, AttachRefused> {
         let order = lock(&self.order);
         if lock(&self.inner).attach_closed {
             return Err(AttachRefused);
@@ -165,7 +170,11 @@ impl Pane {
 #[cfg(test)]
 impl Pane {
     /// 次の attach を、pane 側に登録した後・接続側に登録する前で止める。`arrived` で止まったことを知らせ、`release` で再開する。
-    pub(crate) fn pause_next_attach(&self, arrived: Arc<std::sync::Barrier>, release: Arc<std::sync::Barrier>) {
+    pub(crate) fn pause_next_attach(
+        &self,
+        arrived: Arc<std::sync::Barrier>,
+        release: Arc<std::sync::Barrier>,
+    ) {
         *lock(&self.attach_gate) = Some((arrived, release));
     }
 
