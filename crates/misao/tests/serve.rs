@@ -227,9 +227,12 @@ fn sigterm_finishes_even_when_a_client_never_reads_its_responses() {
     let mut stream = UnixStream::connect(dir.join("run/misao.sock")).unwrap();
     // server.schema (数十 KB) の応答を読まずに溜めさせ、デーモン側の送信を詰まらせる。
     let req = r#"{"jsonrpc":"2.0","id":1,"method":"server.schema"}"#;
-    stream
-        .write_all(format!("{req}\n").repeat(600).as_bytes())
-        .unwrap();
+    // macOS など送受信バッファが小さい環境では、デーモンが読むのをやめた後の書き込みが止まるので、別スレッドで書く。
+    let mut writer = stream.try_clone().unwrap();
+    let payload = format!("{req}\n").repeat(600);
+    std::thread::spawn(move || {
+        let _ = writer.write_all(payload.as_bytes());
+    });
     std::thread::sleep(Duration::from_millis(500));
     kill(Pid::from_raw(child.id().try_into().unwrap()), Signal::SIGTERM).unwrap();
     let status = wait_exit(&mut child, Duration::from_secs(5));
