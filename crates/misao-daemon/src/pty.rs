@@ -107,7 +107,7 @@ pub fn spawn(req: &SpawnRequest<'_>) -> Result<PtyProcess, String> {
 mod platform {
     use nix::errno::Errno;
     use nix::sys::signal::{Signal, killpg};
-    use nix::sys::wait::{Id, WaitPidFlag, WaitStatus, waitid, waitpid};
+    use nix::sys::wait::{WaitStatus, waitpid};
     use nix::unistd::Pid;
 
     use super::{Child, ExitInfo};
@@ -121,6 +121,18 @@ mod platform {
     /// `waitid(WNOWAIT)` と /proc の走査が使える Linux だけ。他の Unix は終了時に回収する。
     pub const LEADER_HELD: bool = cfg!(target_os = "linux");
 
+    /// 終了を待つ。Linux では回収しない（`waitid(WNOWAIT)`）。
+    #[cfg(target_os = "linux")]
+    fn wait_without_reaping_if_held(pid: Pid) -> nix::Result<WaitStatus> {
+        use nix::sys::wait::{Id, WaitPidFlag, waitid};
+        waitid(Id::Pid(pid), WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn wait_without_reaping_if_held(pid: Pid) -> nix::Result<WaitStatus> {
+        waitpid(pid, None)
+    }
+
     /// 子の終了まで待つ（ブロッキング）。Linux では回収しないまま終了を検知する（`LEADER_HELD`）。
     /// pty の子はセッションリーダーなので、wait は自分で行う
     /// （portable-pty の wait はシグナルの番号を名前に変えてしまうため）。
@@ -131,12 +143,7 @@ mod platform {
         };
         let Some(pid) = pgid(pid) else { return unknown };
         loop {
-            let waited = if LEADER_HELD {
-                waitid(Id::Pid(pid), WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT)
-            } else {
-                waitpid(pid, None)
-            };
-            match waited {
+            match wait_without_reaping_if_held(pid) {
                 Ok(WaitStatus::Exited(_, code)) => {
                     return ExitInfo {
                         exit_code: Some(code),
