@@ -78,13 +78,22 @@ async fn the_pipe_grants_access_to_the_current_user_only() {
     .unwrap();
 
     let sid = current_sid();
+    // SDDL は RID 500 の SID を `LA`（組み込みの Administrator）に略す（CI のランナーのユーザーがそれ）。
+    let trustee = if sid.ends_with("-500") {
+        "LA".to_string()
+    } else {
+        sid.clone()
+    };
     // `D:P(A;;FA;;;<sid>)` だけ。Everyone (WD)、匿名 (AN)、SYSTEM (SY)、管理者 (BA) などは入っていない。
     assert!(
         sddl.starts_with("D:P"),
         "the DACL is protected (no inheritance): {sddl}"
     );
     assert_eq!(sddl.matches("(A;").count(), 1, "exactly one allow entry: {sddl}");
-    assert!(sddl.contains(&format!(";;;{sid})")), "only {sid}: {sddl}");
+    assert!(
+        sddl.contains(&format!(";;;{trustee})")),
+        "only {sid} ({trustee}): {sddl}"
+    );
     for other in ["WD", "AN", "SY", "BA", "AU", "BU", "IU"] {
         assert!(
             !sddl.contains(&format!(";;;{other})")),
