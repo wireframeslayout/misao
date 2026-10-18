@@ -80,6 +80,11 @@ fn protocol_schema() -> RpcResult<Value> {
 }
 
 impl Core {
+    /// 起動世代（`server.info` の epoch）。
+    pub fn epoch(&self) -> &str {
+        &self.epoch
+    }
+
     /// 状態を復元して中核を作る。保存先のファイルが壊れていれば Err（起動を止める）。
     pub fn new(opts: CoreOptions) -> Result<Arc<Self>, String> {
         let CoreOptions {

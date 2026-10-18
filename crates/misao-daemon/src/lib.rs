@@ -74,6 +74,7 @@ mod pid_file;
 mod socket;
 #[cfg(windows)]
 mod stop_event;
+mod stop_name;
 #[cfg(windows)]
 mod win_security;
 #[cfg(windows)]

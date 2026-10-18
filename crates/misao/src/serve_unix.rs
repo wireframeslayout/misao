@@ -27,7 +27,7 @@ impl Shutdown {
     }
 
     /// SIGINT / SIGTERM / SIGHUP のどれかが届いたら完了する。
-    pub fn wait_future(mut self, _endpoint: &str) -> io::Result<impl Future<Output = ()>> {
+    pub fn wait_future(mut self, _endpoint: &str, _epoch: &str) -> io::Result<impl Future<Output = ()>> {
         Ok(async move {
             tokio::select! {
                 _ = self.int.recv() => {}

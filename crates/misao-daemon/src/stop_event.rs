@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use sha2::{Digest, Sha256};
 use tokio::sync::Notify;
 use windows_sys::Win32::Foundation::{
     ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, GetLastError, WAIT_OBJECT_0, WAIT_TIMEOUT,
@@ -18,16 +17,14 @@ use windows_sys::Win32::System::Threading::{
     CreateEventW, EVENT_MODIFY_STATE, OpenEventW, OpenProcess, SetEvent, WaitForSingleObject,
 };
 
+use crate::stop_name::stop_event_name;
 use crate::win_security::{Handle, UserOnlyAcl};
 
 /// 停止の要求を待つ間隔（これより細かくは終了を確かめない）。
 const POLL: Duration = Duration::from_millis(200);
 
-/// 接続口の名前から決まるイベント名。別のセッション（SSH など）からも見えるよう `Global\` に置く。
-fn event_name(endpoint: &str) -> Vec<u16> {
-    let digest = Sha256::digest(endpoint.to_lowercase().as_bytes());
-    let hash: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
-    format!("Global\\misao-stop-{hash}")
+fn event_name(endpoint: &str, epoch: &str) -> Vec<u16> {
+    stop_event_name(endpoint, epoch)
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect()
@@ -41,9 +38,9 @@ pub struct StopEvent {
 
 impl StopEvent {
     /// 起動したユーザーだけが立てられるイベントを作り、待つスレッドを始める。
-    pub fn create(endpoint: &str) -> io::Result<Self> {
+    pub fn create(endpoint: &str, epoch: &str) -> io::Result<Self> {
         let acl = UserOnlyAcl::new()?;
-        let name = event_name(endpoint);
+        let name = event_name(endpoint, epoch);
         // SAFETY: `acl.attributes()` は有効な SECURITY_ATTRIBUTES、`name` は NUL 終端の UTF-16。手動リセットの、立っていないイベント。
         let handle = unsafe { CreateEventW(acl.attributes().cast(), 1, 0, name.as_ptr()) };
         if handle.is_null() {
@@ -87,9 +84,9 @@ impl Drop for StopEvent {
     }
 }
 
-/// 接続口 `endpoint` のデーモンに停止を要求する。デーモンのイベントが無ければ false。
-pub fn request_stop(endpoint: &str) -> io::Result<bool> {
-    let name = event_name(endpoint);
+/// 接続口 `endpoint` の、起動世代が `epoch` のデーモンに停止を要求する。デーモンのイベントが無ければ false。
+pub fn request_stop(endpoint: &str, epoch: &str) -> io::Result<bool> {
+    let name = event_name(endpoint, epoch);
     // SAFETY: `name` は NUL 終端の UTF-16。イベントを立てる権限だけで開く。
     let handle = unsafe { OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr()) };
     if handle.is_null() {

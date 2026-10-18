@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
+sha2.workspace = true
 portable-pty.workspace = true
 misao-protocol.workspace = true
 regex.workspace = true
@@ -25,7 +26,6 @@ vte.workspace = true
 nix.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-sha2.workspace = true
 windows-sys = { workspace = true, features = [
   "Win32_Foundation",
   "Win32_Security",

@@ -98,7 +98,8 @@ pub async fn serve(env: &Env, config: &Config, args: ServeArgs) -> Result<(), Cl
     })
     .await
     .map_err(|e| CliError::runtime(&e))?;
-    match shutdown.wait_future(&endpoint) {
+    let epoch = daemon.epoch().to_string();
+    match shutdown.wait_future(&endpoint, &epoch) {
         Ok(wait) => {
             daemon.run(wait).await;
             Ok(())

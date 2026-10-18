@@ -36,8 +36,8 @@ impl Shutdown {
 
     /// Ctrl+C / Ctrl+Break / コンソールを閉じる / ログオフ / シャットダウン、または `misao stop` で完了する。
     /// `misao stop` の窓口（名前付きイベント）は、接続口を確保した後（デーモンの起動後）に作る。
-    pub fn wait_future(mut self, endpoint: &str) -> io::Result<impl Future<Output = ()>> {
-        let stop = StopEvent::create(endpoint)?;
+    pub fn wait_future(mut self, endpoint: &str, epoch: &str) -> io::Result<impl Future<Output = ()>> {
+        let stop = StopEvent::create(endpoint, epoch)?;
         Ok(async move {
             tokio::select! {
                 _ = self.ctrl_c.recv() => {}

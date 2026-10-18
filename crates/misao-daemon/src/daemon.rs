@@ -84,6 +84,11 @@ impl Daemon {
         })
     }
 
+    /// このデーモンの起動世代（`server.info` の epoch）。
+    pub fn epoch(&self) -> &str {
+        self.core.epoch()
+    }
+
     /// `shutdown` が完了するまで接続を受け付け、完了したら接続を切ってソケットと pid ファイルを消す。
     pub async fn run(mut self, shutdown: impl Future<Output = ()>) {
         let mut conns = JoinSet::new();
