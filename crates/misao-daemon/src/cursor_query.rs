@@ -15,6 +15,11 @@ pub struct CursorQueryScanner {
 const QUERY: &[u8] = b"\x1b[6n";
 
 impl CursorQueryScanner {
+    /// 持ち越している `ESC` `ESC[` `ESC[6` を取り出す（終了時に、通常の出力として流すため）。
+    pub fn take_held(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.held)
+    }
+
     /// 問い合わせを除いた出力と、除いた問い合わせの数を返す。
     pub fn extract(&mut self, data: &[u8]) -> (Vec<u8>, usize) {
         let mut input = std::mem::take(&mut self.held);
@@ -84,6 +89,17 @@ mod tests {
         clean.extend(rest);
         found += n;
         assert_eq!((clean, found), (b"\x1b[5n\x1b[6c\x1b[?6n\x1b6n\x1b!".to_vec(), 1));
+    }
+
+    #[test]
+    fn an_unfinished_prefix_at_the_end_can_be_taken_back() {
+        for prefix in [&b"\x1b"[..], b"\x1b[", b"\x1b[6"] {
+            let mut scanner = CursorQueryScanner::default();
+            let (clean, found) = scanner.extract(&[b"ab".as_slice(), prefix].concat());
+            assert_eq!((clean, found), (b"ab".to_vec(), 0));
+            assert_eq!(scanner.take_held(), prefix);
+            assert_eq!(scanner.take_held(), b"", "taken once");
+        }
     }
 
     #[test]

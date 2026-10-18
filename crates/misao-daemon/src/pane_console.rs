@@ -10,7 +10,7 @@ impl Pane {
     ///
     /// Windows の出力のパイプは ConPTY を閉じるまで EOF にならないので、次の順で止める:
     /// 1. Job の動作中プロセスが 0 になるのを待つ（孫の出力も読む）。`DESCENDANTS_WAIT` で打ち切る。
-    /// 2. ConPTY を閉じる（ClosePseudoConsole が残りの出力を流し切ってから、出力のパイプを閉じる）。
+    /// 2. 残っていれば Job ごと止め（`TerminateJobObject`）、Job が空になるのを待ってから、ConPTY を閉じる（ClosePseudoConsole が残りの出力を流し切ってから、出力のパイプを閉じる）。
     /// 3. reader が EOF を見て止まるのを待つ（`CONSOLE_CLOSE_WAIT`）。
     pub(super) fn finish_console(&self, drained: &mpsc::Receiver<()>) {
         if !cfg!(windows) {
@@ -20,6 +20,14 @@ impl Pane {
         let started = Instant::now();
         while self.tree.group_state() == GroupState::Alive && started.elapsed() < DESCENDANTS_WAIT {
             std::thread::sleep(Duration::from_millis(20));
+        }
+        // 24H2 より前の Windows は、孫が残っていると ClosePseudoConsole が戻らないことがあるので、閉じる前に Job ごと止める。
+        if self.tree.group_state() != GroupState::Empty {
+            self.tree.kill();
+            let killed = Instant::now();
+            while self.tree.group_state() == GroupState::Alive && killed.elapsed() < JOB_EMPTY_WAIT {
+                std::thread::sleep(Duration::from_millis(20));
+            }
         }
         drop(lock(&self.master).take());
         let _ = drained.recv_timeout(CONSOLE_CLOSE_WAIT);

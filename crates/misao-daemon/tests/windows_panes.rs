@@ -270,3 +270,34 @@ async fn output_of_a_grandchild_after_the_leader_exits_is_not_lost() {
     // 孫が終わって、Job は空になっている
     c.ok("pane.close", json!({"paneId": pane})).await;
 }
+
+/// ConPTY を閉じる前に残りの孫を止めるので、長く残る孫がいても、終了は有限の時間で済み、孫は消える。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_long_lived_grandchild_does_not_stall_the_exit() {
+    let tmp = TempDir::new().unwrap();
+    let pid_file = tmp.path().join("grandchild.pid");
+    let script = format!(
+        "$p = Start-Process ping -ArgumentList '-n','300','127.0.0.1' -NoNewWindow -PassThru; Set-Content -Path '{}' -Value $p.Id",
+        pid_file.display()
+    );
+    let mut c = connect(&core());
+    let started = Instant::now();
+    let pane = open(
+        &mut c,
+        json!(["powershell.exe", "-NoProfile", "-Command", script]),
+        json!({}),
+    )
+    .await;
+    wait_exit(&mut c, &pane).await;
+    assert!(
+        started.elapsed() < Duration::from_secs(15),
+        "exit took {:?}",
+        started.elapsed()
+    );
+    let grandchild = std::fs::read_to_string(&pid_file).unwrap().trim().to_string();
+    assert!(
+        !is_alive(&grandchild),
+        "the grandchild was stopped before the console was closed"
+    );
+    c.ok("pane.close", json!({"paneId": pane})).await;
+}

@@ -49,6 +49,8 @@ const KILL_GRACE: Duration = Duration::from_secs(3);
 const READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// Windows: リーダーの終了後、残りのプロセス（孫）が終わるのを待つ上限。過ぎたら ConPTY を閉じる。
 const DESCENDANTS_WAIT: Duration = Duration::from_secs(3);
+/// Windows: 孫を Job ごと止めてから、Job が空になるのを待つ上限。
+const JOB_EMPTY_WAIT: Duration = Duration::from_secs(2);
 /// Windows: ConPTY を閉じてから、reader が残りの出力を読み終えて止まるのを待つ上限。
 const CONSOLE_CLOSE_WAIT: Duration = Duration::from_secs(5);
 /// close で、リーダーの終了後にグループの残りが消えるのを確かめる間隔と、SIGKILL 後に待つ上限。
@@ -361,6 +363,11 @@ impl Pane {
             pane.wakeup.notify();
             // 残りの出力を読み切ってから終了を報告する（終了直前の出力を取りこぼさない）。
             pane.finish_console(&drained_rx);
+            // 問い合わせかもしれない末尾の `ESC` `ESC[` `ESC[6` は、reader が止まった後に通常の出力として取り込む
+            let rest = lock(&pane.cursor_query).take_held();
+            if !rest.is_empty() {
+                pane.ingest(&rest);
+            }
             pane.on_exit(exit);
         });
     }
