@@ -152,7 +152,7 @@ jobs:
       - if: runner.os == 'macOS'
         run: chmod +x node_modules/node-pty/prebuilds/*/spawn-helper
       - run: cargo build --release --locked -p misao ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: misao-${{ matrix.name }}
           path: ${{ matrix.bin }}
