@@ -67,6 +67,13 @@ describe('applyCargoVersion', () => {
     assert.ok(next.cargoLock.includes('name = "misao-other"\nversion = "0.0.0"'));
   });
 
+  it('keeps CRLF line endings (a Windows checkout)', () => {
+    const crlf = (text) => text.replaceAll('\n', '\r\n');
+    const next = applyCargoVersion({ cargoToml: crlf(CARGO_TOML), cargoLock: crlf(CARGO_LOCK), version: '1.2.3' });
+    assert.ok(next.cargoToml.includes('[workspace.package]\r\nversion = "1.2.3"\r\nedition'));
+    assert.ok(next.cargoLock.includes('name = "misao-daemon"\r\nversion = "1.2.3"\r\n'));
+  });
+
   it('fails instead of silently skipping when a workspace crate is missing from Cargo.lock', () => {
     const lock = CARGO_LOCK.replace(lockEntry('misao-daemon', '0.0.0'), '');
     assert.throws(() => applyCargoVersion({ cargoToml: CARGO_TOML, cargoLock: lock, version: '1.0.0' }), /expected 3/);

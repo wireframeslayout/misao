@@ -74,12 +74,13 @@ export function applyCargoVersion({ cargoToml, cargoLock, version }) {
   const nextSection = cargoToml.indexOf('\n[', sectionStart + 1);
   const sectionEnd = nextSection < 0 ? cargoToml.length : nextSection;
   const section = cargoToml.slice(sectionStart, sectionEnd);
-  const versionLine = /^version = "[^"]*"$/m;
+  // Windows の checkout は改行が CRLF のことがある。改行の種類はそのまま残す。
+  const versionLine = /^version = "[^"]*"(?=\r?$)/m;
   if (!versionLine.test(section)) throw new Error('[workspace.package] in Cargo.toml has no version line');
   const nextToml = cargoToml.slice(0, sectionStart) + section.replace(versionLine, `version = "${version}"`) + cargoToml.slice(sectionEnd);
 
   let replaced = 0;
-  const lockPattern = new RegExp(`(\\[\\[package\\]\\]\\nname = "(?:${CARGO_CRATES.join('|')})"\\nversion = ")[^"]*(")`, 'g');
+  const lockPattern = new RegExp(`(\\[\\[package\\]\\]\\r?\\nname = "(?:${CARGO_CRATES.join('|')})"\\r?\\nversion = ")[^"]*(")`, 'g');
   const nextLock = cargoLock.replace(lockPattern, (_, head, tail) => {
     replaced += 1;
     return `${head}${version}${tail}`;
