@@ -3,8 +3,10 @@
 use std::path::{Component, Path, PathBuf};
 
 /// `sockaddr_un.sun_path` は Linux で 108 バイト（終端 NUL を含む）。
+#[cfg(not(windows))]
 pub const MAX_SOCKET_PATH_BYTES: usize = 107;
 
+#[cfg(not(windows))]
 const SOCKET_FILE_NAME: &str = "misao.sock";
 const CONFIG_FILE_NAME: &str = "misao.json";
 const DEFAULT_DIR_NAME: &str = ".misao";
@@ -13,6 +15,12 @@ const DEFAULT_DIR_NAME: &str = ".misao";
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[error("{0}")]
 pub struct PathError(String);
+
+impl PathError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+}
 
 /// 解決に使う環境変数。空文字は未設定として扱う。
 #[derive(Debug, Default, Clone)]
@@ -49,7 +57,10 @@ pub fn normalize_lexical(path: &Path) -> PathBuf {
 fn expand_home(source: &str, value: &str, home: &str) -> Result<PathBuf, PathError> {
     let expanded = if value == "~" {
         PathBuf::from(home)
-    } else if let Some(rest) = value.strip_prefix("~/") {
+    } else if let Some(rest) = value
+        .strip_prefix("~/")
+        .or_else(|| value.strip_prefix("~\\").filter(|_| cfg!(windows)))
+    {
         normalize_lexical(&Path::new(home).join(rest))
     } else {
         PathBuf::from(value)
@@ -98,6 +109,15 @@ pub fn config_candidates_in_dirs(
 
 /// ソケットパスを解決する。
 /// 優先順: `$MISAO_SOCKET` > `explicit` > `$MISAO_DIR/misao.sock` > `~/.misao/misao.sock`。
+/// Windows の接続口は名前付きパイプ（Unix ソケットのパスではない）で、名前は `pipe_name` が決める。
+#[cfg(windows)]
+pub fn resolve_socket_path(env: &PathEnv, explicit: Option<&str>, home: &str) -> Result<PathBuf, PathError> {
+    let user = crate::win_user::current_user_name()
+        .map_err(|e| PathError::new(format!("cannot determine the user name: {e}")))?;
+    crate::pipe_name::resolve_pipe_name(env, explicit, home, &user).map(PathBuf::from)
+}
+
+#[cfg(not(windows))]
 pub fn resolve_socket_path(env: &PathEnv, explicit: Option<&str>, home: &str) -> Result<PathBuf, PathError> {
     let resolved = if let Some(socket) = set(env.socket.as_deref()) {
         expand_home("MISAO_SOCKET", socket, home)?

@@ -6,8 +6,11 @@ mod attach_handlers;
 mod attachment;
 mod byte_activity;
 mod child_env;
+#[cfg(any(windows, test))]
+mod cmd_resolve;
 mod connection;
 mod core;
+mod cursor_query;
 mod event_log;
 mod foreground;
 mod foreground_sampler;
@@ -27,6 +30,7 @@ mod profile;
 mod profile_rules;
 mod pty;
 mod registry;
+mod repaint_filter;
 mod ring;
 mod rpc;
 mod rpc_error;
@@ -57,25 +61,38 @@ pub use limits::Limits;
 pub use log::{LogLevel, Logger};
 pub use profile::{Profile, builtin_profiles};
 
-#[cfg(unix)]
 mod daemon;
 #[cfg(unix)]
+#[path = "endpoint_unix.rs"]
+mod endpoint;
+#[cfg(windows)]
+#[path = "endpoint_windows.rs"]
+mod endpoint;
 mod error;
-#[cfg(unix)]
+#[cfg(windows)]
+mod pid_alive_windows;
 mod pid_file;
 #[cfg(unix)]
 mod socket;
+#[cfg(windows)]
+mod stop_event;
+mod stop_name;
+#[cfg(windows)]
+mod win_security;
+#[cfg(windows)]
+pub use win_security::check_pipe_server;
+#[cfg(windows)]
+mod windows_dir;
 
-#[cfg(unix)]
 pub use daemon::{Daemon, DaemonOptions};
-#[cfg(unix)]
 pub use error::DaemonError;
-#[cfg(unix)]
 pub use pid_file::acquire_pid_file;
 #[cfg(unix)]
 pub use socket::{
     ensure_data_dir, ensure_socket_dir, listen_unix_socket, lock_socket_start, remove_stale_socket,
 };
+#[cfg(windows)]
+pub use stop_event::{StopEvent, request_stop, wait_process_exit};
 
 #[cfg(test)]
 mod node_diff_tests;

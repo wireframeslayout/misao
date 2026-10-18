@@ -4,9 +4,10 @@ import * as fs from 'node:fs';
 import { killChild, stopChild } from './child.js';
 import { cleanEnv } from './daemon-process.js';
 import { nodeCmd } from './node-cmd.js';
+import { filePath } from './platform.js';
 import { waitFor } from './wait.js';
 
-const FAKE_HUB = new URL('../../src/fixtures/fake-hub.ts', import.meta.url).pathname;
+const FAKE_HUB = filePath('../../src/fixtures/fake-hub.ts', import.meta.url);
 
 export interface HubFiles {
   socket: string;

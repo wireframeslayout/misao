@@ -1,20 +1,32 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-
-use nix::errno::Errno;
-use nix::sys::signal::kill;
-use nix::unistd::Pid;
 
 use crate::DaemonError;
 
 /// pid のプロセスが生きているか。EPERM は「存在するが権限がない」なので生存扱い。
+#[cfg(unix)]
 fn is_alive(pid: i32) -> bool {
+    use nix::errno::Errno;
+    use nix::sys::signal::kill;
+    use nix::unistd::Pid;
+
     match kill(Pid::from_raw(pid), None) {
         Ok(()) => true,
         Err(e) => e == Errno::EPERM,
     }
+}
+
+#[cfg(windows)]
+use crate::pid_alive_windows::is_alive;
+
+/// 秘密のファイルとして作る（Unix は 600。Windows は置き場所のディレクトリの ACL による）。
+fn create_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options
 }
 
 /// 先頭の 10 進数を pid として読む（Node の `parseInt` と同じ。中身が pid でなければ None）。
@@ -32,12 +44,7 @@ fn parse_pid(text: &str) -> Option<i32> {
 pub fn acquire_pid_file(pid_path: &Path, pid: u32) -> Result<(), DaemonError> {
     let ctx = |e| DaemonError::io(format!("cannot write {}", pid_path.display()), e);
     for _ in 0..2 {
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(pid_path)
-        {
+        match create_options().open(pid_path) {
             Ok(mut f) => return f.write_all(pid.to_string().as_bytes()).map_err(ctx),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(ctx(e)),

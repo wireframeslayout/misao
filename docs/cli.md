@@ -67,6 +67,7 @@ Rules worth knowing:
 | `events` | Follow daemon events |
 | `label` | Set or remove labels |
 | `status` | Show daemon status |
+| `stop` | Stop the running daemon (Rust build only) |
 | `schema` | Print the protocol JSON schema |
 | `serve` | Run the daemon in the foreground |
 
@@ -199,6 +200,20 @@ misao status [--json]
 Prints protocol version, pid, epoch, uptime, pane count, and socket. Exit code `0` when the daemon
 runs, `1` when it is not reachable (`--json`: `{"running": false, "socket": ...}`).
 
+### stop
+
+```text
+misao stop [--json]
+```
+
+Stops the running daemon: it closes every pane, saves its state, removes its socket and pid file,
+and exits. The command returns after the daemon has finished (up to 15 seconds), printing
+`[misao] 停止しました（pid N）` (`--json`: `{"stopped": true, "pid": N, "socket": ...}`).
+It fails with `daemon_unreachable` when no daemon runs. **Rust build only** (the Node build has no
+`stop`): on Linux and macOS it sends `SIGTERM` to the pid reported by `server.info`; on Windows, which has no
+signals, it sets a named event that only the launching user can open (see [Windows](en/windows.md)). The
+protocol is not involved, so `PROTOCOL_VERSION` stays `0.3.0`.
+
 ### schema
 
 ```text
@@ -214,7 +229,8 @@ and error codes.
 misao serve [--socket PATH] [--data DIR]
 ```
 
-Runs the daemon in the foreground until `SIGINT`, `SIGTERM`, or `SIGHUP`, then closes the panes
+Runs the daemon in the foreground until `SIGINT`, `SIGTERM`, or `SIGHUP` (on Windows: Ctrl+C,
+Ctrl+Break, closing the console, logoff or shutdown), or until `misao stop` (Rust build), then closes the panes
 and exits. Settings come from `misao.json`; `--socket` overrides the socket path and `--data`
 the directory of `daemon.pid` and `persistence.json` (default: the socket's directory). To
 run it as a service see [deploy/README.md](../deploy/README.md).

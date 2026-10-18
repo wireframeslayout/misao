@@ -7,6 +7,7 @@ import { REPO_ROOT, cleanEnvPrefix, openPane, paneInfo, passTrustDialog, screenT
 import { startDaemonProcess } from './helpers/daemon-process.js';
 import type { DaemonProcess } from './helpers/daemon-process.js';
 import { skipUnless } from './helpers/optin.js';
+import { IS_WINDOWS, skipOnWindows } from './helpers/platform.js';
 import { waitFor, waitQuiet } from './helpers/wait.js';
 
 /** detach の prefix 候補になりうる制御キー。pane に素通しで送っても、アプリが落ちないことを確かめる。 */
@@ -32,7 +33,7 @@ const APPS: App[] = [
       await waitFor(async () => (await client.request('pane.screen', { paneId })).altScreen, 'vim to enter the alt screen');
       await typeKeys(client, paneId, 'w');
     },
-    options: {},
+    options: skipOnWindows('vim が要る'),
   },
   {
     name: 'bash (readline)',
@@ -41,7 +42,16 @@ const APPS: App[] = [
       await typeKeys(client, paneId, 'echo hello');
       await waitFor(async () => (await screenText(client, paneId)).includes('echo hello'), 'the typed text to appear');
     },
-    options: {},
+    options: skipOnWindows('bash が要る'),
+  },
+  {
+    name: 'cmd.exe (Windows のコンソールの行編集)',
+    cmd: () => ['cmd.exe'],
+    setup: async (client, paneId) => {
+      await typeKeys(client, paneId, 'echo hello');
+      await waitFor(async () => (await screenText(client, paneId)).includes('echo hello'), 'the typed text to appear');
+    },
+    options: IS_WINDOWS ? {} : { skip: 'Windows だけ' },
   },
   {
     name: 'claude (haiku, idle)',

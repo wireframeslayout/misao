@@ -29,11 +29,9 @@ fn fail<T>(message: String) -> Result<T, ConfigError> {
 pub struct Config {
     /// `misao.json` の `socket`（未解決。`~/` 展開と長さの検査は呼び出し側で行う）。
     pub socket: Option<String>,
-    /// デーモンのログ閾値。`serve`（unix のみ）が使う。
-    #[cfg_attr(not(unix), allow(dead_code))]
+    /// デーモンのログ閾値。`serve` が使う。
     pub log_level: LogLevel,
-    /// スクロールバックとリングの上限。`serve`（unix のみ）が使う。
-    #[cfg_attr(not(unix), allow(dead_code))]
+    /// スクロールバックとリングの上限。`serve` が使う。
     pub limits: Limits,
     /// attach のキー割り当て。
     pub keys: KeyBindings,

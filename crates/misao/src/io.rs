@@ -116,8 +116,27 @@ impl Sink for StdSink {
     }
 }
 
+/// 環境変数の表。Windows は名前の大文字小文字を区別しない（`ComSpec` と `COMSPEC` は同じ）ので、大文字にそろえて引けるようにする。
 fn env_map() -> HashMap<String, String> {
-    std::env::vars().collect()
+    env_map_from(std::env::vars(), cfg!(windows))
+}
+
+fn env_map_from(
+    vars: impl IntoIterator<Item = (String, String)>,
+    is_case_insensitive: bool,
+) -> HashMap<String, String> {
+    vars.into_iter()
+        .map(|(key, value)| {
+            (
+                if is_case_insensitive {
+                    key.to_uppercase()
+                } else {
+                    key
+                },
+                value,
+            )
+        })
+        .collect()
 }
 
 /// 実プロセスの `CliIo`。
@@ -177,6 +196,14 @@ pub fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_environment_names_are_matched_case_insensitively() {
+        let vars = || [("ComSpec".to_string(), "C:\\cmd.exe".to_string())];
+        let windows = env_map_from(vars(), true);
+        assert_eq!(comspec_shell(&windows).as_deref(), Some("C:\\cmd.exe"));
+        assert_eq!(comspec_shell(&env_map_from(vars(), false)), None);
+    }
 
     #[test]
     fn windows_uses_comspec_and_nothing_else() {

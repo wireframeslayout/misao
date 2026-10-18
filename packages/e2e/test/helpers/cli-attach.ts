@@ -2,9 +2,10 @@ import * as pty from 'node-pty';
 import type { DaemonProcess } from './daemon-process.js';
 import { REPO_ROOT } from './agents.js';
 import { nodeCmd } from './node-cmd.js';
+import { filePath } from './platform.js';
 import { waitFor } from './wait.js';
 
-const CLI_MAIN = new URL('../../../cli/src/main.ts', import.meta.url).pathname;
+const CLI_MAIN = filePath('../../../cli/src/main.ts', import.meta.url);
 
 /** 既定の attach 設定 (prefix は Ctrl-^、detach は d)。 */
 export const PREFIX_KEY = '\x1e';

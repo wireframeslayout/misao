@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
@@ -16,6 +16,7 @@ use crate::ansi::AnsiLineAssembler;
 use crate::attachment::{Attachment, output_line};
 use crate::child_env::build_child_env;
 use crate::connection::ConnHandle;
+use crate::cursor_query::{CursorQueryScanner, cursor_report};
 use crate::event_log::EventLog;
 use crate::foreground::ForegroundQuery;
 use crate::ids::new_pane_id;
@@ -24,7 +25,8 @@ use crate::log::now_iso;
 use crate::pane_observer::PaneObserver;
 use crate::pane_view::{PaneView, ScreenSnapshot};
 use crate::profile::{Profile, select_profile};
-use crate::pty::{self, ExitInfo, GroupState, PtyProcess, SpawnRequest};
+use crate::pty::{self, ExitInfo, GroupState, ProcessTree, PtyProcess, SpawnRequest};
+use crate::repaint_filter::RepaintFilter;
 use crate::ring::SeqRing;
 use crate::size_arbiter::{SizeArbiter, SizeDecision};
 use crate::stream::{Progress, Wakeup};
@@ -33,6 +35,8 @@ use crate::stream::{Progress, Wakeup};
 mod attach;
 #[path = "pane_close.rs"]
 mod close;
+#[path = "pane_console.rs"]
+mod console;
 #[path = "pane_lines.rs"]
 mod lines;
 
@@ -43,6 +47,12 @@ pub use lines::LinesSource;
 const KILL_GRACE: Duration = Duration::from_secs(3);
 /// 子の終了後、残りの出力を読み切るのを待つ上限（孫が pty を握り続けて EOF にならない場合の打ち切り）。
 const READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+/// Windows: リーダーの終了後、残りのプロセス（孫）が終わるのを待つ上限。過ぎたら ConPTY を閉じる。
+const DESCENDANTS_WAIT: Duration = Duration::from_secs(3);
+/// Windows: 孫を Job ごと止めてから、Job が空になるのを待つ上限。
+const JOB_EMPTY_WAIT: Duration = Duration::from_secs(2);
+/// Windows: ConPTY を閉じてから、reader が残りの出力を読み終えて止まるのを待つ上限。
+const CONSOLE_CLOSE_WAIT: Duration = Duration::from_secs(5);
 /// close で、リーダーの終了後にグループの残りが消えるのを確かめる間隔と、SIGKILL 後に待つ上限。
 const GROUP_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const GROUP_KILL_WAIT: Duration = Duration::from_secs(2);
@@ -101,6 +111,10 @@ struct Inner {
     /// ANSI を除いた行。`pane.subscribe_lines` が読む。
     lines: SeqRing<String>,
     assembler: AnsiLineAssembler,
+    /// resize 後の全画面の再描画を行ストリームから除く（Windows の ConPTY）。
+    repaint: RepaintFilter,
+    /// 再描画の候補の期限を見張るスレッドが動いている。
+    repaint_timer: bool,
 }
 
 /// `start` が取り出す、スレッドへ渡すもの。
@@ -112,15 +126,22 @@ struct Handoff {
 
 pub struct Pane {
     pub id: String,
+    /// 自分自身への弱い参照（期限を見張るスレッドに渡す）。
+    me: Weak<Pane>,
     pub cmd: Vec<String>,
     pub cwd: String,
     pub pid: u32,
+    /// 子のプロセスツリー（Unix はプロセスグループ、Windows は Job Object）。close はこれを止める。
+    tree: ProcessTree,
     inner: Mutex<Inner>,
-    master: Mutex<Box<dyn MasterPty + Send>>,
+    /// pty の master。Windows は子の片付けが済んだら閉じる（ConPTY を閉じて、出力のパイプを EOF にする）ので `None` になりうる。
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     handoff: Mutex<Option<Handoff>>,
     /// 入力を pty へ書くスレッドへの送り口（pty の書き込みは詰まりうるので、RPC のスレッドでは書かない）。
     /// 子が終了すると外す（送り口を閉じて入力のスレッドと writer を終わらせる）。
     input: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
+    /// ConPTY のカーソル位置の問い合わせ（`ESC[6n`）の取り除き（Windows。出力のスレッドだけが触る）。
+    cursor_query: Mutex<CursorQueryScanner>,
     /// 出力の取り込み（リングへの格納と端末の解析）と resize を、受け取った順に画面へ反映するための順序づけ。
     /// 解析は `inner` の外で行うので、これが無いと、格納済みの出力の解析の前に resize が入り、古い出力が新しいサイズで解析される。
     /// ロックの順序: order -> inner -> observer。
@@ -177,7 +198,7 @@ impl Inner {
     }
 }
 
-/// プロセスの停止はブロックしうる（Windows の `taskkill` など）ので、非同期のタスクを止めないよう別のスレッドで行う。
+/// プロセスの停止はブロックしうる（signal の送信や Job Object の操作）ので、非同期のタスクを止めないよう別のスレッドで行う。
 async fn blocking(f: impl FnOnce() + Send + 'static) {
     let _ = tokio::task::spawn_blocking(f).await;
 }
@@ -218,6 +239,7 @@ impl Pane {
         let env = build_child_env(std::env::vars_os(), &id, opts.socket_path, &overrides);
         let PtyProcess {
             pid,
+            tree,
             master,
             reader,
             writer,
@@ -229,11 +251,13 @@ impl Pane {
             cols,
             rows,
         })?;
-        Ok(Arc::new(Self {
+        Ok(Arc::new_cyclic(|me| Self {
+            me: me.clone(),
             id,
             cmd: opts.cmd,
             cwd,
             pid,
+            tree,
             inner: Mutex::new(Inner {
                 state: RunState::Running,
                 exit: None,
@@ -246,8 +270,10 @@ impl Pane {
                 raw: SeqRing::new(opts.raw_ring_bytes),
                 lines: SeqRing::new(opts.lines_ring_bytes),
                 assembler: AnsiLineAssembler::default(),
+                repaint: RepaintFilter::default(),
+                repaint_timer: false,
             }),
-            master: Mutex::new(master),
+            master: Mutex::new(Some(master)),
             handoff: Mutex::new(Some(Handoff {
                 reader,
                 writer,
@@ -255,6 +281,7 @@ impl Pane {
             })),
             input: Mutex::new(None),
             order: Mutex::new(()),
+            cursor_query: Mutex::new(CursorQueryScanner::default()),
             input_queued: Arc::new(AtomicUsize::new(0)),
             lines_tx: watch::Sender::new(0),
             exited_tx: watch::Sender::new(false),
@@ -327,35 +354,64 @@ impl Pane {
         });
         let pane = Arc::clone(self);
         std::thread::spawn(move || {
-            let exit = pty::wait_exit(child, pane.pid);
+            let exit = pane.tree.wait_exit(child);
             // リーダーを回収しない環境（`pty::LEADER_HELD`）では、close まで pid が再利用されない。
             // そうでない環境では、終了時に残りがいたかを記録し、いなければ close はグループに触れない。
             pane.survivors_at_exit
-                .store(pty::group_state(pane.pid) != GroupState::Empty, Ordering::Release);
+                .store(pane.tree.group_state() != GroupState::Empty, Ordering::Release);
             pane.exit_seen.store(true, Ordering::Release);
             pane.wakeup.notify();
             // 残りの出力を読み切ってから終了を報告する（終了直前の出力を取りこぼさない）。
-            if let Err(RecvTimeoutError::Timeout) = drained_rx.recv_timeout(READER_DRAIN_TIMEOUT) {
-                // 孫が pty を握っていて EOF が来ない。ここまでに読めた分で打ち切る。
+            pane.finish_console(&drained_rx);
+            // 問い合わせかもしれない末尾の `ESC` `ESC[` `ESC[6` は、reader が止まった後に通常の出力として取り込む
+            let rest = lock(&pane.cursor_query).take_held();
+            if !rest.is_empty() {
+                pane.ingest(&rest);
             }
             pane.on_exit(exit);
         });
     }
 
     fn on_output(&self, data: &[u8]) {
+        if !cfg!(windows) {
+            self.ingest(data);
+            return;
+        }
+        // ConPTY は起動時にカーソル位置を尋ね、返事があるまで子を動かさない（`cursor_query.rs`）。
+        // 返事をするのはデーモンなので、問い合わせは attach への配信・リング・画面には載せない（クライアントも返事をして二重になる）。
+        let (clean, queries) = lock(&self.cursor_query).extract(data);
+        if !clean.is_empty() {
+            self.ingest(&clean);
+        }
+        if queries > 0 {
+            let cursor = self.observer.snapshot().cursor;
+            for _ in 0..queries {
+                self.reply_to_terminal_query(cursor_report(cursor.x, cursor.y));
+            }
+        }
+    }
+
+    /// 出力を、リング・行ストリーム・attach・画面へ取り込む。
+    fn ingest(&self, data: &[u8]) {
         let _order = lock(&self.order);
         let ts = now_iso();
-        let (seq, new_head) = {
+        let (seq, new_head, start_timer) = {
             let mut inner = lock(&self.inner);
             inner.last_output_at = Some(ts.clone());
             let seq = inner.raw.push(data.to_vec(), data.len(), ts.clone());
-            let lines = inner.assembler.push(data);
+            let fed = inner.repaint.filter(data, Instant::now());
+            let lines = inner.assembler.push(&fed);
             let any = !lines.is_empty();
             for text in lines {
                 inner.push_line(text, ts.clone());
             }
-            (seq, any.then(|| inner.lines.head()))
+            let start_timer = inner.repaint.deadline().is_some() && !inner.repaint_timer;
+            inner.repaint_timer |= start_timer;
+            (seq, any.then(|| inner.lines.head()), start_timer)
         };
+        if start_timer {
+            self.watch_repaint_candidate();
+        }
         self.broadcast(seq, &ts, data);
         if let Some(head) = new_head {
             self.lines_tx.send_replace(head);
@@ -370,11 +426,18 @@ impl Pane {
         lock(&self.input).take();
         let new_head = {
             let mut inner = lock(&self.inner);
+            // 再描画かどうか決まらないまま残った候補は、アプリの出力として流す
+            let ts = now_iso();
+            let held = inner.repaint.take_held();
+            let mut lines = inner.assembler.push(&held);
             // 改行なしで終わった最終行も行ストリームに流す
             let rest = inner.assembler.pending().to_string();
-            let any = !rest.is_empty();
-            if any {
-                inner.push_line(rest, now_iso());
+            if !rest.is_empty() {
+                lines.push(rest);
+            }
+            let any = !lines.is_empty();
+            for text in lines {
+                inner.push_line(text, ts.clone());
             }
             inner.state = RunState::Exited;
             inner.exit = Some(exit);
@@ -449,9 +512,17 @@ impl Pane {
     /// 決まったサイズを pty・画面・記録へ適用する。pty が失敗したら何も変えない（先に pty を変える）。
     fn apply(&self, inner: &mut Inner, decision: &SizeDecision) -> Result<(), String> {
         if inner.state == RunState::Running {
-            lock(&self.master)
-                .resize(pty::pty_size(decision.cols, decision.rows))
-                .map_err(|e| format!("cannot resize the pty: {e:#}"))?;
+            let size = pty::pty_size(decision.cols, decision.rows);
+            if let Some(master) = lock(&self.master).as_ref() {
+                master
+                    .resize(size)
+                    .map_err(|e| format!("cannot resize the pty: {e:#}"))?;
+            }
+            // ConPTY は resize のたびに画面全体を書き直すので、その再描画は行ストリームに流さない。
+            let changed = (inner.cols, inner.rows) != (decision.cols, decision.rows);
+            if cfg!(windows) && changed {
+                inner.repaint.arm(u64::from(size.rows), Instant::now());
+            }
         }
         inner.cols = decision.cols;
         inner.rows = decision.rows;
@@ -525,7 +596,9 @@ impl Pane {
     fn pty_foreground_pgid(&self) -> Option<i32> {
         #[cfg(all(unix, not(target_os = "linux")))]
         {
-            lock(&self.master).process_group_leader()
+            lock(&self.master)
+                .as_ref()
+                .and_then(|master| master.process_group_leader())
         }
         #[cfg(not(all(unix, not(target_os = "linux"))))]
         {

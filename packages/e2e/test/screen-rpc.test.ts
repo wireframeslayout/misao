@@ -6,6 +6,7 @@ import type { EventParams } from '@misao/protocol';
 import type { MisaoClient } from '@misao/sdk';
 import { startDaemonProcess } from './helpers/daemon-process.js';
 import type { DaemonProcess } from './helpers/daemon-process.js';
+import { IS_WINDOWS, nodeEval, skipOnWindows } from './helpers/platform.js';
 import { waitFor, waitQuiet } from './helpers/wait.js';
 
 // Node 版と Rust 版 (MISAO_DAEMON_BIN) の両方で通る、第 3 段の範囲（画面・タイトル・稼働判定のイベント・前面プロセス）の契約。
@@ -22,6 +23,9 @@ after(() => daemon.stop());
 
 const sh = (script: string): string[] => ['sh', '-c', script];
 
+/** Windows ではシェルの代わりに node で同じことをする。 */
+const js = (script: string): string[] => nodeEval(script);
+
 async function screen(paneId: string): ReturnType<typeof client.request<'pane.screen'>> {
   return client.request('pane.screen', { paneId });
 }
@@ -29,8 +33,11 @@ async function screen(paneId: string): ReturnType<typeof client.request<'pane.sc
 describe('pane.screen と pane.info', () => {
   test('見えている行・カーソル・タイトル・activity。全角文字は 2 桁、行末の空のセルは含まない', async () => {
     const script = "printf '\\033]0;e2e title\\007one\\r\\n日本\\033[3;1Hz'; sleep 30";
-    const { paneId } = await client.request('pane.open', { cmd: sh(script), cols: 20, rows: 4 });
+    const winScript = "process.stdout.write('\\x1b]0;e2e title\\x07one\\r\\n日本\\x1b[3;1Hz'); setTimeout(() => {}, 30000)";
+    const { paneId } = await client.request('pane.open', { cmd: IS_WINDOWS ? js(winScript) : sh(script), cols: 20, rows: 4 });
     await waitFor(async () => (await screen(paneId)).text.includes('z'), 'the output');
+    // ConPTY は子のタイトルを内容より後に届ける (Unix は先)
+    await waitFor(async () => (await screen(paneId)).title === 'e2e title', 'the title');
     const first = await screen(paneId);
     assert.equal(first.text, 'one\n日本\nz\n');
     assert.deepEqual(first.cursor, { x: 1, y: 2 });
@@ -40,13 +47,15 @@ describe('pane.screen と pane.info', () => {
 
     await client.request('pane.resize', { paneId, cols: 30, rows: 6 });
     const resized = await screen(paneId);
-    assert.equal(resized.activity, first.activity + 1);
+    // resize で activity が 1 増える。Windows は ConPTY が画面全体を書き直す出力もあとから届いて増えうる。
+    if (IS_WINDOWS) assert.ok(resized.activity > first.activity, 'activity grows');
+    else assert.equal(resized.activity, first.activity + 1);
     assert.equal(resized.text.split('\n').length, 6);
     await client.request('pane.close', { paneId });
   });
 
   test('終了した pane でも pane.screen に答える', async () => {
-    const { paneId } = await client.request('pane.open', { cmd: sh('printf bye'), cols: 10, rows: 2 });
+    const { paneId } = await client.request('pane.open', { cmd: IS_WINDOWS ? js("process.stdout.write('bye')") : sh('printf bye'), cols: 10, rows: 2 });
     await waitFor(async () => (await client.request('pane.info', { paneId })).processState === 'exited', 'the pane to exit');
     assert.equal((await screen(paneId)).text, 'bye\n');
     await client.request('pane.close', { paneId });
@@ -63,7 +72,7 @@ describe('pane.screen と pane.info', () => {
 });
 
 describe('vim の画面がサイズの所有者に追従する（v2-size-conflict の画面の部分）', () => {
-  test('最後に入力したクライアントのサイズになり、画面の行数と幅はそのサイズに収まる', { timeout: 60_000 }, async () => {
+  test('最後に入力したクライアントのサイズになり、画面の行数と幅はそのサイズに収まる', { timeout: 60_000, ...skipOnWindows('vim が要る') }, async () => {
     const file = path.join(daemon.dir, 'big.txt');
     fs.writeFileSync(file, Array.from({ length: 200 }, (_, i) => `line ${i} ` + 'x'.repeat(50)).join('\n') + '\n');
     const { paneId } = await client.request('pane.open', { cmd: ['vim', '-u', 'NONE', '-N', file], cols: 100, rows: 30 });
@@ -100,9 +109,13 @@ describe('稼働判定のイベント', () => {
     const sub = await daemon.connect();
     await sub.subscribeEvents((e) => events.push(e), { since: (await client.request('server.info', {})).eventHead, epoch });
     const script = "printf '\\033]0;⠋ build\\007'; sleep 0.3; printf '\\033]0;done\\007'; sleep 0.3";
-    const { paneId } = await client.request('pane.open', { cmd: sh(script) });
+    const winScript = "process.stdout.write('\\x1b]0;⠋ build\\x07'); setTimeout(() => { process.stdout.write('\\x1b]0;done\\x07'); setTimeout(() => {}, 300); }, 300)";
+    const { paneId } = await client.request('pane.open', { cmd: IS_WINDOWS ? js(winScript) : sh(script) });
     await waitFor(() => events.some((e) => e.type === 'pane.state' && e.paneId === paneId && (e.data as { state: string }).state === 'exited'), 'exited');
-    const mine = events.filter((e) => e.paneId === paneId && (e.type === 'pane.title' || e.type === 'pane.state' || e.type === 'pane.exited'));
+    // ConPTY は子が始まる前に、実行ファイルのパスを自分のタイトルとして出す。
+    const isConPtyTitle = (e: EventParams): boolean =>
+      IS_WINDOWS && e.type === 'pane.title' && String((e.data as { title?: string }).title).toLowerCase() === process.execPath.toLowerCase();
+    const mine = events.filter((e) => e.paneId === paneId && (e.type === 'pane.title' || e.type === 'pane.state' || e.type === 'pane.exited') && !isConPtyTitle(e));
     const summary = mine.map((e) => {
       const data = e.data as { state?: string; decidedBy?: string; prev?: string; title?: string };
       return e.type === 'pane.title' ? `title:${data.title}` : e.type === 'pane.exited' ? 'exited' : `${data.prev}>${data.state}:${data.decidedBy}`;

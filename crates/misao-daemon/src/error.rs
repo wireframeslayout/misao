@@ -26,6 +26,11 @@ pub enum DaemonError {
         dir = .dir.display()
     )]
     DataDirWritableByOthers { dir: PathBuf, mode: u32 },
+    #[error(
+        "data directory {dir} grants write access to {principal}; remove it with: icacls \"{dir}\" /remove:g {principal}",
+        dir = .dir.display()
+    )]
+    DataDirWritableByPrincipal { dir: PathBuf, principal: String },
     #[error("another daemon is already listening on {}", .0.display())]
     AlreadyListening(PathBuf),
     #[error("cannot determine whether {} is in use ({code}); refusing to remove it", .path.display())]

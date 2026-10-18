@@ -235,3 +235,55 @@ win-server-001\ServerUser     Allow  FullControl (2032127)   ← 起動したユ
 2. `Pane.close()` の win32 分岐、停止 RPC、`misao stop`。
 3. 再描画のフィクスチャ化と稼働判定の調整。
 4. 前面プロセスの推定、`shell` 設定、タスクスケジューラの定義。
+
+## 12. Rust 版の実装（第 5 段、#43）
+
+Rust 版（`crates/`）は、ここまでに見つかった Windows の課題を解消します。以下は、Windows 11 25H2（build 26200、x64）の実機で CI がビルドしたバイナリを使って確かめたことと、
+CI の `Rust (windows)` / `Rust e2e (windows)` ジョブの結果です。Node 版は §1〜11 のとおりのままです。
+
+| 項目 | Rust 版 |
+| --- | --- |
+| 接続口 | SDK と同じ名前の名前付きパイプ（`\\.\pipe\misao-<user>-<hash>`。`misao/src/pipe_name.rs` のテストが、`resolveSocketPath` が出した値と照合します）。ユーザー名は `os.userInfo()` と同じく `GetUserNameW` から取ります |
+| ACL | 作成時の `SECURITY_ATTRIBUTES` で、DACL を `D:P(A;;GA;;;<起動したユーザーの SID>)` にします（SYSTEM も Administrators も Everyone も入れず、継承もしません）。実機の結果: `GetAccessControl().GetSecurityDescriptorSddlForm('All')` が `D:P(A;;FA;;;S-1-5-21-...-1001)` ちょうどでした（Node 版の DACL は Everyone / ANONYMOUS LOGON に read があった。§10.1 V1）|
+| リモート・名前の先取り | すべてのインスタンスに `PIPE_REJECT_REMOTE_CLIENTS`、最初のインスタンスに `FILE_FLAG_FIRST_PIPE_INSTANCE`。実機の結果: Node 版には届いた `\\127.0.0.1\pipe\<名前>` と `\\<ホスト>\pipe\<名前>`（V2）が「アクセスが拒否されました」になりました。同じ名前の 2 つ目のデーモンは「another daemon is already listening」で起動に失敗します。DACL が他のユーザーに `FILE_CREATE_PIPE_INSTANCE` を与えないので、他のユーザーは同じ名前のインスタンスを増やせません。**こちらより先に作られた偽のサーバーはサーバー側からは防げないので、Rust の CLI は接続した後にサーバーを確かめます**: `GetNamedPipeServerProcessId` で得たプロセスのトークンのユーザー SID が CLI 自身の SID と同じでなければ、何も送らずに接続をやめます（`refusing to connect, the pipe server is not trusted: the pipe server (pid N) runs as <SID>, not as <SID>`）。**限界**: Node の SDK は同じ確認ができない（Node にサーバーのプロセス ID を得る API が無い）ので、Windows の SDK クライアントは、別のユーザーの偽のサーバーにつながされうる。接続後に token を交換するアプリ層の認証（§2.2 の D 案）は今後の課題です。プロトコルは変えません |
+| データディレクトリ（`--data`）| Unix の「所有者が自分で、group/other が書けない」を、再解析ポイント（シンボリックリンク・ジャンクション）でないこと、ディレクトリであること、所有者が起動したユーザー（昇格した管理者が作ったファイルの既定の所有者である Administrators も可）であること、**書き込み系の権限（データの書き込み・追記・子の削除・削除・アクセス許可の変更・所有者の取得・汎用の書き込み / 全権）を与える許可 ACE が、すべて起動したユーザー・SYSTEM・Administrators のものであること**、に置き換えました。それ以外の SID（Everyone / Users / Authenticated Users のような広いグループも、他のアカウントも）は拒否します。object ACE と callback ACE も読み、継承専用で子にも伝わらない ACE は無視し、DACL が NULL なら Everyone として扱います（`windows_dir.rs`。`GetNamedSecurityInfoW` で読む）|
+| ConPTY | portable-pty は擬似コンソールを `PSEUDOCONSOLE_INHERIT_CURSOR` で作るため、ConPTY が起動時に端末へカーソル位置を尋ね（`ESC[6n`）、**返事が来るまで子を動かしません**。デーモンが画面モデルのカーソル位置で返事をし、問い合わせ（読み取りの境目をまたぐものも）は保存も配信もしないので、attach したクライアントには見えず、二重に返事をされません。実機で見つけました: 返事が無いと `cmd.exe /c ...` が始まらず、ペインが空のままでした。Node 版（node-pty）はこの指定をしません |
+| `pane.close` | 子を `CreateProcess` の直後に Job Object（`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`）へ入れ、close は `TerminateJobObject`、「ペインにプロセスが残っているか」は Job の動作中プロセス数で判断します。猶予はありません（Windows に SIGHUP が無いため）。**既知の隙**: 割り当ては `CreateProcess` が戻った後なので、その一瞬に子が作った孫は Job に入りません（portable-pty は `CREATE_SUSPENDED` も `PROC_THREAD_ATTRIBUTE_JOB_LIST` も出していない）。塞ぐには Windows の起動経路を `windows-sys` の自前の ConPTY に置き換える必要があり、別 issue にします。シェルの起動には数 ms かかるので、実際の窓は小さいです。デーモンが落ちれば Job が閉じてツリーごと終了します。実機の結果: `cmd.exe /c "ping ... & ping ..."` のペインを `misao kill --force` すると、CLI の起動を含めて 243 ms で戻り、`cmd.exe` も起動していた `ping` も消えていました（Node 版は約 4.7 秒かかり、孫が残った）|
+| コマンドの解決 | `cmd[0]` を、子の `PATH` と `PATHEXT` で解決します（`cmd_resolve.rs`）: `claude` -> `claude.cmd`、`npm` -> `npm.cmd`。ディレクトリ付きの指定はそのまま（相対は `cwd` 基準）。実行できる拡張子の無いファイル（npm の拡張子なしシェルスクリプト）は選びません。`.ps1` は `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <ファイル> ...` で起動します（既定の `Restricted` ポリシーはスクリプトを拒否するので、その 1 プロセスだけ緩めます）。`.cmd` / `.bat` / `.exe` は直接起動します。見つからなければ、`pane.open` が `command not found: <名前>` で失敗します（ペインは作られません）|
+| ログインシェル | `%COMSPEC%`（cmd.exe）、`-l` なしのまま変えません。上のどの確認でも ConPTY で動き、PATH の探索も要りません。PowerShell は `misao new -- powershell.exe` です。`misao.json` の `shell` は足しません（要望が無いため）|
+| 行ストリーム | resize のたびに ConPTY が書く画面全体の再描画を `pane.line` から除きます（`repaint_filter.rs`）。サイズが変わる resize の後に 1 回構え、`ESC[H` で始まる次のフレームを、**確定するまで保持**し、記録した再描画の形のときだけ捨てます: すべての改行が `ESC[K` `CR` の直後で、改行は `rows-1` 個以下、終わりが `rows-1` 個の改行の後のカーソル位置の復元（`ESC[<r>;<c>H`）か `ESC[?25h`。形に合わない（アプリの出力だった）、500 ms 過ぎた、1 MiB を超えた、ペインが終了した、のどれかなら、保持したバイトをすべて通常の出力として流し、構えを解きます。生出力・画面・稼働判定には元のバイト列が常にそのまま渡ります。resize の直後のアプリの出力は残ります（`ESC[Himportant\r\n` でテスト）が、再描画とまったく同じ形のアプリのフレームは区別できません。確定しない候補は、次の出力か終了まで保持されます。実機の結果: アイドルの `cmd.exe` を 4 回 resize（100x30、80x24、132x50、80x24）しても `pane.line` に行は増えませんでした。変えていないこと: ConPTY が改行の代わりにカーソル位置の指定（`ESC[4;1H`）を出す箇所で、続く 2 つの画面行が 1 行につながります（`...reserved.C:\...>`）。Node 版も同じです |
+| 稼働判定 | 変更なし（再描画は 800 ms の猶予に収まる。§10.1 V5）|
+| 前面のコマンド | Windows は付きません（Node 版と同じ）|
+| 停止 | `misao stop`（Rust 版のみ）。プロトコルに停止のメソッドは足さず、**0.3.0 のまま**です: デーモンは `Global\misao-stop-<小文字にした接続口の sha256 の先頭 16 桁>` という名前付きイベント（DACL は起動したユーザーのみ）を作ります。名前は接続口（`/` と `\` の違い、大文字小文字、`\\.\pipe\` の接頭辞の表記揺れは正規化）**と `server.info` のデーモンの epoch** から作るので、`misao stop` は直前に問い合わせたデーモンにしか届きません。`misao stop` はイベントを立ててデーモンのプロセスの終了を待ちます（アイドルのデーモンで 53 ms）。Unix の `misao stop` は、`server.info` を取った接続を開いたまま、SIGTERM を送る直前にその接続で pid と epoch を確かめ直します。Ctrl+C / Ctrl+Break / コンソールを閉じる / ログオフ / シャットダウンでも止まります。後でプロトコルに停止の RPC（OS 共通で SDK から呼べる）が要るなら、`server.shutdown` の追加は `version.ts` の方針では minor（0.4.0）です |
+| attach | コンソールを raw mode にします（`ENABLE_VIRTUAL_TERMINAL_INPUT`、行編集・エコー・Ctrl+C の処理なし。出力は VT を解釈）。終了時とパニック時に戻します。Windows に SIGWINCH は無いので、端末の大きさを 250 ms ごとに調べます |
+| pid ファイル | 記録した pid が生きているかを `OpenProcess` + `GetExitCodeProcess` で判断します。古いファイルは Unix と同じく置き換えます |
+| 常駐 | Windows サービスではなく、タスクスケジューラ（下記）|
+
+### 常駐: タスクスケジューラ
+
+`deploy/windows/misao-task.xml`（`install-task.ps1` で登録、`uninstall-task.ps1` で削除）が、**ログオン時に、そのユーザーの権限（昇格なし）で** `misao serve` を起動します。
+
+- サービスはセッション 0 で、環境（PATH、プロファイル、`%USERPROFILE%`）が違います。ペインはそれを引き継ぎます。`claude` などのエージェントはユーザーごとに入れるので、ユーザーのプロファイルに頼ります。
+  セッション 0 のコンソールプログラムにはユーザーのデスクトップが無く、ConPTY の子はユーザーの HKCU の設定も得られません。サービスにするには、`misao` 自身に SCM のプロトコル（`windows-service`）を持たせるか、外部のラッパー（WinSW / NSSM）とアカウントのパスワードの保存が要ります。
+- パイプの ACL は起動したユーザーです。これがタスクの実行主体です。サービスだとアカウントが `SYSTEM` やユーザーが使えないサービスアカウントになります。
+- ユーザーがログオフしている間はタスクが動きませんが、デーモンはユーザーごとのツール（そのユーザーのペインを持つ）なので、動かないほうが自然です。
+- 実行内容は `conhost.exe --headless cmd.exe /d /c ""<misao.exe>" serve >> "<ログ>" 2>&1"` です。窓が出ず、ログ（stderr）がファイルに追記されます。同じコマンドラインを実機で手で実行して、デーモンが待ち受け、`misao stop` で止まり、`conhost` / `cmd` も終了することを確かめました。
+- 再起動: 失敗（非ゼロ終了）のときだけ 1 分後に再起動します（タスクスケジューラの最短の間隔）。`misao stop`（終了コード 0）では再起動しません。systemd の `RestartSec=1` に当たるものはありません。
+- **タスクの登録は実機では実行していません**（システムの設定を変える操作で、検証の範囲外）。`install-task.ps1` と XML は解析だけ確かめました。登録: `powershell -NoProfile -ExecutionPolicy Bypass -File deploy\windows\install-task.ps1 -MisaoPath C:\path\to\misao.exe -Start`、確認: `misao status`、削除: `uninstall-task.ps1`。
+
+### テスト
+
+- Windows の `cargo test`: `windows_endpoint.rs`（ACL、最初のインスタンス、リモートの拒否）、`windows_panes.rs`（Job Object が孫を止める、PATHEXT と `.ps1`、存在しないコマンド、終了コード、再描画）、`windows_dir.rs`（データディレクトリの検証。`icacls` で Everyone に書き込みを付ける）、`stop.rs`（`misao stop`）、純粋なロジック（`cmd_resolve`、記録した再描画を流す `repaint_filter`、`cursor_query`、`pipe_name`）。
+- 既存の e2e（`packages/e2e`）は、POSIX 前提のケースを分岐して Windows でも動かします: `sh -c` の代わりに `node -e`、`bash` の代わりに `cmd.exe`、`vim` / `bash` / systemd が要るケースは理由を付けて skip（`helpers/platform.ts`）。hub の再起動のケースは Windows に `SIGTERM` が無いので、強制終了だけを確かめます。`packages/cli/test` は Windows では流しません（Node の内部と POSIX の端末に頼るため。Rust の CLI は `cargo test` が見ます）。
+- CI の `Windows (experimental)`（Node 版、`continue-on-error`）は当面残します。Node 版を退役する時点（#44）で外せます。意味があるのは `Rust (windows)` と `Rust e2e (windows)` です。
+
+### ConPTY で動かすときに知っておくこと
+
+実機で確かめました（Node 版も、関係する点では同じです）:
+
+- **入力**: 行は CR（Enter）で確定します。`pane.write` で LF だけを書いても、cooked mode のコンソールプログラムでは行が完成しません（Node の `process.stdin` の読み取りも PowerShell の `Read-Host` も待ち続ける）。`\r` を送ります。
+- **resize**: `pane.resize` は、Win32 でコンソールの大きさを尋ねるプログラム（PowerShell の `$Host.UI.RawUI.WindowSize` はすぐ追従）には届きますが、**Node のプログラムは最初の大きさのまま**です: 100x30 から 70x20 に resize しても `process.stdout.getWindowSize()` は 100x30 のままで、`resize` イベントも来ません（擬似コンソールの下では libuv が変化を見られない）。node-pty を使う Node 版でも同じでした。Windows の Node 製の TUI は、resize 後にレイアウトし直さないことがあります。
+- **タイトル**: ConPTY は子が始まる前に、窓のタイトルを実行ファイルのパスにします。ペインにはまずそのパスの `pane.title` が届き、子自身の `OSC 0` のタイトルは子の出力より後に届きます（Unix は逆の順）。
+- **raw の再生**: ConPTY は、前に描いた内容を前提にしたカーソル位置の指定で画面を更新するので、あふれたリングの raw 再生では画面を再構成できません。Windows で後から参加するクライアントは `replay: snapshot` を使います（e2e も Windows では snapshot だけを確かめる）。
+- **行**: ConPTY が改行の代わりにカーソルを動かす箇所では、画面の 2 行が `pane.line` では 1 行になります（Node 版も同じ）。`cls` は画面 1 つぶんの空行を出します。
+- **終了**: ConPTY の出力のパイプは、子が終了しても EOF になりません。リーダーが終了した後、デーモンは Job の動作中プロセスが 0 になるのを待ち（最長 3 秒。孫の出力も読む）、ConPTY を閉じて（残りが流れ切る）、reader が止まるのを待ちます。最後の行の flush と `pane.exited` は、その後に 1 回だけ行います。3 秒後も動いているプロセスは待ちません。`pane.exited` は、リーダーの終了から孫が必要とした時間だけ遅れます。

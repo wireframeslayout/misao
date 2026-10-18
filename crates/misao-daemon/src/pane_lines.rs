@@ -147,6 +147,6 @@ mod tests {
         let live = Arc::new(Progress::new(0));
         source.track(&live);
         assert_eq!(lock(&pane.line_subscribers).len(), 1);
-        crate::pty::kill_tree(pane.pid);
+        pane.tree.kill();
     }
 }

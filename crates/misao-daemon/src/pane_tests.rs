@@ -100,7 +100,7 @@ fn the_input_channel_is_closed_when_the_child_exits() {
     wait_for("the pane to exit", || pane.state() == RunState::Exited);
     assert!(std::fs::read_to_string(pid_file).is_ok());
     wait_for("the input channel to be released", || lock(&pane.input).is_none());
-    crate::pty::kill_tree(pane.pid);
+    pane.tree.kill();
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn the_input_queue_refuses_input_beyond_its_limit_but_accepts_one_into_an_empty_
     assert!(pane.write(vec![0; 10]).is_ok(), "exactly at the limit");
     assert_eq!(pane.write(vec![0; 1]), Err(INPUT_QUEUE_BYTES));
     assert_eq!(pane.check_input_room(1), Err(INPUT_QUEUE_BYTES));
-    crate::pty::kill_tree(pane.pid);
+    pane.tree.kill();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -141,22 +141,30 @@ async fn close_after_a_natural_exit_releases_the_threads_and_the_master() {
     // 孫が pty を握っているので、reader はまだ EOF になっていない（Pane への参照を持ち続ける）。
     let weak = Arc::downgrade(&pane);
     pane.close().await;
-    assert_eq!(crate::pty::group_state(pane.pid), GroupState::Empty);
+    assert_eq!(pane.tree.group_state(), GroupState::Empty);
     drop(pane);
     // reader / 待機のスレッドが終われば、最後の参照（= master と writer）が解放される。
     wait_for("the pane to be freed", || weak.upgrade().is_none());
 }
 
-/// `/proc/<pid>/stat` の状態文字。プロセスが無ければ None。
+/// プロセスの状態文字（`Z` はゾンビ）。プロセスが無ければ None。Linux は `/proc/<pid>/stat`、macOS は `ps -o stat=`。
 #[cfg(target_os = "linux")]
 fn proc_state(pid: u32) -> Option<char> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     stat.rsplit_once(')')?.1.trim().chars().next()
 }
 
+#[cfg(all(unix, not(target_os = "linux")))]
+fn proc_state(pid: u32) -> Option<char> {
+    let out = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().chars().next()
+}
+
 /// 残りの子が pty を握ったまま、close も shutdown もせずに Pane を捨てても、reader が Pane を握り続けないので、
 /// `Drop` が走って終了済みのリーダーが回収される。
-#[cfg(target_os = "linux")]
 #[test]
 fn dropping_a_pane_without_close_reaps_the_exited_leader_even_while_a_child_holds_the_pty() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -171,10 +179,12 @@ fn dropping_a_pane_without_close_reaps_the_exited_leader_even_while_a_child_hold
     assert_eq!(proc_state(leader), Some('Z'), "held as a zombie until reaped");
     drop(pane);
     wait_for("the leader to be reaped", || proc_state(leader).is_none());
-    crate::pty::kill_tree(survivor);
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(i32::try_from(survivor).unwrap()),
+        nix::sys::signal::Signal::SIGKILL,
+    );
 }
 
-#[cfg(target_os = "linux")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_and_repeated_closes_clean_up_once_and_the_later_ones_just_wait() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -246,7 +256,7 @@ async fn a_cancelled_close_does_not_restart_the_clean_up_for_the_next_close() {
         "SIGHUP exactly once"
     );
     assert_eq!(pane.state(), RunState::Exited);
-    assert_eq!(crate::pty::group_state(pane.pid), GroupState::Empty);
+    assert_eq!(pane.tree.group_state(), GroupState::Empty);
 }
 
 fn quiet_pane() -> Arc<Pane> {
@@ -305,7 +315,7 @@ fn a_resize_waits_for_the_output_being_ingested_and_the_output_waits_for_a_resiz
     drop(order);
     ingesting.join().unwrap();
     assert_eq!(pane.screen().text.trim(), "x");
-    crate::pty::kill_tree(pane.pid);
+    pane.tree.kill();
 }
 
 /// 出力と resize を別のスレッドから並行させても、画面は壊れない（順序そのものは上のテストが保証する）。
@@ -328,7 +338,7 @@ fn concurrent_output_and_resize_leave_a_consistent_screen() {
         resizer.join().unwrap();
         let text = pane.screen().text;
         assert_eq!(text.split('\n').count(), 3);
-        crate::pty::kill_tree(pane.pid);
+        pane.tree.kill();
     }
 }
 
@@ -433,4 +443,47 @@ fn an_attach_refused_because_of_a_close_does_not_resize_the_pane() {
         .unwrap();
     assert!(attached.resized);
     assert_eq!(open.size(), (50, 20));
+}
+
+/// 再描画かどうか決まらない候補は、次の出力が無くても期限（500 ms）で行ストリームに流れる。
+#[test]
+fn an_undecided_repaint_candidate_reaches_the_line_stream_without_more_output() {
+    let socket = PathBuf::from("/tmp/unused.sock");
+    let pane = Pane::spawn(PaneOpenOptions {
+        // ESC[H で始まるが、再描画の形としては途中 (行数が足りない) のまま、あとは何も出さない
+        cmd: vec![
+            "sh".into(),
+            "-c".into(),
+            "sleep 0.3; printf '\\033[Hdeadline-line\\033[K\\n'; sleep 30".into(),
+        ],
+        cwd: None,
+        env: BTreeMap::new(),
+        ephemeral_env: BTreeMap::new(),
+        cols: None,
+        rows: None,
+        socket_path: &socket,
+        raw_ring_bytes: 1024,
+        lines_ring_bytes: 1024,
+        scrollback: 10,
+        profiles: Vec::new(),
+        events: Arc::new(EventLog::new(10)),
+    })
+    .unwrap();
+    lock(&pane.inner).repaint.arm(24, Instant::now());
+    let mut heads = pane.lines_tx.subscribe();
+    pane.start();
+    let started = Instant::now();
+    wait_for("the candidate to be released by its deadline", || {
+        lock(&pane.inner).lines.head() >= 1
+    });
+    assert!(*heads.borrow_and_update() >= 1, "subscribers are notified");
+    let line = lock(&pane.inner).lines.entry(1).map(|e| e.item.clone());
+    assert_eq!(line.as_deref(), Some("deadline-line"));
+    assert!(
+        started.elapsed() >= Duration::from_millis(700),
+        "held until the deadline: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(pane.state(), RunState::Running);
+    pane.tree.kill();
 }

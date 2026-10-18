@@ -1,19 +1,15 @@
-use std::fs::{self, File};
+use std::fs;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use nix::fcntl::Flock;
-use tokio::net::{UnixListener, UnixStream};
 use tokio::task::JoinSet;
 
 use crate::connection::serve_connection;
 use crate::core::{Core, CoreOptions};
+use crate::endpoint::{self, Endpoint};
 use crate::profile::Profile;
-use crate::socket::{
-    ensure_data_dir, ensure_socket_dir, listen_unix_socket, lock_socket_start, remove_stale_socket,
-};
 use crate::{DaemonError, Limits, Logger, acquire_pid_file};
 
 const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(50);
@@ -32,12 +28,8 @@ pub struct DaemonOptions {
 }
 
 pub struct Daemon {
-    /// 起動の排他ロック。ソケットの掃除と bind からソケットの削除まで、ライフサイクル全体で保持する。
-    /// 解放が早いと、終了中の旧デーモンが、後から起動した新デーモン（`--data` が違うと pid ファイルでは排他できない）の
-    /// ソケットを unlink できてしまう。
-    start_lock: Flock<File>,
-    listener: UnixListener,
-    socket_path: PathBuf,
+    /// 接続口（Unix ソケット / 名前付きパイプ）。Unix は、ソケットの削除まで起動の排他ロックも持つ。
+    endpoint: Endpoint,
     pid_path: PathBuf,
     core: Arc<Core>,
     log: Logger,
@@ -55,10 +47,7 @@ impl Daemon {
             log,
             profiles,
         } = opts;
-        ensure_socket_dir(&socket_path)?;
-        // 保存した状態の置き場所（`--data`）は、本人の所有・シンボリックリンクでない・group/other が書けない、を検証する。
-        // 0755 の既存のディレクトリは許す（ソケットのディレクトリの 0700 の要件とは別）。
-        ensure_data_dir(&state_path)?;
+        endpoint::prepare(&socket_path, &state_path)?;
         acquire_pid_file(&pid_path, std::process::id())?;
         // pid ファイルで排他を取った後に、保存した状態を読む。壊れていれば起動を止める（pid ファイルは残さない）。
         let core = match Core::new(CoreOptions {
@@ -75,9 +64,7 @@ impl Daemon {
                 return Err(DaemonError::State(message));
             }
         };
-        // 古いソケットの判定から終了時のソケット削除まで、ソケットの隣の lock で他の起動を締め出す。
-        // (pid ファイルは --data 次第で場所が変わるので、ソケットに対する排他はこちらで取る。)
-        let (start_lock, listener) = match Self::listen(&socket_path, &log).await {
+        let endpoint = match Endpoint::bind(&socket_path, &log).await {
             Ok(bound) => bound,
             Err(e) => {
                 let _ = fs::remove_file(&pid_path);
@@ -90,43 +77,27 @@ impl Daemon {
             std::process::id()
         ));
         Ok(Self {
-            start_lock,
-            listener,
-            socket_path,
+            endpoint,
             pid_path,
             core,
             log,
         })
     }
 
-    async fn listen(
-        socket_path: &std::path::Path,
-        log: &Logger,
-    ) -> Result<(Flock<File>, UnixListener), DaemonError> {
-        let lock = match lock_socket_start(socket_path) {
-            // lock は稼働中のデーモンも保持し続ける。待ち受けているなら「起動中」ではなく「稼働中」と伝える。
-            Err(DaemonError::StartInProgress(path)) if UnixStream::connect(&path).await.is_ok() => {
-                return Err(DaemonError::AlreadyListening(path));
-            }
-            other => other?,
-        };
-        if remove_stale_socket(socket_path).await? {
-            log.info("removed stale socket");
-        }
-        // 失敗しても lock はここで解放される（socket は作られていないか、自分で片付けてある）。
-        let listener = listen_unix_socket(socket_path)?;
-        Ok((lock, listener))
+    /// このデーモンの起動世代（`server.info` の epoch）。
+    pub fn epoch(&self) -> &str {
+        self.core.epoch()
     }
 
     /// `shutdown` が完了するまで接続を受け付け、完了したら接続を切ってソケットと pid ファイルを消す。
-    pub async fn run(self, shutdown: impl Future<Output = ()>) {
+    pub async fn run(mut self, shutdown: impl Future<Output = ()>) {
         let mut conns = JoinSet::new();
         tokio::pin!(shutdown);
         loop {
             tokio::select! {
                 () = &mut shutdown => break,
-                accepted = self.listener.accept() => match accepted {
-                    Ok((stream, _)) => {
+                accepted = self.endpoint.accept() => match accepted {
+                    Ok(stream) => {
                         conns.spawn(serve_connection(stream, Arc::clone(&self.core)));
                     }
                     // accept 失敗（EMFILE など）でデーモンごと落ちないよう、その接続だけを諦める。
@@ -140,7 +111,7 @@ impl Daemon {
             }
         }
         self.log.info("shutting down");
-        drop(self.listener);
+        self.endpoint.stop_listening();
         // 応答を読まないクライアントで send が止まっていても終われるよう、接続のタスクは打ち切る
         // (Node 版の socket.destroy() 相当)。
         conns.abort_all();
@@ -148,10 +119,9 @@ impl Daemon {
         // 子プロセスを残さない（pid ファイルとソケットが残っている間に、生きている pane を閉じ切る）。
         self.core.shutdown().await;
         self.log.debug("removing the socket and pid file");
-        for f in [&self.socket_path, &self.pid_path] {
-            let _ = fs::remove_file(f);
-        }
-        // ソケットを消した後に解放する。これより前に次のデーモンは起動できない。
-        drop(self.start_lock);
+        self.endpoint.remove();
+        let _ = fs::remove_file(&self.pid_path);
+        // 接続口を消した後に解放する（Unix は起動の排他ロック）。これより前に次のデーモンは起動できない。
+        drop(self.endpoint);
     }
 }

@@ -23,7 +23,6 @@ impl Pane {
     }
 
     async fn run_close(&self) {
-        let pid = self.pid;
         let started = Instant::now();
         *lock(&self.closing) = Some(started);
         self.wakeup.notify();
@@ -32,15 +31,17 @@ impl Pane {
         // リーダーを回収していない（まだ誰も回収していない最初の片付け）なら pid は自分のもの。
         // 回収する環境でなければ、終了時に残りがいたときだけ触れる。
         let owns_group = was_running || pty::LEADER_HELD || self.survivors_at_exit.load(Ordering::Acquire);
-        if owns_group && (was_running || pty::group_state(pid) != GroupState::Empty) {
-            blocking(move || pty::hangup_tree(pid)).await;
+        if owns_group && (was_running || self.group_state().await != GroupState::Empty) {
+            let tree = self.tree.clone();
+            blocking(move || tree.hangup()).await;
         }
         let mut exited = self.exited_tx.subscribe();
         if tokio::time::timeout_at(deadline.into(), exited.wait_for(|e| *e))
             .await
             .is_err()
         {
-            blocking(move || pty::kill_tree(pid)).await;
+            let tree = self.tree.clone();
+            blocking(move || tree.kill()).await;
             let _ = exited.wait_for(|e| *e).await;
         }
         if owns_group {
@@ -49,11 +50,19 @@ impl Pane {
         self.reap_leader();
     }
 
+    /// グループの状態。macOS は `ps` を起動するので、非同期のタスクを止めないよう別のスレッドで調べる。
+    async fn group_state(&self) -> GroupState {
+        let tree = self.tree.clone();
+        tokio::task::spawn_blocking(move || tree.group_state())
+            .await
+            .unwrap_or(GroupState::Unknown)
+    }
+
     /// 回収を保留していたリーダーを回収する（グループの片付けの後）。成功（または回収済み）を確かめてから回収済みにする。
     pub(super) fn reap_leader(&self) {
         if self.state() == RunState::Exited
             && !self.reaped.load(Ordering::Acquire)
-            && pty::reap(self.pid).is_ok()
+            && self.tree.reap().is_ok()
         {
             self.reaped.store(true, Ordering::Release);
         }
@@ -63,12 +72,12 @@ impl Pane {
     /// 調べられない（`Unknown`）ときは消えたとは言えないので、期限まで待って SIGKILL してから先へ進む
     /// （リーダーを回収するまで pgid は自分のものなので、無関係なグループには当たらない）。
     async fn sweep_group(&self, deadline: Instant) {
-        let pid = self.pid;
-        while pty::group_state(pid) != GroupState::Empty {
+        while self.group_state().await != GroupState::Empty {
             if Instant::now() >= deadline {
-                blocking(move || pty::kill_tree(pid)).await;
+                let tree = self.tree.clone();
+                blocking(move || tree.kill()).await;
                 let give_up = Instant::now() + GROUP_KILL_WAIT;
-                while pty::group_state(pid) != GroupState::Empty && Instant::now() < give_up {
+                while self.group_state().await != GroupState::Empty && Instant::now() < give_up {
                     tokio::time::sleep(GROUP_POLL_INTERVAL).await;
                 }
                 return;

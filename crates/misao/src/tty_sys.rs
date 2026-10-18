@@ -1,4 +1,4 @@
-//! OS 依存の端末まわり（raw mode、端末の大きさ、シグナル、ログインシェル）。Unix 以外は未対応（#43）。
+//! OS 依存の端末まわり（raw mode、端末の大きさ、シグナル、ログインシェル）。Unix（termios）と Windows（コンソールのモード）。
 
 #[cfg(unix)]
 mod imp {
@@ -163,42 +163,8 @@ mod imp {
     }
 }
 
-#[cfg(not(unix))]
-mod imp {
-    use std::collections::HashMap;
-
-    use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
-
-    use crate::io::{CliSignal, RawMode, Signals};
-
-    pub fn window_size() -> Option<(usize, usize)> {
-        None
-    }
-
-    #[derive(Default)]
-    pub struct StdinRawMode;
-
-    pub fn install_panic_restore(_reset: &'static str) {}
-
-    impl RawMode for StdinRawMode {
-        fn set_raw(&self, _raw: bool) -> std::io::Result<()> {
-            Err(std::io::Error::other(
-                "raw mode is not supported on this platform yet",
-            ))
-        }
-    }
-
-    pub struct RealSignals;
-
-    impl Signals for RealSignals {
-        fn listen(&self, _signals: &[CliSignal]) -> UnboundedReceiver<CliSignal> {
-            unbounded_channel().1
-        }
-    }
-
-    pub fn login_shell(env: &HashMap<String, String>) -> Option<String> {
-        crate::io::comspec_shell(env)
-    }
-}
+#[cfg(windows)]
+#[path = "tty_sys_windows.rs"]
+mod imp;
 
 pub use imp::{RealSignals, StdinRawMode, install_panic_restore, login_shell, window_size};

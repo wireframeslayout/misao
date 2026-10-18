@@ -18,6 +18,7 @@ jsonschema = { version = "0.30", default-features = false }
 nix = { version = "0.30", default-features = false, features = ["fs", "process", "signal", "user"] }
 portable-pty = "0.9"
 regex = "1"
+sha2 = "0.10"
 rustix = { version = "1", default-features = false, features = ["std", "stdio", "termios"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -27,9 +28,12 @@ time = { version = "0.3", features = ["formatting", "macros"] }
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 ulid = "1"
 vte = { version = "0.15", default-features = false, features = ["std"] }
+windows-sys = { version = "0.61", default-features = false }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# OS の API を直接呼ぶ小さなモジュール（Windows の Job Object / ACL / コンソール、macOS の waitid）だけが
+# `#![allow(unsafe_code)]` を付け、安全性の根拠をコメントで示す。それ以外は unsafe を書けない。
+unsafe_code = "deny"
 unused_must_use = "deny"
 
 [workspace.lints.clippy]
