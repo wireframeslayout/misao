@@ -255,8 +255,14 @@ async fn output_of_a_grandchild_after_the_leader_exits_is_not_lost() {
     let core = core();
     let mut c = connect(&core);
     // powershell はすぐ終わり、孫の cmd が約 2 秒後に late-output を出す (同じコンソールに)。
-    let script = "Start-Process cmd.exe -ArgumentList '/c','ping -n 3 127.0.0.1 >nul & echo late-output' -NoNewWindow";
-    let pane = open(&mut c, json!(["powershell.exe", "-NoProfile", "-Command", script]), json!({})).await;
+    let script =
+        "Start-Process cmd.exe -ArgumentList '/c','ping -n 3 127.0.0.1 >nul & echo late-output' -NoNewWindow";
+    let pane = open(
+        &mut c,
+        json!(["powershell.exe", "-NoProfile", "-Command", script]),
+        json!({}),
+    )
+    .await;
     let done = wait_exit(&mut c, &pane).await;
     assert_eq!(done["exitCode"], 0);
     let lines = lines_of(&core, &pane).await;
