@@ -17,7 +17,7 @@ jobs:
     name: Type check & build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -31,7 +31,7 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -58,7 +58,7 @@ jobs:
     name: Release tarballs
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -85,7 +85,7 @@ jobs:
           - { name: macos-x64, os: macos-15-intel }
           - { name: windows, os: windows-2025 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -99,7 +99,7 @@ jobs:
     name: Rust (MSRV)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Cargo.toml の workspace.package.rust-version と同じ値にする
       - uses: dtolnay/rust-toolchain@1.88
         with:
@@ -114,7 +114,7 @@ jobs:
     name: Rust (cargo deny)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
 
   # 既存の e2e (packages/e2e) の全部と CLI のテスト (packages/cli/test) を Rust 版のバイナリ (デーモンと CLI の両方) に向けて流す。
@@ -136,7 +136,7 @@ jobs:
           - { name: macos-x64, os: macos-15-intel, bin: target/release/misao }
           - { name: windows, os: windows-2025, bin: target/release/misao.exe }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -177,7 +177,7 @@ jobs:
     name: macOS launchd (template)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           plutil -lint deploy/com.misao.daemon.plist deploy/com.misao.daemon.binary.plist
           sed -e "s|__HOME__|$HOME|g" -e "s|__MISAO__|/usr/local/bin/misao|g" -e "s|__PATH__|/usr/bin:/bin|g" \
@@ -193,7 +193,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked -p misao
@@ -207,7 +207,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
