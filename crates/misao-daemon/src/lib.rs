@@ -80,6 +80,8 @@ mod stop_name;
 #[cfg(windows)]
 mod win_security;
 #[cfg(windows)]
+pub use win_security::check_pipe_server;
+#[cfg(windows)]
 mod windows_dir;
 
 pub use daemon::{Daemon, DaemonOptions};

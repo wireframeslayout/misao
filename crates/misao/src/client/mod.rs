@@ -7,6 +7,7 @@ mod conn;
 mod cursor;
 mod reconnect;
 mod transport;
+pub use transport::SERVER_IDENTITY_MARK;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};

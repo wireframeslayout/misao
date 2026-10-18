@@ -4,6 +4,7 @@
 
 use std::ffi::c_void;
 use std::io;
+use std::os::windows::io::RawHandle;
 
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LocalFree};
 use windows_sys::Win32::Security::Authorization::{
@@ -12,7 +13,10 @@ use windows_sys::Win32::Security::Authorization::{
 use windows_sys::Win32::Security::{
     GetTokenInformation, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
 };
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId;
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 
 /// 閉じ忘れないための、Win32 のハンドルの持ち主。
 pub struct Handle(pub HANDLE);
@@ -49,9 +53,15 @@ unsafe fn read_wide(ptr: *const u16) -> String {
 
 /// このプロセスを動かしているユーザーの SID を文字列（`S-1-5-21-...`）で返す。
 pub fn current_user_sid() -> io::Result<String> {
+    // SAFETY: 疑似ハンドル（現在のプロセス）は閉じなくてよく、常に有効。
+    user_sid_of_process(unsafe { GetCurrentProcess() })
+}
+
+/// 別のプロセスを動かしているユーザーの SID。トークンを読めない（権限が足りない）プロセスは失敗する。
+fn user_sid_of_process(process: HANDLE) -> io::Result<String> {
     let mut token: HANDLE = std::ptr::null_mut();
-    // SAFETY: 疑似ハンドル（現在のプロセス）の問い合わせ権限でトークンを開く。`token` は書き込める。
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+    // SAFETY: `process` は有効なハンドル（呼び出し側の保証）。`token` は書き込める。
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
         return Err(io::Error::last_os_error());
     }
     let token = Handle(token);
@@ -147,5 +157,71 @@ impl Drop for UserOnlyAcl {
     fn drop(&mut self) {
         // SAFETY: `descriptor` は ConvertStringSecurityDescriptorToSecurityDescriptorW が LocalAlloc で確保した領域。
         unsafe { LocalFree(self.descriptor) };
+    }
+}
+
+/// 開いたパイプのサーバー側のプロセスが、`expected` の SID のユーザーのものか確かめる。
+/// 別のユーザーが先に同じ名前のパイプを作って待ち受けている（先取り）のを、接続の直後に見つける。
+pub fn check_pipe_server_user(pipe: RawHandle, expected: &str) -> io::Result<()> {
+    let mut pid = 0u32;
+    // SAFETY: `pipe` は呼び出し側が開いている、有効なパイプのハンドル。`pid` は書き込める。
+    if unsafe { GetNamedPipeServerProcessId(pipe as HANDLE, &mut pid) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: プロセスの情報を問い合わせる権限だけで開く。ハンドルは `Handle` が閉じる。
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        let cause = io::Error::last_os_error();
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("cannot inspect the pipe server (pid {pid}): {cause}"),
+        ));
+    }
+    let process = Handle(process);
+    let actual = user_sid_of_process(process.0).map_err(|cause| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("cannot read the user of the pipe server (pid {pid}): {cause}"),
+        )
+    })?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("the pipe server (pid {pid}) runs as {actual}, not as {expected}"),
+        ))
+    }
+}
+
+/// 開いたパイプのサーバーが、このプロセスと同じユーザーのものか確かめる。
+pub fn check_pipe_server(pipe: RawHandle) -> io::Result<()> {
+    check_pipe_server_user(pipe, &current_user_sid()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::windows::io::AsRawHandle;
+
+    use super::*;
+
+    #[test]
+    fn the_pipe_server_of_the_same_user_is_accepted_and_another_user_is_refused() {
+        let name = format!("\\\\.\\pipe\\misao-sidtest-{}", std::process::id());
+        let acl = UserOnlyAcl::new().unwrap();
+        let mut options = tokio::net::windows::named_pipe::ServerOptions::new();
+        options.first_pipe_instance(true);
+        // SAFETY: `acl` は有効な SECURITY_ATTRIBUTES を持ち、この呼び出しの間生きている。
+        let _server =
+            unsafe { options.create_with_security_attributes_raw(&name, acl.attributes()) }.unwrap();
+        let client = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&name)
+            .unwrap();
+        check_pipe_server(client.as_raw_handle()).unwrap();
+        let err = check_pipe_server_user(client.as_raw_handle(), "S-1-5-21-1-2-3-4242").unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert!(err.to_string().contains("not as S-1-5-21-1-2-3-4242"), "{err}");
     }
 }

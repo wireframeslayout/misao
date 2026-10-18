@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::path::Path;
 
-use crate::client::{Client, ClientError};
+use crate::client::{Client, ClientError, SERVER_IDENTITY_MARK};
 use crate::error::{CliError, ErrorKind};
 
 impl From<ClientError> for CliError {
@@ -19,6 +19,10 @@ impl From<ClientError> for CliError {
 pub async fn connect_daemon(socket: &Path) -> Result<Client, CliError> {
     match Client::connect(socket).await {
         Ok(client) => Ok(client),
+        // 別のユーザーのサーバーが同じ名前で待ち受けている (Windows)。「起動していない」ではなく、理由をそのまま伝える。
+        Err(ClientError::Connection(detail)) if detail.contains(SERVER_IDENTITY_MARK) => {
+            Err(CliError::new(ErrorKind::Runtime, detail))
+        }
         Err(ClientError::Connection(_)) => Err(CliError::new(
             ErrorKind::DaemonUnreachable,
             format!(
