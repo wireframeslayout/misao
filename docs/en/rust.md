@@ -402,9 +402,113 @@ Sensitivity to scrollback and rings (bulk, 30 panes):
 
 With a large scrollback, Rust's 24-byte cells overtake xterm.js's 12-byte cells (at 20000 rows). There is room to shrink the cell (move combining marks out of the line, put attributes in a table).
 
+## Stage 6: distribution and release
+
+Stage 6 (#44) ships the Rust build as a single binary on GitHub Releases next to the existing Node assets.
+The switch of AZITO (its installer, units and bundle) is tracked in AZITO's own issue.
+
+### What a release contains
+
+| Asset | What it is |
+|---|---|
+| `misao-<version>-<target>.tar.gz` / `.zip` | The Rust binary, one per target (below), with `LICENSE`, `NOTICE` and `THIRD-PARTY-LICENSES.txt` |
+| `misao-sdk-<version>.tgz`, `misao-protocol-<version>.tgz` | `@misao/sdk` and `@misao/protocol` (TypeScript, unchanged) |
+| `misao-<version>.mjs`, `misao-<version>.LICENSES.txt` | The Node bundle (legacy, see [Retiring the Node assets](#retiring-the-node-assets)) |
+| `SHA256SUMS` | sha256 of every asset above |
+
+Targets: `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `aarch64-apple-darwin`,
+`x86_64-apple-darwin`, `x86_64-pc-windows-msvc`. Layout of an archive and how to install it:
+[Embedding](../embedding.md#the-single-binary) and [deploy/README.md](../../deploy/README.md).
+
+### Build choices
+
+- **Native builds, no cross-compilation.** Each target is built on a runner of its own platform
+  (Linux arm64 on `ubuntu-24.04-arm`, macOS Intel on `macos-15-intel`), so the smoke test runs on
+  every target. There is no target whose binary is shipped without having been executed.
+- **Linux is musl, statically linked.** One binary runs on any distribution with no glibc floor
+  (a glibc build would need a documented minimum such as the runner's glibc 2.39). The cost is the
+  musl allocator, which is slower and fragments more than glibc's; CI runs the whole e2e suite against the
+  musl x64 build (`Rust e2e (linux-musl)`), and the release smoke test checks that the binary is statically linked.
+- **Windows links the C runtime statically** (`-C target-feature=+crt-static`), so the Visual C++
+  redistributable is not needed.
+- The size and speed settings are the existing `[profile.release]` (thin LTO, one codegen unit,
+  `strip`, `panic = "abort"`).
+- **Licenses**: `THIRD-PARTY-LICENSES.txt` is generated from the dependency graph with
+  [cargo-about](https://github.com/EmbarkStudios/cargo-about) (`about.toml`, `about.hbs`), covering
+  all five targets. The accepted licenses in `about.toml` are the same list as in `deny.toml`;
+  change both together.
+- **Smoke test** (`scripts/smoke-binary.mjs`, run on each target after packing): checks the archive
+  layout, that Linux binaries are static and the Windows binary imports no C runtime DLL (`VCRUNTIME140.dll`, `api-ms-win-crt-*`; it reads the PE import table), `--version`, `serve` on a temporary socket / pipe,
+  `server.info` (`version` equals the release version), creating, reading and killing a pane, and
+  `misao stop`. `HOME`, `USERPROFILE` and `MISAO_*` point to a temporary directory.
+
+### Versions
+
+The release tag is the single source of truth. On `main` every version stays `0.0.0`.
+`node scripts/set-version.mjs <version>` writes the tag's version (without the `v`) into
+
+- the root and workspace `package.json` files and `package-lock.json`,
+- `[workspace.package] version` in `Cargo.toml` and the workspace crates in `Cargo.lock`.
+
+The release workflow runs it before building, in every job that builds anything. The Rust binary
+reads its version from Cargo (`CARGO_PKG_VERSION`), so `misao --version` and `server.info.version`
+are that value. The smoke test fails if they differ from the version in the archive's name, and
+`scripts/verify-release.mjs` does the same for the Node bundle. `protocolVersion`
+(`packages/protocol/src/version.ts`) is separate and changes only with the protocol.
+
+### Release procedure
+
+Only a maintainer cuts a release. The workflow publishes on a `v*` tag; the tagged commit must be on `main`.
+
+1. Make sure CI is green on `main` and decide the version (`MAJOR.MINOR.PATCH`, or with a
+   pre-release suffix such as `-rc.1`; a hyphen makes it a GitHub pre-release).
+2. Optional dry run on the commit to release: Actions > Release > Run workflow, with a version
+   such as `0.3.0-rc.0` (see below). Nothing is published.
+3. Tag and push: `git tag v<version> <commit on main> && git push origin v<version>`.
+4. The workflow builds and verifies the Node assets, builds the five binaries and smoke-tests each,
+   assembles the assets, writes `SHA256SUMS` (it fails if a file is missing or unexpected) and
+   creates the release. Published assets are never replaced; a fix ships as a new tag.
+5. Check the release page, then update the pinned version and sha256 values in the apps that ship misao.
+
+### Pinned actions and toolchain
+
+Every `uses:` in `release.yml` is pinned to a full commit SHA (the version is in the trailing comment), and
+the Rust toolchain is a specific version (`toolchain: 1.99.1`), because this workflow builds what users
+download. Dependabot (`.github/dependabot.yml`) opens weekly pull requests that move the action SHAs.
+The Rust version is not covered by it: bump `toolchain:` in `release.yml` by hand when a new stable
+release is wanted (the MSRV in `Cargo.toml` and `ci.yml` is a separate matter).
+
+### Dry run
+
+`Release` also runs without publishing, with the same steps up to the assembled assets:
+
+- Actions > Release > Run workflow (`workflow_dispatch`, input `version`, default `0.0.0-dryrun`), and
+- on every pull request that touches the release workflow, `scripts/`, `crates/`, `Cargo.toml`,
+  `Cargo.lock`, `about.toml` or `about.hbs`.
+
+The assembled files are kept for the default retention period as the artifact `release-assets`.
+The `publish` job runs only for a tag push.
+
+### Retiring the Node assets
+
+During the migration every release carries both builds so that an app that still reads
+`misao-<version>.mjs` and `misao-<version>.LICENSES.txt` (AZITO's current release pins these names
+and hashes) keeps working. The SDK and protocol tarballs are not affected: they stay.
+
+The Node bundle is removed from the release workflow when **both** hold:
+
+1. The apps that ship misao (AZITO) have released a version that uses the binary, and
+2. at least two minor releases of misao that carry both builds have been published since the first one.
+
+Then one release drops `misao-<version>.mjs` and its LICENSES file (a separate issue also removes
+`packages/daemon`, `packages/cli` and their tests). Until then the Node build is fixed only for
+serious defects; new features go to the Rust build.
+
 ## Migration plan
 
 Tracked in the issues: #39 (workspace, conformance, minimal daemon, CI), #40 core (RPC,
 workspaces / windows / panes, PTY, output recording, events), #41 screen and activity detection, #42
 persistence, attach and the whole CLI (all existing e2e pass), #43 macOS and Windows (stage 5, below), #44 binary
 distribution and the switch in AZITO. Background: #32 (parts survey), #37 (Windows).
+
+Stage 6 makes the Rust build the released one: it is published as a binary, and the Node assets stay for a transition period ([Retiring the Node assets](#retiring-the-node-assets)).

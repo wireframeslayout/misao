@@ -1,9 +1,10 @@
 // 使い方: node scripts/set-version.mjs <version>   例: 0.1.0 / 0.1.0-rc.1
-// ルートと全ワークスペースの version、内部依存の参照、package-lock.json の該当エントリを揃える。
+// ルートと全ワークスペースの version、内部依存の参照、package-lock.json の該当エントリ、
+// Rust 版の Cargo.toml (workspace.package.version) と Cargo.lock を揃える。
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyWorkspaceVersion, parseReleaseVersion } from './release/manifest.mjs';
+import { applyCargoVersion, applyWorkspaceVersion, parseReleaseVersion } from './release/manifest.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -36,4 +37,14 @@ for (const key of ['', ...workspaceDirs]) {
 }
 writeJson(lockFile, { ...lock, version, packages });
 
-console.log(`set version ${version} on root + ${workspaceDirs.length} workspaces`);
+const cargoTomlFile = path.join(root, 'Cargo.toml');
+const cargoLockFile = path.join(root, 'Cargo.lock');
+const cargo = applyCargoVersion({
+  cargoToml: readFileSync(cargoTomlFile, 'utf8'),
+  cargoLock: readFileSync(cargoLockFile, 'utf8'),
+  version,
+});
+writeFileSync(cargoTomlFile, cargo.cargoToml);
+writeFileSync(cargoLockFile, cargo.cargoLock);
+
+console.log(`set version ${version} on root + ${workspaceDirs.length} workspaces + Cargo workspace`);

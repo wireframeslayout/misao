@@ -39,14 +39,64 @@ depend on the tarball URLs. The SDK imports types from `@misao/protocol`, so lis
   `node scripts/set-version.mjs <version>` and `npm run release:pack -- --tag v<version>` (output
   in `release/`), then `node scripts/verify-release.mjs --tag v<version>`, which installs the SDK
   tarball into a temporary project and checks the runtime import and type resolution. Undo the
-  version change afterwards with `git checkout -- package.json package-lock.json packages/*/package.json`.
+  version change afterwards with `git checkout -- package.json package-lock.json packages/*/package.json Cargo.toml Cargo.lock`.
 
-## Bundling the daemon and CLI
+## Shipping the daemon and CLI
 
-Each release also attaches `misao-<version>.mjs`: the CLI and the daemon bundled into one ESM
-file, for apps that ship misao themselves (for example AZITO). `SHA256SUMS` in the same release
-lists the sha256 of every asset (both tarballs and the bundle); check it with
-`sha256sum -c --ignore-missing SHA256SUMS`.
+An app that ships misao itself (for example AZITO) takes the daemon and the CLI from the release in
+one of two forms: the **single binary** (recommended) or, until it is retired, the Node bundle.
+`SHA256SUMS` in the release lists the sha256 of every asset (the tarballs, the bundle and all
+binary archives); check it with `sha256sum -c --ignore-missing SHA256SUMS`. An app should pin the
+version and the sha256 of the assets it downloads rather than trust a `SHA256SUMS` fetched from the
+same place.
+
+### The single binary
+
+The CLI and the daemon are one executable, `misao`, with no runtime dependency (no Node.js, no
+`node-pty`, no `node_modules`). Each release has one archive per target:
+
+| Asset | Platform |
+|---|---|
+| `misao-<version>-x86_64-unknown-linux-musl.tar.gz` | Linux x64 (static) |
+| `misao-<version>-aarch64-unknown-linux-musl.tar.gz` | Linux arm64 (static) |
+| `misao-<version>-aarch64-apple-darwin.tar.gz` | macOS, Apple silicon |
+| `misao-<version>-x86_64-apple-darwin.tar.gz` | macOS, Intel |
+| `misao-<version>-x86_64-pc-windows-msvc.zip` | Windows x64 |
+
+```text
+misao-<version>-<target>/        the only top-level entry (use tar --strip-components=1 to flatten it)
+  misao                          misao.exe on Windows
+  LICENSE
+  NOTICE
+  THIRD-PARTY-LICENSES.txt       licenses of the Rust crates compiled into the binary
+```
+
+```bash
+misao --version          # misao 0.3.0
+misao serve              # same arguments and environment as the Node build
+misao stop               # graceful stop; the exit code is 0
+```
+
+- The Linux binaries are statically linked against musl, so they run on any distribution and need
+  no minimum glibc. The macOS binaries use the toolchain's default deployment target; the Windows
+  binary links the C runtime statically (no Visual C++ redistributable) and needs ConPTY
+  (Windows 10 version 1809 or later). Binaries are not code-signed or notarized.
+- `--version` and the `version` field of `server.info` are the release version (`misao 0.3.0` and
+  `"version": "0.3.0"`), the same value as the tag without the `v`.
+- The protocol is unchanged (`protocolVersion` in `server.info`), so an SDK and a daemon of
+  different builds interoperate by the usual rule: same **major**.
+- Every archive is unpacked and smoke-tested in the release workflow on its own platform
+  (`scripts/smoke-binary.mjs`): `--version`, `serve` on a temporary socket, `server.info` (its
+  `version` must equal the release version), creating, reading and killing one pane, and
+  `misao stop`. It never touches a running daemon. To run it locally:
+  `node scripts/smoke-binary.mjs misao-<version>-<target>.tar.gz`.
+- To run it as a service, see [deploy/README.md](../deploy/README.md).
+
+### The Node bundle (legacy)
+
+Until it is retired (the schedule is in [docs/en/rust.md](en/rust.md#retiring-the-node-assets)),
+each release also attaches `misao-<version>.mjs`: the CLI and the daemon bundled into one ESM
+file, with `misao-<version>.LICENSES.txt`.
 
 ```bash
 node misao-0.1.0.mjs --version
@@ -67,8 +117,7 @@ node misao-0.1.0.mjs serve
   are the release version baked into that file (`misao 0.1.0` and `"version": "0.1.0"`). Unlike
   `protocolVersion`, it tells apart two daemons that speak the same protocol but are different
   builds. An older daemon that does not send `version` is reported as such by its absence. To run the
-  daemon as a service, see [deploy/README.md](../deploy/README.md) (systemd unit for Linux, launchd
-  plist for macOS).
+  daemon as a service, see [deploy/README.md](../deploy/README.md).
 - Compatibility: the bundle's daemon reports `PROTOCOL_VERSION` in `server.info`, and a client
   (`@misao/sdk`) is compatible when the **major** versions are equal (see
   [Protocol](protocol.md#versioning-and-compatibility)). Ship an SDK and a bundle from the same

@@ -19,6 +19,25 @@ TUI、SSH 端末はすべてクライアントです。
 - エージェントの稼働状態（working / blocked / idle / exited）をデーモン内で判定する
 - 制御側のアプリが落ちていても、SSH 端末から `misao ls / attach / new / kill / send` で操作できる
 
+## インストール
+
+misao は実行時の依存がない単一バイナリです。[最新のリリース](https://github.com/wireframeslayout/misao/releases)から
+お使いのプラットフォームのアーカイブをダウンロードし、`SHA256SUMS` で確かめて、`misao` を PATH に置きます。
+
+```bash
+VERSION=0.3.0 TARGET=x86_64-unknown-linux-musl   # ほかに aarch64-unknown-linux-musl、aarch64-apple-darwin、x86_64-apple-darwin
+BASE=https://github.com/wireframeslayout/misao/releases/download/v$VERSION
+curl -fsSLO "$BASE/misao-$VERSION-$TARGET.tar.gz" -O "$BASE/SHA256SUMS"
+sha256sum -c --ignore-missing SHA256SUMS          # macOS は shasum -a 256 -c --ignore-missing SHA256SUMS
+tar -xzf "misao-$VERSION-$TARGET.tar.gz"
+mkdir -p ~/.local/bin && install -m 755 "misao-$VERSION-$TARGET/misao" ~/.local/bin/misao
+misao serve
+```
+
+Windows（`x86_64-pc-windows-msvc`）は `misao.exe` を含む `.zip` です。デーモンを systemd のユニット・launchd のエージェント・
+タスクスケジューラのタスクとして常駐させる手順は [deploy/README.md](deploy/README.md) を参照してください。移行期間は、リリースに Node 版の
+バンドル（`misao-<version>.mjs`）も載っています。[組み込み](docs/embedding.ja.md#デーモンと-cli-の同梱)を参照してください。
+
 ## パッケージ（予定）
 
 | パッケージ | 役割 |
@@ -51,7 +70,7 @@ vim・bash で通して確かめます。`npm test` には含まれません。�
 `MISAO_E2E_SYSTEMD=1`（一時的な systemd ユーザー unit を作る）。`MISAO_E2E_FULL=1` で Phase 0 の
 検証と同じ規模に戻します。
 
-systemd でデーモンを動かす手順は [deploy/README.md](deploy/README.md) を参照してください。
+デーモンをサービスとして動かす手順は [deploy/README.md](deploy/README.md) を参照してください。バイナリとしてリリースするのは Rust 版（`crates/`）です。ビルドとリリースの方法は [docs/ja/rust.md](docs/ja/rust.md) にあります。
 
 開発中は CLI を `node packages/cli/dist/main.js` か `npx misao` で実行します（`npm run build` の後、
 bin のリンクを作るために一度だけ `npm rebuild misao` を実行してください）。
@@ -65,7 +84,8 @@ bin のリンクを作るために一度だけ `npm rebuild misao` を実行し�
 | [docs/protocol.ja.md](docs/protocol.ja.md) | ソケットプロトコル: メソッド・通知・`seq` / `epoch` / `gap`・エラー |
 | [docs/cli.ja.md](docs/cli.ja.md) | `misao` コマンド: 対象指定・コマンド・attach のキー操作・終了コード |
 | [docs/config.ja.md](docs/config.ja.md) | `misao.json`・ソケットの場所・メモリの目安・サービスとして動かす |
-| [docs/embedding.ja.md](docs/embedding.ja.md) | Node SDK・ラベル規約・シークレット・エージェントプロファイル |
+| [docs/embedding.ja.md](docs/embedding.ja.md) | Node SDK・バイナリの同梱・ラベル規約・シークレット・エージェントプロファイル |
+| [deploy/README.md](deploy/README.md) | デーモンをサービスとして動かす（systemd・launchd・タスクスケジューラ。英語） |
 
 ## ライセンス
 
