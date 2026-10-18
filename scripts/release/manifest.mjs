@@ -16,6 +16,80 @@ export const RELEASE_ASSETS = [
 
 export const CHECKSUMS_FILE = 'SHA256SUMS';
 
+// Rust 版の単一バイナリを配布するターゲット (Rust の target triple)。runner は GitHub Actions の実行環境で、
+// すべてネイティブにビルドする (クロスコンパイルしない) ので、全ターゲットでスモークテストを実行できる。
+// release.yml の matrix と同じ並びにすること (test/release-workflow.test.mjs が一致を確かめる)。
+export const BINARY_TARGETS = [
+  { target: 'x86_64-unknown-linux-musl', runner: 'ubuntu-24.04' },
+  { target: 'aarch64-unknown-linux-musl', runner: 'ubuntu-24.04-arm' },
+  { target: 'aarch64-apple-darwin', runner: 'macos-14' },
+  { target: 'x86_64-apple-darwin', runner: 'macos-15-intel' },
+  { target: 'x86_64-pc-windows-msvc', runner: 'windows-2025' },
+];
+
+export function isWindowsTarget(target) {
+  return target.includes('-windows-');
+}
+
+// アーカイブ内の Rust 版バイナリの名前。
+export function binaryExecutableName(target) {
+  return isWindowsTarget(target) ? 'misao.exe' : 'misao';
+}
+
+// アーカイブのトップレベルのディレクトリ名 (展開すると 1 つのディレクトリになる)。
+export function binaryArchiveDir(version, target) {
+  return `misao-${version}-${target}`;
+}
+
+// misao-<version>-<target>.tar.gz (Windows は .zip)
+export function binaryArchiveName(version, target) {
+  return `${binaryArchiveDir(version, target)}${isWindowsTarget(target) ? '.zip' : '.tar.gz'}`;
+}
+
+// アーカイブのトップレベルのディレクトリの直下に入れるファイル。
+export const BINARY_LICENSES_FILE = 'THIRD-PARTY-LICENSES.txt';
+
+export function binaryArchiveMembers(target) {
+  return [binaryExecutableName(target), 'LICENSE', 'NOTICE', BINARY_LICENSES_FILE];
+}
+
+// Rust 版バイナリのアーカイブ名 (全ターゲット)。
+export function binaryFileNames(version) {
+  return BINARY_TARGETS.map(({ target }) => binaryArchiveName(version, target));
+}
+
+// リリースに載せる全ファイル名 (Node 版の tarball・バンドル + Rust 版のアーカイブ)。SHA256SUMS 自身は含めない。
+export function allReleaseFileNames(version) {
+  return [...releaseFileNames(version), ...binaryFileNames(version)];
+}
+
+// Cargo のワークスペースの version を揃える対象の crate (Cargo.lock の中の名前)。
+const CARGO_CRATES = ['misao', 'misao-daemon', 'misao-protocol'];
+
+// Cargo.toml の [workspace.package] の version と、Cargo.lock の自分の crate の version を新しい version にする。
+// 置き換え箇所が想定と違う (数が合わない) ときは、黙って進めず例外にする。
+export function applyCargoVersion({ cargoToml, cargoLock, version }) {
+  const sectionStart = cargoToml.indexOf('[workspace.package]');
+  if (sectionStart < 0) throw new Error('Cargo.toml has no [workspace.package] section');
+  const nextSection = cargoToml.indexOf('\n[', sectionStart + 1);
+  const sectionEnd = nextSection < 0 ? cargoToml.length : nextSection;
+  const section = cargoToml.slice(sectionStart, sectionEnd);
+  const versionLine = /^version = "[^"]*"$/m;
+  if (!versionLine.test(section)) throw new Error('[workspace.package] in Cargo.toml has no version line');
+  const nextToml = cargoToml.slice(0, sectionStart) + section.replace(versionLine, `version = "${version}"`) + cargoToml.slice(sectionEnd);
+
+  let replaced = 0;
+  const lockPattern = new RegExp(`(\\[\\[package\\]\\]\\nname = "(?:${CARGO_CRATES.join('|')})"\\nversion = ")[^"]*(")`, 'g');
+  const nextLock = cargoLock.replace(lockPattern, (_, head, tail) => {
+    replaced += 1;
+    return `${head}${version}${tail}`;
+  });
+  if (replaced !== CARGO_CRATES.length) {
+    throw new Error(`Cargo.lock: expected ${CARGO_CRATES.length} workspace crates (${CARGO_CRATES.join(', ')}), updated ${replaced}`);
+  }
+  return { cargoToml: nextToml, cargoLock: nextLock };
+}
+
 const PROTOCOL_NAME = '@misao/protocol';
 // SemVer 2.0.0 の MAJOR.MINOR.PATCH[-prerelease]（数値に先頭ゼロ不可、build メタデータは扱わない）。
 const NUMERIC = '(?:0|[1-9]\\d*)';

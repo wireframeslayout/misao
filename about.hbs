@@ -1,0 +1,21 @@
+misao third-party licenses
+
+This file lists the licenses of the Rust crates compiled into the misao binary.
+The license of misao itself is in LICENSE and NOTICE next to it.
+{{#each overview}}
+  - {{name}} ({{count}} crates)
+{{/each}}
+
+{{#each licenses}}
+================================================================================
+{{name}}
+================================================================================
+
+Used by:
+{{#each used_by}}
+  - {{crate.name}} {{crate.version}}{{#if crate.repository}} ({{crate.repository}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

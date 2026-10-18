@@ -21,6 +21,27 @@ apps, TUIs, and SSH terminals are all clients.
 - Keeps working when the controlling app is down: `misao ls / attach / new / kill / send`
   from any SSH session
 
+## Installing
+
+misao is a single binary with no runtime dependencies. Download the archive for your platform from the
+[latest release](https://github.com/wireframeslayout/misao/releases), check it against `SHA256SUMS`, and put
+`misao` on your PATH:
+
+```bash
+VERSION=0.3.0 TARGET=x86_64-unknown-linux-musl   # or aarch64-unknown-linux-musl, aarch64-apple-darwin, x86_64-apple-darwin
+BASE=https://github.com/wireframeslayout/misao/releases/download/v$VERSION
+curl -fsSLO "$BASE/misao-$VERSION-$TARGET.tar.gz" -O "$BASE/SHA256SUMS"
+sha256sum -c --ignore-missing SHA256SUMS          # macOS: shasum -a 256 -c --ignore-missing SHA256SUMS
+tar -xzf "misao-$VERSION-$TARGET.tar.gz"
+install -D -m 755 "misao-$VERSION-$TARGET/misao" ~/.local/bin/misao
+misao serve
+```
+
+Windows (`x86_64-pc-windows-msvc`) ships as a `.zip` with `misao.exe`. To keep the daemon running as a
+systemd unit, a launchd agent or a Task Scheduler task, see [deploy/README.md](deploy/README.md). The release
+also still carries the Node bundle (`misao-<version>.mjs`) during the migration; see
+[Embedding](docs/embedding.md#shipping-the-daemon-and-cli).
+
 ## Packages (planned)
 
 | Package | Purpose |
@@ -56,7 +77,8 @@ external tools are opt-in: `MISAO_E2E_CLAUDE=1` (Claude Code), `MISAO_E2E_CODEX=
 `MISAO_E2E_SYSTEMD=1` (creates a temporary systemd user unit). `MISAO_E2E_FULL=1` restores
 the full scale of the Phase 0 spike.
 
-To run the daemon under systemd, see [deploy/README.md](deploy/README.md).
+To run the daemon as a service, see [deploy/README.md](deploy/README.md). The Rust build (`crates/`) is the one released as
+a binary; how it is built and released: [docs/en/rust.md](docs/en/rust.md).
 
 During development run the CLI with `node packages/cli/dist/main.js`, or `npx misao`
 (after `npm run build`, run `npm rebuild misao` once to create the bin link).
@@ -70,7 +92,8 @@ English is the canonical version; each document has a Japanese edition (`*.ja.md
 | [docs/protocol.md](docs/protocol.md) | Socket protocol: methods, notifications, `seq` / `epoch` / `gap`, errors |
 | [docs/cli.md](docs/cli.md) | The `misao` command: targets, commands, attach keys, exit codes |
 | [docs/config.md](docs/config.md) | `misao.json`, socket location, memory sizing, running as a service |
-| [docs/embedding.md](docs/embedding.md) | Node SDK, label conventions, secrets, agent profiles |
+| [docs/embedding.md](docs/embedding.md) | Node SDK, shipping the binary, label conventions, secrets, agent profiles |
+| [deploy/README.md](deploy/README.md) | Running the daemon as a service (systemd, launchd, Task Scheduler) |
 
 ## License
 

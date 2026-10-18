@@ -392,8 +392,89 @@ scrollback と rings の感度（bulk、30 ペイン）:
 
 scrollback が大きいと Rust のセル（24 バイト）が Node の xterm.js（セル 12 バイト）を上回ります（20000 行で逆転）。セルを小さくする余地（結合文字を行の外に出す、属性を表に入れる）は残してあります。
 
+## 第 6 段の振る舞い（配布とリリース）
+
+第 6 段（#44）は、Rust 版を単一バイナリとして GitHub Releases に、既存の Node 版の資産と並べて載せます。
+AZITO 側の切り替え（導入処理・ユニット・バンドル）は AZITO の別 issue で進めます。
+
+### リリースに含まれるもの
+
+| アセット | 内容 |
+|---|---|
+| `misao-<version>-<target>.tar.gz` / `.zip` | ターゲットごとの Rust 版バイナリ（下記）。`LICENSE`・`NOTICE`・`THIRD-PARTY-LICENSES.txt` 付き |
+| `misao-sdk-<version>.tgz`、`misao-protocol-<version>.tgz` | `@misao/sdk` と `@misao/protocol`（TypeScript のまま。変更なし） |
+| `misao-<version>.mjs`、`misao-<version>.LICENSES.txt` | Node 版のバンドル（廃止予定。[Node 版の資産の廃止](#node-版の資産の廃止)） |
+| `SHA256SUMS` | 上のすべてのアセットの sha256 |
+
+ターゲット: `x86_64-unknown-linux-musl`、`aarch64-unknown-linux-musl`、`aarch64-apple-darwin`、
+`x86_64-apple-darwin`、`x86_64-pc-windows-msvc`。アーカイブの構成と導入方法は
+[組み込み](../embedding.ja.md#単一バイナリ)と [deploy/README.md](../../deploy/README.md) にあります。
+
+### ビルドの方針
+
+- **ネイティブビルドで、クロスコンパイルしない。** 各ターゲットを自分のプラットフォームのランナーでビルドします
+  （Linux arm64 は `ubuntu-24.04-arm`、macOS Intel は `macos-15-intel`）。そのため全ターゲットでスモークテストを実行でき、
+  一度も実行していないバイナリを配ることがありません。
+- **Linux は musl の静的リンク。** どのディストリビューションでも動き、glibc の最低バージョンがありません
+  （glibc 版にすると、ランナーの glibc 2.39 などを最低バージョンとして明記する必要があります）。代償は musl のアロケータで、
+  glibc より遅く断片化しやすい点です。e2e は musl の x64 ビルドで全部通っていて、リリースのスモークテストは静的リンクであることも確かめます。
+- **Windows は C ランタイムを静的リンク**（`-C target-feature=+crt-static`）するので、Visual C++ 再頒布可能パッケージは要りません。
+- サイズと速度の設定は既存の `[profile.release]`（thin LTO、codegen-units 1、`strip`、`panic = "abort"`）です。
+- **ライセンス**: `THIRD-PARTY-LICENSES.txt` は依存グラフから
+  [cargo-about](https://github.com/EmbarkStudios/cargo-about)（`about.toml`、`about.hbs`）で生成し、5 ターゲットの依存を全部含めます。
+  `about.toml` の許可ライセンスは `deny.toml` と同じ一覧です。変えるときは両方を一緒に変えます。
+- **スモークテスト**（`scripts/smoke-binary.mjs`。パッケージ化のあと各ターゲットで実行）: アーカイブの構成、Linux のバイナリが静的リンクであること、
+  `--version`、一時ソケット / パイプでの `serve`、`server.info`（`version` がリリースの version と一致）、pane の作成・読み取り・kill、`misao stop`。
+  `HOME`・`USERPROFILE`・`MISAO_*` は一時ディレクトリに向けます。
+
+### バージョン
+
+リリースのタグが唯一の正です。`main` ではすべての version を `0.0.0` のままにします。
+`node scripts/set-version.mjs <version>` が、タグの version（`v` を除く）を次に書き込みます。
+
+- ルートとワークスペースの `package.json`、`package-lock.json`
+- `Cargo.toml` の `[workspace.package] version` と、`Cargo.lock` のワークスペースの crate
+
+リリースのワークフローは、何かをビルドするすべてのジョブで、ビルドの前にこれを実行します。Rust 版のバイナリは version を Cargo
+（`CARGO_PKG_VERSION`）から取るので、`misao --version` と `server.info.version` はその値です。アーカイブ名の version と違えばスモークテストが失敗し、
+Node 版のバンドルは `scripts/verify-release.mjs` が同じ確認をします。`protocolVersion`（`packages/protocol/src/version.ts`）は別で、プロトコルを変えたときだけ変わります。
+
+### リリース手順
+
+リリースを切るのはメンテナーだけです。ワークフローは `v*` タグで公開し、タグのコミットは `main` にある必要があります。
+
+1. `main` の CI が緑であることを確かめ、version を決めます（`MAJOR.MINOR.PATCH`、または `-rc.1` のような pre-release 接尾辞。ハイフンを含むと GitHub の pre-release になります）。
+2. 任意: リリースするコミットで dry-run を実行します。Actions > Release > Run workflow で、`0.3.0-rc.0` のような version を指定します（下記）。何も公開しません。
+3. タグを打って push します: `git tag v<version> <main のコミット> && git push origin v<version>`。
+4. ワークフローが Node 版の資産をビルド・検証し、5 つのバイナリをビルドして各スモークテストを通し、資産を集めて `SHA256SUMS` を作り（ファイルの欠落や余分があれば失敗）、リリースを作ります。
+   公開済みのアセットは差し替えません。修正は新しいタグで出します。
+5. リリースページを確認し、misao を同梱するアプリの固定している version と sha256 を更新します。
+
+### dry-run
+
+`Release` は公開せずに、資産を集めるところまで同じ手順で動かせます。
+
+- Actions > Release > Run workflow（`workflow_dispatch`、入力 `version`、既定は `0.0.0-dryrun`）
+- リリースのワークフロー・`scripts/`・`crates/`・`Cargo.toml`・`Cargo.lock`・`about.toml`・`about.hbs` に触れるすべての pull request
+
+集めたファイルは、既定の保持期間のあいだ artifact `release-assets` に残ります。`publish` ジョブはタグの push のときだけ動きます。
+
+### Node 版の資産の廃止
+
+移行期間は、すべてのリリースが両方のビルドを載せます。`misao-<version>.mjs` と `misao-<version>.LICENSES.txt` を読むアプリ
+（AZITO の現行版はこの名前とハッシュを固定しています）を壊さないためです。SDK と protocol の tarball は対象外で、そのまま残ります。
+
+次の**両方**を満たしたら、リリースのワークフローから Node 版のバンドルを外します。
+
+1. misao を同梱するアプリ（AZITO）が、バイナリを使う版をリリースした。
+2. 両方のビルドを載せた misao のマイナーリリースが、最初の 1 つから数えて 2 つ以上公開された。
+
+そのうえで、あるリリースで `misao-<version>.mjs` とその LICENSES ファイルを外します（`packages/daemon`・`packages/cli` とそのテストの削除は別 issue）。それまで Node 版は重大な不具合だけを直し、新機能は Rust 版に入れます。
+
 ## 移行計画
 
 issue で管理しています。#39（workspace・プロトコル適合・最小デーモン・CI）、#40 中核（RPC・作業場所/窓/ペイン・PTY・出力の記録・イベント）、
 #41 画面と稼働判定、#42 状態の保存・attach・CLI 全体（既存 e2e を全部通す）、#43 macOS と Windows（第 5 段、上記）、#44 バイナリ配布と AZITO の切り替え。
 背景は #32（部品の検討）と #37（Windows）。
+
+第 6 段で、リリースするのは Rust 版になります。バイナリとして公開し、Node 版の資産は移行期間だけ残します（[Node 版の資産の廃止](#node-版の資産の廃止)）。

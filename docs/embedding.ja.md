@@ -31,7 +31,43 @@ SDK（`@misao/sdk`）を使って自分の Node.js プログラムから misao �
 
 ## デーモンと CLI の同梱
 
-リリースには `misao-<version>.mjs` も添付します。CLI とデーモンを 1 つの ESM ファイルにまとめたもので、misao を自分で同梱するアプリ（例: AZITO）向けです。同じリリースの `SHA256SUMS` に、すべてのアセット（2 つの tarball とこのバンドル）の sha256 が載っています。`sha256sum -c --ignore-missing SHA256SUMS` で確かめられます。
+misao を自分で同梱するアプリ（例: AZITO）は、リリースからデーモンと CLI を、**単一バイナリ**（推奨）か、廃止までの間は Node 版のバンドルのどちらかで受け取ります。同じリリースの `SHA256SUMS` に、すべてのアセット（tarball・バンドル・全バイナリのアーカイブ）の sha256 が載っています。`sha256sum -c --ignore-missing SHA256SUMS` で確かめられます。アプリ側では、ダウンロード元から取った `SHA256SUMS` を信用せず、取得するアセットの version と sha256 を固定してください。
+
+### 単一バイナリ
+
+CLI とデーモンは 1 つの実行ファイル `misao` で、実行時の依存はありません（Node.js・`node-pty`・`node_modules` は不要）。リリースにはターゲットごとに 1 つのアーカイブがあります。
+
+| アセット | プラットフォーム |
+|---|---|
+| `misao-<version>-x86_64-unknown-linux-musl.tar.gz` | Linux x64（静的リンク） |
+| `misao-<version>-aarch64-unknown-linux-musl.tar.gz` | Linux arm64（静的リンク） |
+| `misao-<version>-aarch64-apple-darwin.tar.gz` | macOS（Apple silicon） |
+| `misao-<version>-x86_64-apple-darwin.tar.gz` | macOS（Intel） |
+| `misao-<version>-x86_64-pc-windows-msvc.zip` | Windows x64 |
+
+```text
+misao-<version>-<target>/        トップレベルはこのディレクトリ 1 つだけ（tar --strip-components=1 で平らにできる）
+  misao                          Windows は misao.exe
+  LICENSE
+  NOTICE
+  THIRD-PARTY-LICENSES.txt       バイナリに入っている Rust の crate のライセンス
+```
+
+```bash
+misao --version          # misao 0.3.0
+misao serve              # 引数と環境変数は Node 版と同じ
+misao stop               # 正常停止。終了コードは 0
+```
+
+- Linux のバイナリは musl で静的リンクしているので、ディストリビューションを選ばず、glibc の最低バージョンもありません。macOS のバイナリはツールチェーン既定のデプロイメントターゲットです。Windows のバイナリは C ランタイムを静的リンクしている（Visual C++ 再頒布可能パッケージ不要）ので、ConPTY（Windows 10 version 1809 以降）だけが必要です。バイナリにコード署名・notarization はしていません。
+- `--version` と `server.info` の `version` はリリースの version（`misao 0.3.0` と `"version": "0.3.0"`）で、タグから `v` を除いた値と同じです。
+- プロトコルは変わりません（`server.info` の `protocolVersion`）。SDK とデーモンのビルドが違っても、通常のルール（**メジャー**が同じ）で相互に接続できます。
+- リリースのワークフローは、各アーカイブを展開し、そのプラットフォームの上でスモークテスト（`scripts/smoke-binary.mjs`）を実行します: `--version`、一時ソケットでの `serve`、`server.info`（`version` がリリースの version と一致すること）、pane 1 つの作成・読み取り・kill、`misao stop`。稼働中のデーモンには触れません。手元では `node scripts/smoke-binary.mjs misao-<version>-<target>.tar.gz` で実行できます。
+- サービスとして動かす手順は [deploy/README.md](../deploy/README.md) を参照してください。
+
+### Node 版のバンドル（廃止予定）
+
+廃止まで（スケジュールは [docs/ja/rust.md](ja/rust.md#node-版の資産の廃止)）、リリースには `misao-<version>.mjs` も添付します。CLI とデーモンを 1 つの ESM ファイルにまとめたもので、`misao-<version>.LICENSES.txt` が付きます。
 
 ```bash
 node misao-0.1.0.mjs --version
@@ -41,7 +77,7 @@ node misao-0.1.0.mjs serve
 - `misao-<version>.LICENSES.txt`（`SHA256SUMS` にも載ります）には、misao 本体（Apache-2.0、`NOTICE` を含む）と、バンドルに入っているサードパーティパッケージ（`zod`、`@xterm/headless`。どちらも MIT）のライセンス全文が入っています。バンドルと一緒に配布してください。バンドルの先頭の行もこのファイルを指しています。`@xterm/headless` は公開物にライセンスファイルを含めていないため、`scripts/release/third-party-licenses/` に置いた上流のライセンス全文を使っています。
 - ネイティブモジュールの `node-pty` はバンドルに**含まれません**。通常の Node.js の探索で解決されるので、ファイルの隣（または親ディレクトリ）の `node_modules/node-pty` に置いてください。すでに `node-pty ^1.1.0` を同梱しているアプリはそれを共有できます。misao 自身はプリビルドを配りません。`@xterm/headless` と `zod` はバンドルの中に入っています。
 - バンドルは ESM で、Node.js 24 以上が必要です。先頭は `#!/usr/bin/env node` の shebang なので、実行権限を付けて直接実行することもできます。
-- CLI とデーモンは同じファイルなので、`--version` と `server.info` の `version` は、そのファイルに埋め込まれたリリースの version（`misao 0.1.0` と `"version": "0.1.0"`）です。`protocolVersion` と違い、同じプロトコルを話す別ビルドのデーモンを見分けられます。`version` を返さない古いデーモンは、その欠落で区別できます。デーモンをサービスとして動かす手順は [deploy/README.md](../deploy/README.md)（Linux は systemd ユニット、macOS は launchd の plist）を参照してください。
+- CLI とデーモンは同じファイルなので、`--version` と `server.info` の `version` は、そのファイルに埋め込まれたリリースの version（`misao 0.1.0` と `"version": "0.1.0"`）です。`protocolVersion` と違い、同じプロトコルを話す別ビルドのデーモンを見分けられます。`version` を返さない古いデーモンは、その欠落で区別できます。デーモンをサービスとして動かす手順は [deploy/README.md](../deploy/README.md) を参照してください。
 - 互換ルール: バンドルのデーモンは `server.info` で `PROTOCOL_VERSION` を報告し、クライアント（`@misao/sdk`）は**メジャー**バージョンが等しければ互換です（[プロトコル](protocol.ja.md#バージョンと互換性)）。SDK とバンドルは同じリリースのものを使うか、少なくともプロトコルのメジャーを揃えてください。マイナーの差は許容されます（受信側は未知のフィールドと enum 値を許容します）。
 - 手元で作るには `node scripts/bundle-cli.mjs --out dist-release` のあと、`node scripts/smoke-bundle.mjs dist-release/misao-<version>.mjs` を実行します。スモークテストは、バンドルと `node-pty` を一時ディレクトリに置き、`--version` と `server.info` の `version` がファイル名の version と一致すること、一時ソケットでの `serve`、pane の作成・出力確認・kill（外部の `node-pty` で pty が作れること）、正常な停止を確かめます。稼働中のデーモンには触れません。
 
