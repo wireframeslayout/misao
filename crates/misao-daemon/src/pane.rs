@@ -401,11 +401,18 @@ impl Pane {
         lock(&self.input).take();
         let new_head = {
             let mut inner = lock(&self.inner);
+            // 再描画かどうか決まらないまま残った候補は、アプリの出力として流す
+            let ts = now_iso();
+            let held = inner.repaint.take_held();
+            let mut lines = inner.assembler.push(&held);
             // 改行なしで終わった最終行も行ストリームに流す
             let rest = inner.assembler.pending().to_string();
-            let any = !rest.is_empty();
-            if any {
-                inner.push_line(rest, now_iso());
+            if !rest.is_empty() {
+                lines.push(rest);
+            }
+            let any = !lines.is_empty();
+            for text in lines {
+                inner.push_line(text, ts.clone());
             }
             inner.state = RunState::Exited;
             inner.exit = Some(exit);
