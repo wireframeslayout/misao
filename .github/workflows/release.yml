@@ -1,5 +1,7 @@
 name: Release
 
+# uses: は完全なコミット SHA に固定している (末尾のコメントが版)。Rust も具体的な版に固定する (MSRV とは別。ci.yml の rust-msrv が MSRV)。
+# 更新は Dependabot (.github/dependabot.yml) が actions を、Rust の版は手で (docs/en/rust.md の Release procedure)。
 # 公開: v* タグの push。タグのコミットが main にあることを確かめたうえで、Node 版の資産と Rust 版のバイナリを 1 つのリリースに載せる。
 # dry-run (公開しない): workflow_dispatch または、リリースの仕組みを変える PR。同じ手順で成果物とスモークテストまで通し、
 # 成果物は Actions の artifact (release-assets) に残す。dry-run の版は 0.0.0-dryrun (workflow_dispatch の version で変えられる)。
@@ -36,7 +38,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -47,7 +49,7 @@ jobs:
             echo "tag $TAG ($GITHUB_SHA) is not on origin/main; only commits merged to main are released" >&2
             exit 1
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
@@ -59,7 +61,7 @@ jobs:
       - run: npm run release:pack -- --tag "$TAG"
       - run: node scripts/verify-release.mjs --tag "$TAG"
       # SHA256SUMS は assemble ジョブが Rust 版も含めて作り直す。
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-node
           path: |
@@ -73,13 +75,20 @@ jobs:
     name: Rust third-party licenses
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@v2
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.99.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-about@0.8.4
+      # 出力に載る workspace の crate の version を、リリースの version と揃える
+      - run: node scripts/set-version.mjs "${TAG#v}"
       - run: cargo about generate --locked --fail about.hbs -o THIRD-PARTY-LICENSES.txt
       - name: Check the license file
         run: |
@@ -87,7 +96,7 @@ jobs:
             grep -q "$needle" THIRD-PARTY-LICENSES.txt || { echo "THIRD-PARTY-LICENSES.txt does not mention $needle" >&2; exit 1; }
           done
           wc -c THIRD-PARTY-LICENSES.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: licenses-rust
           path: THIRD-PARTY-LICENSES.txt
@@ -111,18 +120,19 @@ jobs:
           # VC++ 再頒布可能パッケージ (vcruntime140.dll) が無い PC でも動くよう、C ランタイムを静的リンクする。
           - { target: x86_64-pc-windows-msvc, runner: windows-2025, rustflags: '-C target-feature=+crt-static' }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
+          toolchain: 1.99.1
           targets: ${{ matrix.target }}
       - if: runner.os == 'Linux'
         run: sudo apt-get install -y --no-install-recommends musl-tools
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: licenses-rust
           path: licenses
@@ -142,7 +152,7 @@ jobs:
       - name: Smoke test (serve, server.info, pane, stop)
         shell: bash
         run: node scripts/smoke-binary.mjs release/misao-*-"${{ matrix.target }}".*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-${{ matrix.target }}
           path: release/misao-*-${{ matrix.target }}.*
@@ -154,13 +164,13 @@ jobs:
     needs: [pack, binary]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: release-*
           merge-multiple: true
@@ -170,7 +180,7 @@ jobs:
         run: |
           ls -l release
           { echo '### Release assets'; echo '```'; ls -l release; echo '```'; echo '```'; cat release/SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-assets
           path: release/*
@@ -185,7 +195,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-assets
           path: release

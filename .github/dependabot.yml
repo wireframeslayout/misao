@@ -1,0 +1,7 @@
+# release.yml で完全な SHA に固定した actions の更新。Rust の版は対象外 (docs/en/rust.md を参照)。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

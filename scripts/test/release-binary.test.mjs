@@ -102,6 +102,14 @@ describe('release.yml', () => {
     for (const { target } of BINARY_TARGETS) assert.ok(listed.includes(target), target);
   });
 
+  it('pins every action to a full commit SHA and the Rust toolchain to a version', () => {
+    const uses = [...workflow.matchAll(/^\s+- uses: (\S+)/gm)].map(([, ref]) => ref);
+    assert.ok(uses.length > 0);
+    for (const ref of uses) assert.match(ref, /@[0-9a-f]{40}$/, ref);
+    for (const [, name] of workflow.matchAll(/toolchain: (\S+)/g)) assert.match(name, /^\d+\.\d+\.\d+$/);
+    assert.doesNotMatch(workflow, /rust-toolchain@(?!683b)/);
+  });
+
   it('publishes only for tag pushes', () => {
     assert.match(workflow, /publish:\n {4}name: [^\n]+\n {4}if: github\.event_name == 'push'/);
   });

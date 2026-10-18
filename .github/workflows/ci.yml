@@ -130,6 +130,8 @@ jobs:
       matrix:
         include:
           - { name: linux, os: ubuntu-24.04, bin: target/release/misao }
+          # 配布する Linux のバイナリ (musl の静的リンク) でも e2e を通す
+          - { name: linux-musl, os: ubuntu-24.04, bin: target/x86_64-unknown-linux-musl/release/misao, target: x86_64-unknown-linux-musl }
           - { name: macos, os: macos-14, bin: target/release/misao }
           - { name: macos-x64, os: macos-15-intel, bin: target/release/misao }
           - { name: windows, os: windows-2025, bin: target/release/misao.exe }
@@ -140,14 +142,16 @@ jobs:
           node-version: 24
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - if: runner.os == 'Linux'
-        run: sudo apt-get install -y --no-install-recommends vim
+        run: sudo apt-get install -y --no-install-recommends vim musl-tools
       - run: npm ci
       # npm が install スクリプトを動かさない環境で、node-pty の spawn-helper に実行権が付かない (posix_spawnp failed)。
       - if: runner.os == 'macOS'
         run: chmod +x node_modules/node-pty/prebuilds/*/spawn-helper
-      - run: cargo build --release --locked -p misao
+      - run: cargo build --release --locked -p misao ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
       - uses: actions/upload-artifact@v4
         with:
           name: misao-${{ matrix.name }}

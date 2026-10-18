@@ -30,7 +30,7 @@ BASE=https://github.com/wireframeslayout/misao/releases/download/v$VERSION
 curl -fsSLO "$BASE/misao-$VERSION-$TARGET.tar.gz" -O "$BASE/SHA256SUMS"
 sha256sum -c --ignore-missing SHA256SUMS          # macOS は shasum -a 256 -c --ignore-missing SHA256SUMS
 tar -xzf "misao-$VERSION-$TARGET.tar.gz"
-install -D -m 755 "misao-$VERSION-$TARGET/misao" ~/.local/bin/misao
+mkdir -p ~/.local/bin && install -m 755 "misao-$VERSION-$TARGET/misao" ~/.local/bin/misao
 misao serve
 ```
 

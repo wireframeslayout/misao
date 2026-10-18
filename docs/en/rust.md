@@ -427,8 +427,8 @@ Targets: `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `aarch64-app
   every target. There is no target whose binary is shipped without having been executed.
 - **Linux is musl, statically linked.** One binary runs on any distribution with no glibc floor
   (a glibc build would need a documented minimum such as the runner's glibc 2.39). The cost is the
-  musl allocator, which is slower and fragments more than glibc's; the e2e suite passes against the
-  musl x64 build, and the release smoke test checks that the binary is statically linked.
+  musl allocator, which is slower and fragments more than glibc's; CI runs the whole e2e suite against the
+  musl x64 build (`Rust e2e (linux-musl)`), and the release smoke test checks that the binary is statically linked.
 - **Windows links the C runtime statically** (`-C target-feature=+crt-static`), so the Visual C++
   redistributable is not needed.
 - The size and speed settings are the existing `[profile.release]` (thin LTO, one codegen unit,
@@ -438,7 +438,7 @@ Targets: `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `aarch64-app
   all five targets. The accepted licenses in `about.toml` are the same list as in `deny.toml`;
   change both together.
 - **Smoke test** (`scripts/smoke-binary.mjs`, run on each target after packing): checks the archive
-  layout, that Linux binaries are static, `--version`, `serve` on a temporary socket / pipe,
+  layout, that Linux binaries are static and the Windows binary imports no C runtime DLL (`VCRUNTIME140.dll`, `api-ms-win-crt-*`; it reads the PE import table), `--version`, `serve` on a temporary socket / pipe,
   `server.info` (`version` equals the release version), creating, reading and killing a pane, and
   `misao stop`. `HOME`, `USERPROFILE` and `MISAO_*` point to a temporary directory.
 
@@ -469,6 +469,14 @@ Only a maintainer cuts a release. The workflow publishes on a `v*` tag; the tagg
    assembles the assets, writes `SHA256SUMS` (it fails if a file is missing or unexpected) and
    creates the release. Published assets are never replaced; a fix ships as a new tag.
 5. Check the release page, then update the pinned version and sha256 values in the apps that ship misao.
+
+### Pinned actions and toolchain
+
+Every `uses:` in `release.yml` is pinned to a full commit SHA (the version is in the trailing comment), and
+the Rust toolchain is a specific version (`toolchain: 1.99.1`), because this workflow builds what users
+download. Dependabot (`.github/dependabot.yml`) opens weekly pull requests that move the action SHAs.
+The Rust version is not covered by it: bump `toolchain:` in `release.yml` by hand when a new stable
+release is wanted (the MSRV in `Cargo.toml` and `ci.yml` is a separate matter).
 
 ### Dry run
 

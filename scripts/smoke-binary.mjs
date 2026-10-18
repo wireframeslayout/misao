@@ -1,14 +1,16 @@
 // 使い方: node scripts/smoke-binary.mjs <misao-x.y.z-<target>.tar.gz | .zip>
 // Rust 版のアーカイブを展開し、中身を確かめたうえで、--version、serve (一時ソケット)、server.info (status --json)、
 // pane の作成・出力・kill、`misao stop` による停止まで通す。
+// Linux は静的リンク、Windows は C ランタイムの DLL に依存しないことも確かめる。
 // 期待する版とターゲットはファイル名から取り、--version と server.info.version が完全に一致することを確かめる。
 // 常駐デーモンには触れない: HOME・USERPROFILE・MISAO_DIR・MISAO_SOCKET はすべて一時ディレクトリに向ける。
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { PROTOCOL_VERSION } from '../packages/protocol/src/version.ts';
 import { extractArchive, listArchive } from './release/archive.mjs';
+import { forbiddenImports, readPeImports } from './release/pe-imports.mjs';
 import {
   BINARY_TARGETS,
   binaryArchiveDir,
@@ -71,6 +73,15 @@ function assertStaticLinux(bin) {
   console.log('static link ok');
 }
 
+// Windows のバイナリは C ランタイムを静的リンクしている (VC++ 再頒布可能パッケージが無い PC でも動く) こと。
+function assertNoRuntimeDlls(bin) {
+  if (!windows) return;
+  const dlls = readPeImports(readFileSync(bin));
+  const forbidden = forbiddenImports(dlls);
+  if (forbidden.length > 0) throw new Error(`${bin} imports the C runtime DLLs [${forbidden}] (all imports: ${dlls})`);
+  console.log(`no C runtime DLL imports ok (imports: ${dlls.join(', ')})`);
+}
+
 // pane で走らせるコマンド: マーカーを出して待ち続ける。node はこのスクリプトを動かしているものを使う (全 OS にある)。
 function paneCommand() {
   return [process.execPath, '-e', `console.log(${JSON.stringify(PANE_MARKER)});setTimeout(()=>{},60000)`];
@@ -86,6 +97,7 @@ try {
   const bin = path.join(extracted, dirName, binaryExecutableName(target));
   if (!existsSync(bin)) throw new Error(`${bin} not found after extraction`);
   assertStaticLinux(bin);
+  assertNoRuntimeDlls(bin);
 
   const home = path.join(base, 'home');
   const dir = path.join(base, 'run');

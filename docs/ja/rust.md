@@ -417,13 +417,13 @@ AZITO 側の切り替え（導入処理・ユニット・バンドル）は AZIT
   一度も実行していないバイナリを配ることがありません。
 - **Linux は musl の静的リンク。** どのディストリビューションでも動き、glibc の最低バージョンがありません
   （glibc 版にすると、ランナーの glibc 2.39 などを最低バージョンとして明記する必要があります）。代償は musl のアロケータで、
-  glibc より遅く断片化しやすい点です。e2e は musl の x64 ビルドで全部通っていて、リリースのスモークテストは静的リンクであることも確かめます。
+  glibc より遅く断片化しやすい点です。CI の e2e を musl の x64 ビルド（`Rust e2e (linux-musl)`）でも全部流していて、リリースのスモークテストは静的リンクであることも確かめます。
 - **Windows は C ランタイムを静的リンク**（`-C target-feature=+crt-static`）するので、Visual C++ 再頒布可能パッケージは要りません。
 - サイズと速度の設定は既存の `[profile.release]`（thin LTO、codegen-units 1、`strip`、`panic = "abort"`）です。
 - **ライセンス**: `THIRD-PARTY-LICENSES.txt` は依存グラフから
   [cargo-about](https://github.com/EmbarkStudios/cargo-about)（`about.toml`、`about.hbs`）で生成し、5 ターゲットの依存を全部含めます。
   `about.toml` の許可ライセンスは `deny.toml` と同じ一覧です。変えるときは両方を一緒に変えます。
-- **スモークテスト**（`scripts/smoke-binary.mjs`。パッケージ化のあと各ターゲットで実行）: アーカイブの構成、Linux のバイナリが静的リンクであること、
+- **スモークテスト**（`scripts/smoke-binary.mjs`。パッケージ化のあと各ターゲットで実行）: アーカイブの構成、Linux のバイナリが静的リンクであること、Windows のバイナリが C ランタイムの DLL（`VCRUNTIME140.dll`、`api-ms-win-crt-*`）に依存しないこと（PE の import 表を読む）、
   `--version`、一時ソケット / パイプでの `serve`、`server.info`（`version` がリリースの version と一致）、pane の作成・読み取り・kill、`misao stop`。
   `HOME`・`USERPROFILE`・`MISAO_*` は一時ディレクトリに向けます。
 
@@ -449,6 +449,12 @@ Node 版のバンドルは `scripts/verify-release.mjs` が同じ確認をしま
 4. ワークフローが Node 版の資産をビルド・検証し、5 つのバイナリをビルドして各スモークテストを通し、資産を集めて `SHA256SUMS` を作り（ファイルの欠落や余分があれば失敗）、リリースを作ります。
    公開済みのアセットは差し替えません。修正は新しいタグで出します。
 5. リリースページを確認し、misao を同梱するアプリの固定している version と sha256 を更新します。
+
+### アクションとツールチェーンの固定
+
+`release.yml` の `uses:` はすべて完全なコミット SHA に固定し（版は行末のコメント）、Rust のツールチェーンも具体的な版（`toolchain: 1.99.1`）にします。
+利用者がダウンロードするものをこのワークフローが作るためです。アクションの SHA は Dependabot（`.github/dependabot.yml`）が毎週 pull request で更新します。
+Rust の版は対象外なので、新しい stable が欲しいときに `release.yml` の `toolchain:` を手で上げます（`Cargo.toml` と `ci.yml` の MSRV は別の話です）。
 
 ### dry-run
 

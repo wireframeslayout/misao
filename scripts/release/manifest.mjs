@@ -18,7 +18,7 @@ export const CHECKSUMS_FILE = 'SHA256SUMS';
 
 // Rust 版の単一バイナリを配布するターゲット (Rust の target triple)。runner は GitHub Actions の実行環境で、
 // すべてネイティブにビルドする (クロスコンパイルしない) ので、全ターゲットでスモークテストを実行できる。
-// release.yml の matrix と同じ並びにすること (test/release-workflow.test.mjs が一致を確かめる)。
+// release.yml の matrix と同じ並びにすること (scripts/test/release-binary.test.mjs が一致を確かめる)。
 export const BINARY_TARGETS = [
   { target: 'x86_64-unknown-linux-musl', runner: 'ubuntu-24.04' },
   { target: 'aarch64-unknown-linux-musl', runner: 'ubuntu-24.04-arm' },
