@@ -197,10 +197,14 @@ fn is_live_member(stat: &str, pgrp: u32) -> Option<bool> {
     Some(group == pgrp && !matches!(state, "Z" | "X"))
 }
 
+/// `ps` の絶対パス（PATH 上の別物を起動しない）。
+#[cfg(not(target_os = "linux"))]
+const PS: &str = "/bin/ps";
+
 /// macOS にはプロセスを列挙する /proc が無いので、`ps` で全プロセスの pgid と状態を一度に読む。
 #[cfg(not(target_os = "linux"))]
 fn group_state(pid: u32) -> GroupState {
-    let output = std::process::Command::new("ps")
+    let output = std::process::Command::new(PS)
         .args(["-A", "-o", "pid=,pgid=,stat="])
         .stdin(std::process::Stdio::null())
         .output();

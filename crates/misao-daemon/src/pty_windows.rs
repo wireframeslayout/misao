@@ -123,7 +123,8 @@ impl ProcessTree {
     pub fn wait_exit(&self, mut child: Box<dyn Child + Send + Sync>) -> ExitInfo {
         match child.wait() {
             Ok(status) => ExitInfo {
-                exit_code: i32::try_from(status.exit_code()).ok(),
+                // NTSTATUS（0xC000013A など）も、ビットはそのまま符号付きで残す。
+                exit_code: Some(i32::from_ne_bytes(status.exit_code().to_ne_bytes())),
                 signal: None,
             },
             Err(_) => ExitInfo {

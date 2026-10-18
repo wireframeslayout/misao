@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use tokio::sync::Notify;
 use windows_sys::Win32::Foundation::{
-    ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, GetLastError, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_INVALID_PARAMETER, GetLastError, WAIT_OBJECT_0,
+    WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
 use windows_sys::Win32::System::Threading::{
@@ -111,7 +112,7 @@ pub fn wait_process_exit(pid: u32, timeout: Duration) -> io::Result<bool> {
     if handle.is_null() {
         // SAFETY: 直前の Win32 呼び出しのエラーを読むだけ。プロセスが既に無ければ ERROR_INVALID_PARAMETER。
         return match unsafe { GetLastError() } {
-            87 => Ok(true),
+            ERROR_INVALID_PARAMETER => Ok(true),
             _ => Err(io::Error::last_os_error()),
         };
     }

@@ -258,7 +258,7 @@ fn ps_foreground_commands(queries: &[ForegroundQuery]) -> Vec<Option<String>> {
         return vec![None; queries.len()];
     }
     let list = pgids.iter().map(i32::to_string).collect::<Vec<_>>().join(",");
-    let names = std::process::Command::new("ps")
+    let names = std::process::Command::new("/bin/ps")
         .args(["-o", "pid=,comm=", "-p", &list])
         .output()
         .ok()

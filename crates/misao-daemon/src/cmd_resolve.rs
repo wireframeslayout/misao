@@ -38,10 +38,12 @@ impl WindowsEnv {
         let path = find(env, "PATH").map(|v| v.to_string_lossy().into_owned());
         let pathext = find(env, "PATHEXT").map(|v| v.to_string_lossy().into_owned());
         Self {
+            // 相対の要素（空の要素や `.` を含む）は捨てる。cwd 次第で別のファイルを実行してしまうのを避ける。
             path_dirs: path
                 .iter()
                 .flat_map(|p| split_list(p))
                 .map(PathBuf::from)
+                .filter(|dir| dir.is_absolute())
                 .collect(),
             pathext: split_list(pathext.as_deref().unwrap_or(DEFAULT_PATHEXT))
                 .map(str::to_string)
@@ -91,7 +93,10 @@ fn locate(program: &str, env: &WindowsEnv) -> Option<PathBuf> {
 
 /// `.` の要素だけ取り除いて文字列にする（`cwd\.\tool.exe` を `cwd\tool.exe` に）。
 fn display(path: PathBuf) -> String {
-    path.components()
+    // cwd が相対でも、素の名前（`CreateProcess` が自分で探しに行く形）を返さない。
+    std::path::absolute(&path)
+        .unwrap_or(path)
+        .components()
         .filter(|c| !matches!(c, std::path::Component::CurDir))
         .collect::<PathBuf>()
         .to_string_lossy()
@@ -244,6 +249,28 @@ mod tests {
         let err = resolve_command(&argv(&["run.ps1"]), &e).unwrap_err();
         assert!(err.contains("powershell.exe") && err.contains("run.ps1"), "{err}");
         assert!(resolve_command(&[], &e).is_err());
+    }
+
+    #[test]
+    fn relative_path_entries_are_ignored() {
+        let bin = TempDir::new().unwrap();
+        touch(bin.path(), "tool.exe");
+        let pairs = vec![
+            (OsString::from("PATH"), OsString::from(".;rel\\dir;")),
+            (OsString::from("PATHEXT"), OsString::from(".exe")),
+        ];
+        let e = WindowsEnv::from_pairs(&pairs, &bin.path().to_string_lossy());
+        assert_eq!(
+            resolve_command(&argv(&["tool"]), &e).unwrap_err(),
+            "command not found: tool"
+        );
+    }
+
+    #[test]
+    fn a_relative_cwd_still_gives_an_absolute_path() {
+        let e = WindowsEnv::from_pairs(&[], "relative-cwd");
+        let shown = display(e.cwd.join("tool.exe"));
+        assert!(Path::new(&shown).is_absolute(), "{shown}");
     }
 
     #[test]

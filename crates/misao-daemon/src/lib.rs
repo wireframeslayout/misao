@@ -69,6 +69,8 @@ mod endpoint;
 #[path = "endpoint_windows.rs"]
 mod endpoint;
 mod error;
+#[cfg(windows)]
+mod pid_alive_windows;
 mod pid_file;
 #[cfg(unix)]
 mod socket;
