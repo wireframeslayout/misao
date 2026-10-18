@@ -205,8 +205,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn the_pipe_server_of_the_same_user_is_accepted_and_another_user_is_refused() {
+    #[tokio::test]
+    async fn the_pipe_server_of_the_same_user_is_accepted_and_another_user_is_refused() {
         let name = format!("\\\\.\\pipe\\misao-sidtest-{}", std::process::id());
         let acl = UserOnlyAcl::new().unwrap();
         let mut options = tokio::net::windows::named_pipe::ServerOptions::new();
