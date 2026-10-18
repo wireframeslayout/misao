@@ -253,6 +253,7 @@ mod tests {
     }
 
     /// `icacls` で `sid` に `grant`（例 `(OI)(CI)(M)`）を付けた新しいディレクトリ。
+    // 実在しない SID は icacls が受け付けないので、実在する別のグループ（Backup Operators = S-1-5-32-551）を「ユーザーでも SYSTEM でも Administrators でもない SID」に使う。
     fn dir_with_grant(tmp: &TempDir, sid: &str, grant: &str) -> std::path::PathBuf {
         let dir = tmp.path().join("granted");
         std::fs::create_dir(&dir).unwrap();
@@ -266,12 +267,12 @@ mod tests {
     }
 
     #[test]
-    fn modify_for_an_arbitrary_other_account_is_rejected() {
+    fn modify_for_a_non_broad_group_that_is_not_the_user_is_rejected() {
         let tmp = TempDir::new().unwrap();
-        let state = dir_with_grant(&tmp, "S-1-5-21-1111-2222-3333-4242", "(OI)(CI)(M)");
+        let state = dir_with_grant(&tmp, "S-1-5-32-551", "(OI)(CI)(M)");
         let err = ensure_data_dir(&state).unwrap_err();
         assert!(
-            matches!(&err, DaemonError::DataDirWritableByPrincipal { principal, .. } if principal == "S-1-5-21-1111-2222-3333-4242"),
+            matches!(&err, DaemonError::DataDirWritableByPrincipal { principal, .. } if principal == "S-1-5-32-551"),
             "{err}"
         );
     }
@@ -290,7 +291,7 @@ mod tests {
     #[test]
     fn read_only_entries_for_other_accounts_are_fine() {
         let tmp = TempDir::new().unwrap();
-        let state = dir_with_grant(&tmp, "S-1-5-21-1111-2222-3333-4242", "(OI)(CI)(RX)");
+        let state = dir_with_grant(&tmp, "S-1-5-32-551", "(OI)(CI)(RX)");
         ensure_data_dir(&state).unwrap();
     }
 }
