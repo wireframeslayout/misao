@@ -111,7 +111,7 @@ fn read_owner_and_dacl(dir: &Path, me: &str) -> std::io::Result<DirSecurity> {
     // SAFETY: 成功したので、owner は descriptor の中の有効な SID（descriptor を解放するまで）。
     let result = unsafe { sid_to_string(owner) }.and_then(|owner| {
         // SAFETY: dacl は descriptor の中の ACL か NULL（NULL の DACL は誰にでも全権を与える）。
-        let foreign_writer = unsafe { find_foreign_writer(dacl, &me) }?;
+        let foreign_writer = unsafe { find_foreign_writer(dacl, me) }?;
         Ok(DirSecurity {
             owner,
             foreign_writer,
