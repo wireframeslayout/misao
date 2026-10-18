@@ -5,31 +5,37 @@
 //! （返さないと、ペインの子は何も出力せず、`cmd.exe` も `ping` も始まらない）。実機で確かめた。
 //! 文字列の照合だけなので、Unix でも単体テストできる（使うのは Windows だけ）。
 
-/// 出力に含まれる `ESC[6n` を数える。チャンクの境目をまたぐ並びも数える。
+/// 出力から `ESC[6n` を取り除く。チャンクの境目をまたぐ並びも扱う（`ESC` `[` `6` で終わるチャンクの末尾は、次のチャンクまで持ち越す）。
 #[derive(Debug, Default)]
 pub struct CursorQueryScanner {
-    /// `ESC [ 6 n` のうち、ここまでに一致した先頭の長さ。
-    matched: usize,
+    /// 前のチャンクの末尾にあった、`ESC [ 6 n` の途中までの先頭（最大 3 バイト）。
+    held: Vec<u8>,
 }
 
 const QUERY: &[u8] = b"\x1b[6n";
 
 impl CursorQueryScanner {
-    pub fn count(&mut self, data: &[u8]) -> usize {
+    /// 問い合わせを除いた出力と、除いた問い合わせの数を返す。
+    pub fn extract(&mut self, data: &[u8]) -> (Vec<u8>, usize) {
+        let mut input = std::mem::take(&mut self.held);
+        input.extend_from_slice(data);
+        let mut clean = Vec::with_capacity(input.len());
         let mut found = 0;
-        for &byte in data {
-            if byte == QUERY[self.matched] {
-                self.matched += 1;
-                if self.matched == QUERY.len() {
-                    found += 1;
-                    self.matched = 0;
-                }
+        let mut index = 0;
+        while index < input.len() {
+            let rest = &input[index..];
+            if rest.starts_with(QUERY) {
+                found += 1;
+                index += QUERY.len();
+            } else if rest.len() < QUERY.len() && QUERY.starts_with(rest) {
+                self.held = rest.to_vec();
+                break;
             } else {
-                // ESC はいつでも新しい並びの始まり。それ以外は最初からやり直す。
-                self.matched = usize::from(byte == QUERY[0]);
+                clean.push(input[index]);
+                index += 1;
             }
         }
-        found
+        (clean, found)
     }
 }
 
@@ -43,20 +49,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn counts_queries_across_chunk_boundaries() {
+    fn queries_are_removed_from_the_output_and_counted() {
         let mut scanner = CursorQueryScanner::default();
-        assert_eq!(scanner.count(b"hello\x1b[6nworld\x1b[6n"), 2);
-        let input = b"a\x1b[6nb\x1b[?25l\x1b[6n";
-        let split: usize = input.iter().map(|b| scanner.count(std::slice::from_ref(b))).sum();
-        assert_eq!(split, 2);
+        assert_eq!(
+            scanner.extract(b"hello\x1b[6nworld\x1b[6n"),
+            (b"helloworld".to_vec(), 2)
+        );
+        assert_eq!(
+            scanner.extract(b"no query \x1b[31m"),
+            (b"no query \x1b[31m".to_vec(), 0)
+        );
     }
 
     #[test]
-    fn near_misses_are_not_queries() {
+    fn a_query_split_at_every_byte_is_removed_and_nothing_else_is_lost() {
         let mut scanner = CursorQueryScanner::default();
-        assert_eq!(scanner.count(b"\x1b[5n\x1b[6c\x1b[?6n\x1b6n\x1b\x1b[6"), 0);
-        // 直前の ESC が次の並びの始まりになる: ESC ESC [ 6 n
-        assert_eq!(scanner.count(b"n"), 1);
+        let input = b"a\x1b[6nb\x1b[?25l\x1b[6nc";
+        let (mut clean, mut found) = (Vec::new(), 0);
+        for byte in input {
+            let (part, n) = scanner.extract(std::slice::from_ref(byte));
+            clean.extend(part);
+            found += n;
+        }
+        assert_eq!((clean, found), (b"ab\x1b[?25lc".to_vec(), 2));
+    }
+
+    #[test]
+    fn near_misses_are_kept_in_order() {
+        let mut scanner = CursorQueryScanner::default();
+        let (mut clean, mut found) = scanner.extract(b"\x1b[5n\x1b[6c\x1b[?6n\x1b6n\x1b\x1b[6");
+        // 末尾の `ESC [ 6` は問い合わせかもしれないので持ち越す
+        assert_eq!(found, 0);
+        let (rest, n) = scanner.extract(b"n!");
+        clean.extend(rest);
+        found += n;
+        assert_eq!((clean, found), (b"\x1b[5n\x1b[6c\x1b[?6n\x1b6n\x1b!".to_vec(), 1));
     }
 
     #[test]

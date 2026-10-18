@@ -202,3 +202,49 @@ async fn resize_repaints_do_not_duplicate_lines_or_add_blank_ones() {
     assert_eq!(after, before, "the repaints leaked into the line stream");
     c.ok("pane.close", json!({"paneId": pane})).await;
 }
+
+/// 子が `ESC[6n` を出すと、デーモンが 1 回だけ返事をし、問い合わせは attach への配信（raw の再生を含む）に載らない。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cursor_query_is_answered_once_and_kept_out_of_the_attach_stream() {
+    let tmp = TempDir::new().unwrap();
+    let out = tmp.path().join("reply.json");
+    let script = format!(
+        "const fs = require('fs'); let got = ''; process.stdin.setRawMode(true); process.stdin.on('data', (d) => {{ got += String(d); }});
+         process.stdout.write('A\\x1b[6nB'); setTimeout(() => {{ fs.writeFileSync({out:?}, JSON.stringify(got)); setTimeout(() => process.exit(0), 3000); }}, 1500);",
+        out = out.display().to_string()
+    );
+    let core = core();
+    let mut c = connect(&core);
+    let node = std::env::var("MISAO_TEST_NODE").unwrap_or_else(|_| "node".to_string());
+    let pane = open(&mut c, json!([node, "-e", script]), json!({})).await;
+    // 出力の前から attach している接続 (live の配信) と、出力の後に raw で再生する接続 (リング) の両方で確かめる
+    let mut live = connect(&core);
+    live.ok(
+        "pane.attach",
+        json!({"paneId": pane, "clientId": "live", "replay": "none"}),
+    )
+    .await;
+
+    wait_until("the child to write its reply", || async { out.exists() }).await;
+    let reply: String = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    assert!(
+        reply.starts_with("\u{1b}[") && reply.ends_with('R') && reply.matches('\u{1b}').count() == 1,
+        "exactly one cursor report: {reply:?}"
+    );
+
+    let live_bytes = live.collect_output(Duration::from_millis(800)).await;
+    let mut late = connect(&core);
+    late.ok(
+        "pane.attach",
+        json!({"paneId": pane, "clientId": "late", "replay": "raw"}),
+    )
+    .await;
+    let late_bytes = late.collect_output(Duration::from_millis(800)).await;
+    for (name, bytes) in [("live", live_bytes), ("replay", late_bytes)] {
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            !text.contains("\u{1b}[6n"),
+            "{name}: the query reached the client: {text:?}"
+        );
+    }
+}

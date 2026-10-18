@@ -180,6 +180,27 @@ pub fn is_alive(pid: &str) -> bool {
 }
 
 impl Client {
+    /// `pane.output` のデータを、`quiet` の間何も来なくなるまで集める。
+    pub async fn collect_output(&mut self, quiet: Duration) -> Vec<u8> {
+        use base64::Engine as _;
+
+        let mut bytes = Vec::new();
+        let mut pending = std::mem::take(&mut self.notifications);
+        loop {
+            for n in pending.drain(..) {
+                if n["method"] == "pane.output" {
+                    let data = n["params"]["dataB64"].as_str().unwrap_or_default();
+                    bytes.extend(base64::engine::general_purpose::STANDARD.decode(data).unwrap());
+                }
+            }
+            let mut line = String::new();
+            match tokio::time::timeout(quiet, self.reader.read_line(&mut line)).await {
+                Ok(Ok(n)) if n > 0 => pending.push(serde_json::from_str(&line).unwrap()),
+                _ => return bytes,
+            }
+        }
+    }
+
     /// 接続が閉じられるまで読み捨てる。`WAIT` までに閉じなければ失敗する。
     pub async fn drain_until_closed(&mut self) {
         let mut line = String::new();

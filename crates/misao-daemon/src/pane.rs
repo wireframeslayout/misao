@@ -109,8 +109,6 @@ struct Inner {
     assembler: AnsiLineAssembler,
     /// resize 後の全画面の再描画を行ストリームから除く（Windows の ConPTY）。
     repaint: RepaintFilter,
-    /// ConPTY のカーソル位置の問い合わせ（`ESC[6n`）の検出（Windows）。
-    cursor_query: CursorQueryScanner,
 }
 
 /// `start` が取り出す、スレッドへ渡すもの。
@@ -135,6 +133,8 @@ pub struct Pane {
     input: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
     /// 最後に出力を読んだ時刻（Windows の `wait_for_output_drain` が使う）。
     last_output: Mutex<Instant>,
+    /// ConPTY のカーソル位置の問い合わせ（`ESC[6n`）の取り除き（Windows。出力のスレッドだけが触る）。
+    cursor_query: Mutex<CursorQueryScanner>,
     /// 出力の取り込み（リングへの格納と端末の解析）と resize を、受け取った順に画面へ反映するための順序づけ。
     /// 解析は `inner` の外で行うので、これが無いと、格納済みの出力の解析の前に resize が入り、古い出力が新しいサイズで解析される。
     /// ロックの順序: order -> inner -> observer。
@@ -263,7 +263,6 @@ impl Pane {
                 lines: SeqRing::new(opts.lines_ring_bytes),
                 assembler: AnsiLineAssembler::default(),
                 repaint: RepaintFilter::default(),
-                cursor_query: CursorQueryScanner::default(),
             }),
             master: Mutex::new(master),
             handoff: Mutex::new(Some(Handoff {
@@ -274,6 +273,7 @@ impl Pane {
             input: Mutex::new(None),
             order: Mutex::new(()),
             last_output: Mutex::new(Instant::now()),
+            cursor_query: Mutex::new(CursorQueryScanner::default()),
             input_queued: Arc::new(AtomicUsize::new(0)),
             lines_tx: watch::Sender::new(0),
             exited_tx: watch::Sender::new(false),
@@ -361,9 +361,29 @@ impl Pane {
 
     fn on_output(&self, data: &[u8]) {
         *lock(&self.last_output) = Instant::now();
+        if !cfg!(windows) {
+            self.ingest(data);
+            return;
+        }
+        // ConPTY は起動時にカーソル位置を尋ね、返事があるまで子を動かさない（`cursor_query.rs`）。
+        // 返事をするのはデーモンなので、問い合わせは attach への配信・リング・画面には載せない（クライアントも返事をして二重になる）。
+        let (clean, queries) = lock(&self.cursor_query).extract(data);
+        if !clean.is_empty() {
+            self.ingest(&clean);
+        }
+        if queries > 0 {
+            let cursor = self.observer.snapshot().cursor;
+            for _ in 0..queries {
+                self.reply_to_terminal_query(cursor_report(cursor.x, cursor.y));
+            }
+        }
+    }
+
+    /// 出力を、リング・行ストリーム・attach・画面へ取り込む。
+    fn ingest(&self, data: &[u8]) {
         let _order = lock(&self.order);
         let ts = now_iso();
-        let (seq, new_head, queries) = {
+        let (seq, new_head) = {
             let mut inner = lock(&self.inner);
             inner.last_output_at = Some(ts.clone());
             let seq = inner.raw.push(data.to_vec(), data.len(), ts.clone());
@@ -373,13 +393,7 @@ impl Pane {
             for text in lines {
                 inner.push_line(text, ts.clone());
             }
-            // ConPTY は起動時にカーソル位置を尋ね、返事があるまで子を動かさない（`cursor_query.rs`）。
-            let queries = if cfg!(windows) {
-                inner.cursor_query.count(data)
-            } else {
-                0
-            };
-            (seq, any.then(|| inner.lines.head()), queries)
+            (seq, any.then(|| inner.lines.head()))
         };
         self.broadcast(seq, &ts, data);
         if let Some(head) = new_head {
@@ -388,12 +402,6 @@ impl Pane {
         // 端末の解析は、リングの更新の lock を離してから行う（解析が長くても、リングを読む側を待たせない）。
         // 出力のスレッドは 1 つなので、順序は保たれる。
         self.observer.output(data);
-        if queries > 0 {
-            let cursor = self.observer.snapshot().cursor;
-            for _ in 0..queries {
-                self.reply_to_terminal_query(cursor_report(cursor.x, cursor.y));
-            }
-        }
     }
 
     fn on_exit(&self, exit: ExitInfo) {
