@@ -47,7 +47,9 @@ describe('pane.screen と pane.info', () => {
 
     await client.request('pane.resize', { paneId, cols: 30, rows: 6 });
     const resized = await screen(paneId);
-    assert.equal(resized.activity, first.activity + 1);
+    // resize で activity が 1 増える。Windows は ConPTY が画面全体を書き直す出力もあとから届いて増えうる。
+    if (IS_WINDOWS) assert.ok(resized.activity > first.activity, 'activity grows');
+    else assert.equal(resized.activity, first.activity + 1);
     assert.equal(resized.text.split('\n').length, 6);
     await client.request('pane.close', { paneId });
   });
