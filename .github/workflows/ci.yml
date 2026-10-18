@@ -168,8 +168,21 @@ jobs:
           MISAO_CLI_BIN: ${{ github.workspace }}/${{ matrix.bin }}
           MISAO_DAEMON_BIN: ${{ github.workspace }}/${{ matrix.bin }}
 
-  # launchd の配布用テンプレートで、実際に macOS のユーザーエージェントとして起動・停止できるか。
-  # ランナーに GUI セッションが無いと bootstrap できないので、結果を必須にはしない (continue-on-error)。
+  # launchd のテンプレート (deploy/com.misao.daemon*.plist) が壊れていないこと。展開した結果も plist として正しいこと。
+  launchd-template:
+    name: macOS launchd (template)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          plutil -lint deploy/com.misao.daemon.plist deploy/com.misao.daemon.binary.plist
+          sed -e "s|__HOME__|$HOME|g" -e "s|__MISAO__|/usr/local/bin/misao|g" -e "s|__PATH__|/usr/bin:/bin|g" \
+            deploy/com.misao.daemon.binary.plist > "$RUNNER_TEMP/rendered.plist"
+          plutil -lint "$RUNNER_TEMP/rendered.plist"
+          ! grep -q '__[A-Z]*__' "$RUNNER_TEMP/rendered.plist"
+
+  # 実際に launchd のユーザーエージェントとして起動・停止できるか (launchctl bootstrap)。
+  # ランナーに GUI セッションが無いと bootstrap できないので、このジョブだけ結果を必須にしない (continue-on-error)。
   launchd:
     name: macOS launchd
     runs-on: macos-14
@@ -180,7 +193,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked -p misao
-      - run: plutil -lint deploy/com.misao.daemon.binary.plist
       - run: bash scripts/smoke-launchd.sh "$GITHUB_WORKSPACE/target/release/misao"
 
   # 試験的 (Issue #37): Windows ネイティブで型検査と単体テストが通るか、node-pty のネイティブ導入が通るかを見る。
