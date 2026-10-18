@@ -111,6 +111,8 @@ struct Inner {
     assembler: AnsiLineAssembler,
     /// resize 後の全画面の再描画を行ストリームから除く（Windows の ConPTY）。
     repaint: RepaintFilter,
+    /// 再描画の候補の期限を見張るスレッドが動いている。
+    repaint_timer: bool,
 }
 
 /// `start` が取り出す、スレッドへ渡すもの。
@@ -122,6 +124,8 @@ struct Handoff {
 
 pub struct Pane {
     pub id: String,
+    /// 自分自身への弱い参照（期限を見張るスレッドに渡す）。
+    me: Weak<Pane>,
     pub cmd: Vec<String>,
     pub cwd: String,
     pub pid: u32,
@@ -245,7 +249,8 @@ impl Pane {
             cols,
             rows,
         })?;
-        Ok(Arc::new(Self {
+        Ok(Arc::new_cyclic(|me| Self {
+            me: me.clone(),
             id,
             cmd: opts.cmd,
             cwd,
@@ -264,6 +269,7 @@ impl Pane {
                 lines: SeqRing::new(opts.lines_ring_bytes),
                 assembler: AnsiLineAssembler::default(),
                 repaint: RepaintFilter::default(),
+                repaint_timer: false,
             }),
             master: Mutex::new(Some(master)),
             handoff: Mutex::new(Some(Handoff {
@@ -382,7 +388,7 @@ impl Pane {
     fn ingest(&self, data: &[u8]) {
         let _order = lock(&self.order);
         let ts = now_iso();
-        let (seq, new_head) = {
+        let (seq, new_head, start_timer) = {
             let mut inner = lock(&self.inner);
             inner.last_output_at = Some(ts.clone());
             let seq = inner.raw.push(data.to_vec(), data.len(), ts.clone());
@@ -392,8 +398,13 @@ impl Pane {
             for text in lines {
                 inner.push_line(text, ts.clone());
             }
-            (seq, any.then(|| inner.lines.head()))
+            let start_timer = inner.repaint.deadline().is_some() && !inner.repaint_timer;
+            inner.repaint_timer |= start_timer;
+            (seq, any.then(|| inner.lines.head()), start_timer)
         };
+        if start_timer {
+            self.watch_repaint_candidate();
+        }
         self.broadcast(seq, &ts, data);
         if let Some(head) = new_head {
             self.lines_tx.send_replace(head);

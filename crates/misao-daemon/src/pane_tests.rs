@@ -444,3 +444,46 @@ fn an_attach_refused_because_of_a_close_does_not_resize_the_pane() {
     assert!(attached.resized);
     assert_eq!(open.size(), (50, 20));
 }
+
+/// 再描画かどうか決まらない候補は、次の出力が無くても期限（500 ms）で行ストリームに流れる。
+#[test]
+fn an_undecided_repaint_candidate_reaches_the_line_stream_without_more_output() {
+    let socket = PathBuf::from("/tmp/unused.sock");
+    let pane = Pane::spawn(PaneOpenOptions {
+        // ESC[H で始まるが、再描画の形としては途中 (行数が足りない) のまま、あとは何も出さない
+        cmd: vec![
+            "sh".into(),
+            "-c".into(),
+            "sleep 0.3; printf '\\033[Hdeadline-line\\033[K\\n'; sleep 30".into(),
+        ],
+        cwd: None,
+        env: BTreeMap::new(),
+        ephemeral_env: BTreeMap::new(),
+        cols: None,
+        rows: None,
+        socket_path: &socket,
+        raw_ring_bytes: 1024,
+        lines_ring_bytes: 1024,
+        scrollback: 10,
+        profiles: Vec::new(),
+        events: Arc::new(EventLog::new(10)),
+    })
+    .unwrap();
+    lock(&pane.inner).repaint.arm(24, Instant::now());
+    let mut heads = pane.lines_tx.subscribe();
+    pane.start();
+    let started = Instant::now();
+    wait_for("the candidate to be released by its deadline", || {
+        lock(&pane.inner).lines.head() >= 1
+    });
+    assert!(*heads.borrow_and_update() >= 1, "subscribers are notified");
+    let line = lock(&pane.inner).lines.entry(1).map(|e| e.item.clone());
+    assert_eq!(line.as_deref(), Some("deadline-line"));
+    assert!(
+        started.elapsed() >= Duration::from_millis(700),
+        "held until the deadline: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(pane.state(), RunState::Running);
+    pane.tree.kill();
+}

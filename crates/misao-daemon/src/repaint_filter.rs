@@ -11,7 +11,7 @@
 //!
 //! 形に合わない（アプリ自身の出力だった）、`FRAME_MAX` を過ぎた、行数を超えた、のどれかなら、バッファしたバイトを
 //! すべて行の組み立てに渡し直して、構えを解く。生の出力のリング・画面モデル・稼働判定には元のバイト列がそのまま渡る。
-//! 確定しない候補は次の出力か終了まで保持される（`take_held`）。
+//! 期限（`FRAME_MAX`）は pane が `deadline` / `expire` で見張る（次の出力を待たない）。終了時は `take_held` で取り出す。
 
 use std::borrow::Cow;
 use std::time::{Duration, Instant};
@@ -65,6 +65,23 @@ impl RepaintFilter {
         let mut out = self.frame.take().map(|f| f.bytes).unwrap_or_default();
         out.append(&mut self.held);
         out
+    }
+
+    /// 保持中の候補が期限を迎える時刻。候補が無ければ None（pane はこの時刻に `expire` を呼ぶ）。
+    pub fn deadline(&self) -> Option<Instant> {
+        self.frame.as_ref().map(|f| f.started + FRAME_MAX)
+    }
+
+    /// 期限を過ぎた候補があれば、流すべきバイト列を取り出して構えを解く（次の出力を待たずに行にするため）。
+    pub fn expire(&mut self, now: Instant) -> Vec<u8> {
+        match self.deadline() {
+            Some(deadline) if now >= deadline => {
+                let mut out = Vec::new();
+                self.release(&mut out);
+                out
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// 候補を流すことにして、構えを解く。
@@ -360,5 +377,19 @@ mod tests {
             );
             assert!(lines.len() <= 6, "{name}: {lines:?}");
         }
+    }
+
+    #[test]
+    fn expire_releases_a_candidate_at_its_deadline_without_more_output() {
+        let mut filter = RepaintFilter::default();
+        let now = Instant::now();
+        filter.arm(5, now);
+        assert_eq!(filter.deadline(), None);
+        assert_eq!(run(&mut filter, b"\x1b[Hpartial\x1b[K\r\n", now), b"");
+        let deadline = filter.deadline().unwrap();
+        assert_eq!(filter.expire(deadline - Duration::from_millis(1)), b"");
+        assert_eq!(filter.expire(deadline), b"\x1b[Hpartial\x1b[K\r\n");
+        assert_eq!(filter.deadline(), None);
+        assert_eq!(run(&mut filter, b"\x1b[Hx", deadline), b"\x1b[Hx", "disarmed");
     }
 }

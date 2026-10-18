@@ -36,4 +36,42 @@ impl Pane {
         self.input_queued.fetch_add(reply.len(), Ordering::AcqRel);
         let _ = tx.send(reply);
     }
+
+    /// 再描画の候補（`repaint_filter`）の期限を見張るスレッドを始める。期限が来たら、次の出力を待たずに候補を行ストリームへ流す。
+    /// ロックの順序は order -> inner。
+    pub(super) fn watch_repaint_candidate(&self) {
+        let me = self.me.clone();
+        std::thread::spawn(move || {
+            loop {
+                let Some(pane) = me.upgrade() else { return };
+                let wait = {
+                    let _order = lock(&pane.order);
+                    let mut inner = lock(&pane.inner);
+                    let now = Instant::now();
+                    let Some(deadline) = inner.repaint.deadline() else {
+                        inner.repaint_timer = false;
+                        return;
+                    };
+                    if now >= deadline {
+                        let released = inner.repaint.expire(now);
+                        let ts = now_iso();
+                        let lines = inner.assembler.push(&released);
+                        let any = !lines.is_empty();
+                        for text in lines {
+                            inner.push_line(text, ts.clone());
+                        }
+                        let head = any.then(|| inner.lines.head());
+                        drop(inner);
+                        if let Some(head) = head {
+                            pane.lines_tx.send_replace(head);
+                        }
+                        continue;
+                    }
+                    deadline - now
+                };
+                drop(pane);
+                std::thread::sleep(wait);
+            }
+        });
+    }
 }
