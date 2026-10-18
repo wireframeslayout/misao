@@ -33,14 +33,16 @@ const OBJECT_INHERIT_ACE: u8 = 0x1;
 const CONTAINER_INHERIT_ACE: u8 = 0x2;
 const INHERIT_ONLY_ACE: u8 = 0x8;
 const SYSTEM: &str = "S-1-5-18";
+/// CREATOR OWNER。継承するときに作成者（= このディレクトリの中に作るファイルの所有者 = 起動したユーザー）の SID に置き換わる。
+/// ACL の対象自身には効かない（継承専用でない ACE も、中に作るものへの継承の雛形にすぎない）ので、他人への許可とはみなさない。
+const CREATOR_OWNER: &str = "S-1-3-0";
 /// 昇格した管理者が作ったファイルの既定の所有者。
 const ADMINISTRATORS: &str = "S-1-5-32-544";
-const FRIENDLY_NAMES: [(&str, &str); 5] = [
+const FRIENDLY_NAMES: [(&str, &str); 4] = [
     ("S-1-1-0", "Everyone"),
     ("S-1-5-11", "Authenticated Users"),
     ("S-1-5-32-545", "Users"),
     ("S-1-5-7", "Anonymous"),
-    ("S-1-3-0", "CREATOR OWNER"),
 ];
 /// FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_DELETE_CHILD | DELETE | WRITE_DAC | WRITE_OWNER | GENERIC_WRITE | GENERIC_ALL
 const WRITE_MASK: u32 = 0x2 | 0x4 | 0x40 | 0x1_0000 | 0x4_0000 | 0x8_0000 | 0x4000_0000 | 0x1000_0000;
@@ -160,7 +162,7 @@ unsafe fn find_foreign_writer(dacl: *mut ACL, me: &str) -> std::io::Result<Optio
         }
         // SAFETY: `sid` は ACE の中の有効な SID。
         let sid = unsafe { sid_to_string(sid) }?;
-        if sid != me && sid != SYSTEM && sid != ADMINISTRATORS {
+        if sid != me && sid != SYSTEM && sid != ADMINISTRATORS && sid != CREATOR_OWNER {
             let name = FRIENDLY_NAMES
                 .iter()
                 .find(|(id, _)| *id == sid)
@@ -293,5 +295,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let state = dir_with_grant(&tmp, "S-1-5-32-551", "(OI)(CI)(RX)");
         ensure_data_dir(&state).unwrap();
+    }
+
+    #[test]
+    fn creator_owner_entries_are_not_a_grant_to_someone_else() {
+        for grant in ["(OI)(CI)(IO)(F)", "(OI)(CI)(F)", "(F)"] {
+            let tmp = TempDir::new().unwrap();
+            let state = dir_with_grant(&tmp, "S-1-3-0", grant);
+            ensure_data_dir(&state).unwrap_or_else(|e| panic!("CREATOR OWNER {grant}: {e}"));
+        }
     }
 }
