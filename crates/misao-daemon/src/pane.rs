@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
@@ -47,8 +47,10 @@ pub use lines::LinesSource;
 const KILL_GRACE: Duration = Duration::from_secs(3);
 /// 子の終了後、残りの出力を読み切るのを待つ上限（孫が pty を握り続けて EOF にならない場合の打ち切り）。
 const READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
-/// Windows: 子の終了後、出力がこれだけ途切れたら読み切ったとみなす（ConPTY の出力は、ConPTY を閉じるまで EOF にならない）。
-const OUTPUT_QUIET: Duration = Duration::from_millis(200);
+/// Windows: リーダーの終了後、残りのプロセス（孫）が終わるのを待つ上限。過ぎたら ConPTY を閉じる。
+const DESCENDANTS_WAIT: Duration = Duration::from_secs(3);
+/// Windows: ConPTY を閉じてから、reader が残りの出力を読み終えて止まるのを待つ上限。
+const CONSOLE_CLOSE_WAIT: Duration = Duration::from_secs(5);
 /// close で、リーダーの終了後にグループの残りが消えるのを確かめる間隔と、SIGKILL 後に待つ上限。
 const GROUP_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const GROUP_KILL_WAIT: Duration = Duration::from_secs(2);
@@ -126,13 +128,12 @@ pub struct Pane {
     /// 子のプロセスツリー（Unix はプロセスグループ、Windows は Job Object）。close はこれを止める。
     tree: ProcessTree,
     inner: Mutex<Inner>,
-    master: Mutex<Box<dyn MasterPty + Send>>,
+    /// pty の master。Windows は子の片付けが済んだら閉じる（ConPTY を閉じて、出力のパイプを EOF にする）ので `None` になりうる。
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     handoff: Mutex<Option<Handoff>>,
     /// 入力を pty へ書くスレッドへの送り口（pty の書き込みは詰まりうるので、RPC のスレッドでは書かない）。
     /// 子が終了すると外す（送り口を閉じて入力のスレッドと writer を終わらせる）。
     input: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
-    /// 最後に出力を読んだ時刻（Windows の `wait_for_output_drain` が使う）。
-    last_output: Mutex<Instant>,
     /// ConPTY のカーソル位置の問い合わせ（`ESC[6n`）の取り除き（Windows。出力のスレッドだけが触る）。
     cursor_query: Mutex<CursorQueryScanner>,
     /// 出力の取り込み（リングへの格納と端末の解析）と resize を、受け取った順に画面へ反映するための順序づけ。
@@ -264,7 +265,7 @@ impl Pane {
                 assembler: AnsiLineAssembler::default(),
                 repaint: RepaintFilter::default(),
             }),
-            master: Mutex::new(master),
+            master: Mutex::new(Some(master)),
             handoff: Mutex::new(Some(Handoff {
                 reader,
                 writer,
@@ -272,7 +273,6 @@ impl Pane {
             })),
             input: Mutex::new(None),
             order: Mutex::new(()),
-            last_output: Mutex::new(Instant::now()),
             cursor_query: Mutex::new(CursorQueryScanner::default()),
             input_queued: Arc::new(AtomicUsize::new(0)),
             lines_tx: watch::Sender::new(0),
@@ -354,13 +354,12 @@ impl Pane {
             pane.exit_seen.store(true, Ordering::Release);
             pane.wakeup.notify();
             // 残りの出力を読み切ってから終了を報告する（終了直前の出力を取りこぼさない）。
-            pane.wait_for_output_drain(&drained_rx);
+            pane.finish_console(&drained_rx);
             pane.on_exit(exit);
         });
     }
 
     fn on_output(&self, data: &[u8]) {
-        *lock(&self.last_output) = Instant::now();
         if !cfg!(windows) {
             self.ingest(data);
             return;
@@ -496,9 +495,11 @@ impl Pane {
     fn apply(&self, inner: &mut Inner, decision: &SizeDecision) -> Result<(), String> {
         if inner.state == RunState::Running {
             let size = pty::pty_size(decision.cols, decision.rows);
-            lock(&self.master)
-                .resize(size)
-                .map_err(|e| format!("cannot resize the pty: {e:#}"))?;
+            if let Some(master) = lock(&self.master).as_ref() {
+                master
+                    .resize(size)
+                    .map_err(|e| format!("cannot resize the pty: {e:#}"))?;
+            }
             // ConPTY は resize のたびに画面全体を書き直すので、その再描画は行ストリームに流さない。
             let changed = (inner.cols, inner.rows) != (decision.cols, decision.rows);
             if cfg!(windows) && changed {
@@ -577,7 +578,9 @@ impl Pane {
     fn pty_foreground_pgid(&self) -> Option<i32> {
         #[cfg(all(unix, not(target_os = "linux")))]
         {
-            lock(&self.master).process_group_leader()
+            lock(&self.master)
+                .as_ref()
+                .and_then(|master| master.process_group_leader())
         }
         #[cfg(not(all(unix, not(target_os = "linux"))))]
         {

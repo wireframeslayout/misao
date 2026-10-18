@@ -4,26 +4,25 @@
 use super::*;
 
 impl Pane {
-    /// 子の終了後、残りの出力を読み切るのを待つ。
+    /// リーダーの終了後、残りの出力を読み切るのを待つ。`pane.exited` と最終行の flush は、この後に 1 回だけ行う。
+    ///
     /// Unix は pty の EOF まで（孫が pty を握って EOF が来なければ `READER_DRAIN_TIMEOUT` で打ち切る）。
-    /// Windows は EOF が来ないので、出力が `OUTPUT_QUIET` 途切れるまで（最長 `READER_DRAIN_TIMEOUT`）。
-    pub(super) fn wait_for_output_drain(&self, drained: &mpsc::Receiver<()>) {
+    ///
+    /// Windows の出力のパイプは ConPTY を閉じるまで EOF にならないので、次の順で止める:
+    /// 1. Job の動作中プロセスが 0 になるのを待つ（孫の出力も読む）。`DESCENDANTS_WAIT` で打ち切る。
+    /// 2. ConPTY を閉じる（ClosePseudoConsole が残りの出力を流し切ってから、出力のパイプを閉じる）。
+    /// 3. reader が EOF を見て止まるのを待つ（`CONSOLE_CLOSE_WAIT`）。
+    pub(super) fn finish_console(&self, drained: &mpsc::Receiver<()>) {
         if !cfg!(windows) {
             let _ = drained.recv_timeout(READER_DRAIN_TIMEOUT);
             return;
         }
         let started = Instant::now();
-        loop {
-            match drained.recv_timeout(Duration::from_millis(20)) {
-                Err(RecvTimeoutError::Timeout) => {}
-                Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
-            }
-            let quiet =
-                started.elapsed() >= OUTPUT_QUIET && lock(&self.last_output).elapsed() >= OUTPUT_QUIET;
-            if quiet || started.elapsed() >= READER_DRAIN_TIMEOUT {
-                return;
-            }
+        while self.tree.group_state() == GroupState::Alive && started.elapsed() < DESCENDANTS_WAIT {
+            std::thread::sleep(Duration::from_millis(20));
         }
+        drop(lock(&self.master).take());
+        let _ = drained.recv_timeout(CONSOLE_CLOSE_WAIT);
     }
 
     /// 端末への問い合わせ（子や ConPTY の出力に含まれる）への返事を、子の入力へ送る。アプリの入力ではないので、
